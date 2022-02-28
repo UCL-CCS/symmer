@@ -311,3 +311,7 @@ class taper(S3_projection):
         kernel  = gf2_basis_for_gf2_rref(reduced)
 
         return PauliwordOp(kernel, np.ones(kernel.shape[0]))
+
+    def identify_sector(self, guess_state):
+        # measure stabilizers on this guess state!
+        pass
