@@ -19,9 +19,18 @@ optionally add the `-D` flag if the dependency is a development dependency (e.g.
 
 Package summary
 
+To install required packages and library run:
+
 ```
-basic usage
+pip install .
+```
+
+The basic usage:
+
+```
+TODO
 ```
 
 ## Developer guide
+
 TODO

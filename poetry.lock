@@ -534,7 +534,7 @@ socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "e50b713ad1d539b7722cc28a1b9754bca4a34399ed1419f4e1ab52db292ca219"
+content-hash = "9d699a4d8013e7334198715a6a4a2d5530e554ec2f88642a8ac4f02d27b825e3"
 
 [metadata.files]
 cached-property = [
