@@ -1,122 +1,9 @@
 from functools import cached_property
 from shutil import ExecError
-from symred.symplectic_form import PauliwordOp, symplectic_to_string
+from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
+from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
 from typing import Dict, List, Tuple, Union
 import numpy as np
-
-def gf2_gaus_elim(gf2_matrix: np.array) -> np.array:
-    """
-    Function that performs Gaussian elimination over GF2(2)
-    GF is the initialism of Galois field, another name for finite fields.
-
-    GF(2) may be identified with the two possible values of a bit and to the boolean values true and false.
-
-    pseudocode: http://dde.binghamton.edu/filler/mct/hw/1/assignment.pdf
-
-    Args:
-        gf2_matrix (np.array): GF(2) binary matrix to preform Gaussian elimination over
-    Returns:
-        gf2_matrix_rref (np.array): reduced row echelon form of M
-    """
-    gf2_matrix_rref = gf2_matrix.copy()
-    m_rows, n_cols = gf2_matrix_rref.shape
-
-    row_i = 0
-    col_j = 0
-
-    while row_i < m_rows and col_j < n_cols:
-
-        if sum(gf2_matrix_rref[row_i:, col_j]) == 0:
-            # case when col_j all zeros
-            # No pivot in this column, pass to next column
-            col_j += 1
-            continue
-
-        # find index of row with first "1" in the vector defined by column j (note previous if statement removes all zero column)
-        k = np.argmax(gf2_matrix_rref[row_i:, col_j]) + row_i
-        # + row_i gives correct index (as we start search from row_i!)
-
-        # swap row k and row_i (row_i now has 1 at top of column j... aka: gf2_matrix_rref[row_i, col_j]==1)
-        gf2_matrix_rref[[k, row_i]] = gf2_matrix_rref[[row_i, k]]
-        # next need to zero out all other ones present in column j (apart from on the i_row!)
-        # to do this use row_i and use modulo addition to zero other columns!
-
-        # make a copy of j_th column of gf2_matrix_rref, this includes all rows (0 -> M)
-        Om_j = np.copy(gf2_matrix_rref[:, col_j])
-
-        # zero out the i^th position of vector Om_j (this is why copy needed... to stop it affecting gf2_matrix_rref)
-        Om_j[row_i] = 0
-        # note this was orginally 1 by definition...
-        # This vector now defines the indices of the rows we need to zero out
-        # by setting ith position to zero - it stops the next steps zeroing out the i^th row (which we need as our pivot)
-
-
-        # next from row_i of rref matrix take all columns from j->n (j to last column)
-        # this is vector of zero and ones from row_i of gf2_matrix_rref
-        i_jn = gf2_matrix_rref[row_i, col_j:]
-        # we use i_jn to zero out the rows in gf2_matrix_rref[:, col_j:] that have leading one (apart from row_i!)
-        # which rows are these? They are defined by that Om_j vector!
-
-        # the matrix to zero out these rows is simply defined by the outer product of Om_j and i_jn
-        # this creates a matrix of rows of i_jn terms where Om_j=1 otherwise rows of zeros (where Om_j=0)
-        Om_j_dependent_rows_flip = np.einsum('i,j->ij', Om_j, i_jn, optimize=True)
-        # note flip matrix is contains all m rows ,but only j->n columns!
-
-        # perfrom bitwise xor of flip matrix to zero out rows in col_j that that contain a leading '1' (apart from row i)
-        gf2_matrix_rref[:, col_j:] = np.bitwise_xor(gf2_matrix_rref[:, col_j:], Om_j_dependent_rows_flip)
-
-        row_i += 1
-        col_j += 1
-
-    return gf2_matrix_rref
-
-
-def gf2_basis_for_gf2_rref(gf2_matrix_in_rreform: np.array) -> np.array:
-    """
-    Function that gets the kernel over GF2(2) of ow reduced  gf2 matrix!
-
-    uses method in: https://en.wikipedia.org/wiki/Kernel_(linear_algebra)#Basis
-
-    Args:
-        gf2_matrix_in_rreform (np.array): GF(2) matrix in row reduced form
-    Returns:
-        basis (np.array): basis for gf2 input matrix that was in row reduced form
-    """
-    rows_to_columns = gf2_matrix_in_rreform.T
-    eye = np.eye(gf2_matrix_in_rreform.shape[1], dtype=int)
-
-    # do column reduced form as row reduced form
-    rrf = gf2_gaus_elim(np.hstack((rows_to_columns, eye.T)))
-
-    zero_rrf = np.where(~rrf[:, :gf2_matrix_in_rreform.shape[0]].any(axis=1))[0]
-    basis = rrf[zero_rrf, gf2_matrix_in_rreform.shape[0]:]
-
-    return basis
-
-
-class StabilizerOp(PauliwordOp):
-    def __init__(self,
-                 operator:   Union[List[str], Dict[str, float], np.array],
-                 coeff_list: Union[List[complex], np.array] = None):
-        super().__init__(operator, coeff_list)
-        self._check_stab()
-        self._check_independent()
-
-    def _check_stab(self):
-        """ Checks the stabilizer coefficients are +1
-        """
-        assert(np.all(self.coeff_vec==1)), 'Stabilizer coefficients not +1'
-
-    def _check_independent(self):
-        """ Check the supplied stabilizers are algebraically independent
-        """
-        check_independent = gf2_gaus_elim(self.symp_matrix)
-        for row in check_independent:
-            if np.all(row==0):
-                # there is a dependent row
-                raise ValueError('The supplied stabilizers are not independent')
-
-
 
 class S3_projection:
     """ Base class for enabling qubit reduction techniques derived from
@@ -142,7 +29,7 @@ class S3_projection:
     rotated_flag = False
 
     def __init__(self,
-                stabilizers: "StabilizerOp", 
+                stabilizers: StabilizerOp, 
                 target_sqp: str = 'Z'
                 ) -> None:
         """
@@ -377,6 +264,93 @@ class QubitTapering(S3_projection):
         
         return ref_state[free_qubit_positions]
 
+#########################################################################
+#### For now uses the legacy code for identifying noncontextual sets ####
+###################### TODO graph techniques! ###########################
+#########################################################################
+
+from datetime import datetime
+from datetime import timedelta
+
+# Takes two Pauli operators specified as strings (e.g., 'XIZYZ') and determines whether they commute:
+def commute(x,y):
+    assert len(x)==len(y), print(x,y)
+    s = 1
+    for i in range(len(x)):
+        if x[i]!='I' and y[i]!='I' and x[i]!=y[i]:
+            s = s*(-1)
+    if s==1:
+        return 1
+    else:
+        return 0
+
+# Input: S, a list of Pauli operators specified as strings.
+# Output: a boolean indicating whether S is contextual or not.
+def contextualQ(S,verbose=False):
+    # Store T all elements of S that anticommute with at least one other element in S (takes O(|S|**2) time).
+    T=[]
+    Z=[] # complement of T
+    for i in range(len(S)):
+        if any(not commute(S[i],S[j]) for j in range(len(S))):
+            T.append(S[i])
+        else:
+            Z.append(S[i])
+    # Search in T for triples in which exactly one pair anticommutes; if any exist, S is contextual.
+    for i in range(len(T)): # WLOG, i indexes the operator that commutes with both others.
+        for j in range(len(T)):
+            for k in range(j,len(T)): # Ordering of j, k does not matter.
+                if i!=j and i!=k and commute(T[i],T[j]) and commute(T[i],T[k]) and not commute(T[j],T[k]):
+                    if verbose:
+                        return [True,None,None]
+                    else:
+                        return True
+    if verbose:
+        return [False,Z,T]
+    else:
+        return False
+
+def greedy_dfs(ham,cutoff,criterion='weight'):
+    
+    weight = {k:abs(ham[k]) for k in ham.keys()}
+    possibilities = [k for k, v in sorted(weight.items(), key=lambda item: -item[1])] # sort in decreasing order of weight
+    
+    best_guesses = [[]]
+    stack = [[[],0]]
+    start_time = datetime.now()
+    delta = timedelta(seconds=cutoff)
+    
+    i = 0
+    
+    while datetime.now()-start_time < delta and stack:
+        
+        while i < len(possibilities):
+#             print(i)
+            next_set = stack[-1][0]+[possibilities[i]]
+#             print(next_set)
+#             iscontextual = contextualQ(next_set)
+#             print('  ',iscontextual,'\n')
+            if not contextualQ(next_set):
+                stack.append([next_set,i+1])
+            i += 1
+        
+        if criterion == 'weight':
+            new_weight = sum([abs(ham[p]) for p in stack[-1][0]])
+            old_weight = sum([abs(ham[p]) for p in best_guesses[-1]])
+            if new_weight > old_weight:
+                best_guesses.append(stack[-1][0])
+                # print(len(stack[-1][0]))
+                # print(stack[-1][0],'\n')
+            
+        if criterion == 'size' and len(stack[-1][0]) > len(best_guesses[-1]):
+            best_guesses.append(stack[-1][0])
+            # print(len(stack[-1][0]))
+            # print(stack[-1][0],'\n')
+            
+        top = stack.pop()
+        i = top[1]
+    
+    return best_guesses
+
 class CS_VQE(S3_projection):
     """
     """
@@ -387,3 +361,61 @@ class CS_VQE(S3_projection):
         """ 
         """
         self.operator = operator
+        self.contextual_operator = (operator-self.noncontextual_operator).cleanup_zeros()
+
+    @cached_property
+    def noncontextual_operator(self):
+        """ Extract a noncontextual set of Pauli terms from the operator
+        TODO graph-based approach, currently uses legacy implementation
+        """
+        op_dict = self.operator.to_dictionary
+        noncontextual_set = greedy_dfs(op_dict, cutoff=1)[-1]
+        return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
+
+    @cached_property
+    def decompose_noncontextual(self):
+        """
+        """
+        adj_mat = self.noncontextual_operator.adjacency_matrix
+
+        # mask universally commuting terms and those that anticommute with some element
+        mask_universal = np.where(np.all(adj_mat, axis=1))
+        mask_non_universal = np.where(np.any(~adj_mat, axis=1))
+        # elements in the same clique have identicial rows in the adjacency matrix
+        non_universal = adj_mat[mask_non_universal]
+        # order lexicographically and take difference between adjacent rows
+        term_ordering = np.lexsort(non_universal.T)
+        diff_adjacent = np.diff(non_universal[term_ordering], axis=0)
+        # the unique terms are those which are non-zero
+        mask_unique_terms = np.append(True, ~np.all(diff_adjacent==0, axis=1))
+        # determine the inverse mapping
+        inverse_index = np.zeros_like(term_ordering)
+        inverse_index[term_ordering] = np.cumsum(mask_unique_terms) - 1
+
+        decomposed = {}
+
+        univ_symp = self.noncontextual_operator.symp_matrix[mask_universal]
+        univ_coef = self.noncontextual_operator.coeff_vec[mask_universal]
+        decomposed['symmetry'] = PauliwordOp(univ_symp, univ_coef)
+
+        for i in np.unique(inverse_index):
+            mask_clique = inverse_index==i
+            Ci_symp = self.noncontextual_operator.symp_matrix[mask_non_universal][mask_clique]
+            Ci_coef = self.noncontextual_operator.coeff_vec[mask_non_universal][mask_clique]
+            decomposed[f'clique_{i}'] = PauliwordOp(Ci_symp, Ci_coef)
+
+        return decomposed
+
+    @cached_property
+    def noncontextual_symmetry_generators(self) -> StabilizerOp:
+        """ Find an independent basis for the noncontextual symmetry
+        """
+        # swap order of XZ blocks in symplectic matrix to ZX
+        ZX_symp = np.hstack([self.noncontextual_operator.Z_block, 
+                             self.noncontextual_operator.X_block])
+        reduced = gf2_gaus_elim(ZX_symp)
+        kernel  = gf2_basis_for_gf2_rref(reduced)
+
+        return StabilizerOp(kernel, np.ones(kernel.shape[0]))
+
+
