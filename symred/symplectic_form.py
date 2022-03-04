@@ -1,6 +1,7 @@
 from functools import reduce
 from cached_property import cached_property
 from openfermion import QubitOperator
+from symred.utils import gf2_gaus_elim
 import numpy as np
 from copy import deepcopy
 from typing import List, Union, Dict
@@ -114,7 +115,7 @@ def symplectic_to_sparse_matrix(symp_vec, coeff) -> csr_matrix:
 
 class PauliwordOp:
     """ 
-    A class thats represents an operator defined over the Pauli group in the symplectic form.
+    A class thats represents an operator defined over the Pauli group in the symplectic representation.
     """
     def __init__(self, 
             operator:   Union[List[str], Dict[str, float], np.array], 
@@ -151,7 +152,6 @@ class PauliwordOp:
         self.X_block = self.symp_matrix[:, :self.n_qubits]
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
         
-
     def _init_from_paulistring_list(self, 
             operator_list: List[str]
         ) -> None:
@@ -163,7 +163,6 @@ class PauliwordOp:
         self.symp_matrix = np.zeros((n_rows, 2 * self.n_qubits), dtype=int)
         for row_ind, pauli_str in enumerate(operator_list):
             self.symp_matrix[row_ind] = string_to_symplectic(pauli_str, self.n_qubits)
-
 
     def __str__(self) -> str:
         """ 
@@ -179,12 +178,27 @@ class PauliwordOp:
             out_string += (f'{ceoff} {p_string} +\n')
         return out_string[:-3]
 
-
     def copy(self) -> "PauliwordOp":
         """ 
         Create a carbon copy of the class instance
         """
         return deepcopy(self)
+
+    def basis_reconstruction(self, 
+            operator_basis: "PauliwordOp"
+        ) -> np.array:
+        """ simultaneously reconstruct every operator term in the supplied basis.
+        Performs Gaussian elimination on [op_basis.T | self_symp_csc.T] and restricts 
+        so that the row-reduced identity block is removed. Each row of the
+        resulting matrix will index the basis elements required to reconstruct
+        the corresponding term in the operator.
+        """
+        dim = operator_basis.n_terms
+        basis_symp_csc = operator_basis.symp_matrix
+        basis_op_stack = np.vstack([basis_symp_csc, self.symp_matrix])
+        op_reconstruction = gf2_gaus_elim(basis_op_stack.T)[:dim,dim:].T
+
+        return op_reconstruction
 
     @cached_property
     def Y_count(self) -> np.array:
@@ -257,7 +271,18 @@ class PauliwordOp:
         # reduced_symplectic_matrix = np.add.reduceat(sorted_symp_matrix, row_summing, axis=0)
         reduced_symplectic_matrix = sorted_symp_matrix[row_summing]
         reduced_coeff_vec = np.add.reduceat(sorted_coeff_vec, row_summing, axis=0)
+
         return PauliwordOp(reduced_symplectic_matrix, reduced_coeff_vec)
+
+    def cleanup_zeros(self):
+        """ 
+        Delete terms with zero coefficient - this is not included in the cleanup method
+        as one may wish to allow zero coefficients (e.g. as an Ansatz parameter angle)
+        """
+        clean_operator = self.cleanup()
+        mask_nonzero = np.where(clean_operator.coeff_vec!=0)
+        return PauliwordOp(clean_operator.symp_matrix[mask_nonzero], 
+                            clean_operator.coeff_vec[mask_nonzero])
 
     def __add__(self, 
             Pword: "PauliwordOp"
@@ -275,17 +300,13 @@ class PauliwordOp:
     def __sub__(self,
             Pword: "PauliwordOp"
         ) -> "PauliwordOp":
-        """ Add to this PauliwordOp another PauliwordOp by stacking the
-        respective symplectic matrices and cleaning any resulting duplicates
-        """
-        assert (self.n_qubits == Pword.n_qubits), 'Pauliwords defined for different number of qubits'
-        P_symp_mat_new = np.vstack((self.symp_matrix, Pword.symp_matrix))
-
-        # note -1 * here!
-        P_new_coeffs = np.hstack((self.coeff_vec, -1*Pword.coeff_vec))
-
-        # cleanup run to remove duplicate rows (Pauliwords)
-        return PauliwordOp(P_symp_mat_new, P_new_coeffs).cleanup()
+        """ Subtract from this PauliwordOp another PauliwordOp 
+        by negating the coefficients and summing
+        """     
+        op_copy = Pword.copy()
+        op_copy.coeff_vec*=-1
+        
+        return self+op_copy
 
     def __mul__(self, 
             Pword: "PauliwordOp"
@@ -304,6 +325,20 @@ class PauliwordOp:
 
         P_final = reduce(lambda x,y: x+y, P_updated_list)
         return P_final
+
+    def __getitem__(self, index: int) -> "PauliwordOp":
+        """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
+        from the indexed row and coefficient from the symplectic matrix 
+        """
+        assert(index<self.n_terms), 'Index out of range'
+        symp_index = self.symp_matrix[index]
+        coef_index = self.coeff_vec[index]
+        return PauliwordOp(symp_index, [coef_index])
+
+    def __iter__(self):
+        """ Makes a PauliwordOp instance iterable
+        """
+        return iter([self[i] for i in range(self.n_terms)])
 
     def multiply_by_constant(self, 
             const: complex
@@ -412,6 +447,7 @@ class PauliwordOp:
             P_rotating = P_rotating._rotate_by_single_Pword(Pword_temp, angle).cleanup()
         return P_rotating
 
+    @cached_property
     def PauliwordOp_to_OF(self) -> List[QubitOperator]:
         """ TODO Interface with converter.py (replace with to_dictionary method)
         """
@@ -421,6 +457,18 @@ class PauliwordOp:
             OF_string = ' '.join([Pi+str(i) for i,Pi in enumerate(P_string) if Pi!='I'])
             OF_list.append(QubitOperator(OF_string, coeff_single))
         return OF_list
+
+    @cached_property
+    def to_dictionary(self) -> Dict[str, complex]:
+        """
+        Method for converting the operator from the symplectic representation 
+        to a dictionary of the form {P_string:coeff, ...}
+        """
+        # clean the operator since duplicated terms will be overwritten in the conversion to a dictionary
+        op_to_convert = self.cleanup()
+        out_dict = {symplectic_to_string(symp_vec):coeff for symp_vec, coeff 
+                    in zip(op_to_convert.symp_matrix, op_to_convert.coeff_vec)}
+        return out_dict
 
     @cached_property
     def to_sparse_matrix(self) -> csr_matrix:
@@ -463,3 +511,30 @@ class PauliwordOp:
             return True
         else:
             return False
+
+class StabilizerOp(PauliwordOp):
+    """ Special case of PauliwordOp, in which the operator terms must
+    by algebraically independent, with all coefficients set to one.
+    """
+    def __init__(self,
+                 operator:   Union[List[str], Dict[str, float], np.array],
+                 coeff_list: Union[List[complex], np.array] = None):
+        """
+        """
+        super().__init__(operator, coeff_list)
+        self._check_stab()
+        self._check_independent()
+
+    def _check_stab(self):
+        """ Checks the stabilizer coefficients are +1
+        """
+        assert(np.all(self.coeff_vec==1)), 'Stabilizer coefficients not +1'
+
+    def _check_independent(self):
+        """ Check the supplied stabilizers are algebraically independent
+        """
+        check_independent = gf2_gaus_elim(self.symp_matrix)
+        for row in check_independent:
+            if np.all(row==0):
+                # there is a dependent row
+                raise ValueError('The supplied stabilizers are not independent')
