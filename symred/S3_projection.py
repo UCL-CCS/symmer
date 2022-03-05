@@ -1,7 +1,8 @@
-from functools import cached_property
+from functools import cached_property, reduce
 from shutil import ExecError
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
 from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
+from scipy.optimize import minimize_scalar
 from typing import Dict, List, Tuple, Union
 import numpy as np
 
@@ -48,12 +49,18 @@ class S3_projection:
       
         self.stabilizers = stabilizers
         self.target_sqp = target_sqp
-        self.rotations, self.angles = zip(*self.stabilizer_rotations)
-        self.rotated_stabilizers = self.stabilizers.recursive_rotate_by_Pword(
-            pauli_rot_list=self.rotations,
-            angles=self.angles
-        )    
+        try:
+            self.rotations, self.angles = zip(*self.stabilizer_rotations)
+            self.rotated_stabilizers = self.stabilizers.recursive_rotate_by_Pword(
+                pauli_rot_list=self.rotations,
+                angles=self.angles
+            )
+        except:
+            # in the case that the input stabilizers are already single-qubit Pauli operators
+            self.rotations, self.angles = [], []
+            self.rotated_stabilizers = self.stabilizers
     
+
     @cached_property
     def stabilizer_rotations(self) -> List[Tuple[str, float]]:
         """ 
@@ -117,7 +124,7 @@ class S3_projection:
 
         # overwrite the coefficient vector to the assigned eigenvalues defined by the symmetry sector
         rotated_stabilizers = self.rotated_stabilizers.copy()
-        rotated_stabilizers.coeff_vec*=np.array(sym_sector)
+        rotated_stabilizers.coeff_vec*=np.array(sym_sector, dtype=int)
         stab_positions = np.einsum("ij->j",rotated_stabilizers.symp_matrix)
         stab_q_indices = np.where(stab_positions)[0]
         assert(len(stab_q_indices)== rotated_stabilizers.n_terms), 'unique indices and stabilizers do not match'
@@ -158,15 +165,19 @@ class S3_projection:
         to be performed prior to the stabilizer rotations, for example 
         unitary partitioning in CS-VQE
         """
-        stab_rotations = self.rotations
-        angles = self.angles
+        stab_rotations = list(self.rotations)
+        angles = list(self.angles)
         # ...and insert any supplementary ones coming from the child class
         if insert_rotation is not None:
             stab_rotations.insert(0, insert_rotation[0])
             angles.insert(0, insert_rotation[1])
 
         # perform the full list of rotations on the input operator...
-        op_rotated = operator.recursive_rotate_by_Pword(pauli_rot_list=stab_rotations, angles=angles)
+        if stab_rotations != []:
+            op_rotated = operator.recursive_rotate_by_Pword(pauli_rot_list=stab_rotations, angles=angles)
+        else:
+            op_rotated = operator
+        
         self.rotated_flag = True
         # ...and finally perform the stabilizer subspace projection
         op_project = self._perform_projection(operator=op_rotated, sym_sector=sym_sector)
@@ -355,13 +366,26 @@ class CS_VQE(S3_projection):
     """
     """
     def __init__(self,
-            operator: PauliwordOp, 
+            operator: PauliwordOp,
+            ref_state: np.array = None,
             target_sqp: str = 'Z'
         ) -> None:
         """ 
         """
         self.operator = operator
+        self.ref_state = ref_state
+        self.target_sqp = target_sqp
         self.contextual_operator = (operator-self.noncontextual_operator).cleanup_zeros()
+        # decompose the noncontextual set into a dictionary of its 
+        # universally commuting elements and anticommuting cliques
+        self.decompose_noncontextual
+        self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
+        self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
+        self.clique_operator = self.noncontextual_basis[:self.n_cliques]
+        self.symmetry_generators = self.noncontextual_basis[self.n_cliques:]
+        # determine the noncontextual ground state - this updates the coefficients of the clique 
+        # representative operator C(r) and symmetry generators G with the optimal configuration
+        self.solve_noncontextual(ref_state)
 
     @cached_property
     def noncontextual_operator(self):
@@ -373,49 +397,139 @@ class CS_VQE(S3_projection):
         return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
 
     @cached_property
+    def noncontextual_basis(self) -> StabilizerOp:
+        """ Find an independent basis for the noncontextual symmetry
+        """
+        # mask universally commuting terms
+        adj_mat = self.noncontextual_operator.adjacency_matrix
+        mask_universal = np.where(np.all(adj_mat, axis=1))
+        # swap order of XZ blocks in symplectic matrix to ZX
+        ZX_symp = np.hstack([self.noncontextual_operator.Z_block[mask_universal], 
+                             self.noncontextual_operator.X_block[mask_universal]])
+        reduced = gf2_gaus_elim(ZX_symp)
+        kernel  = gf2_basis_for_gf2_rref(reduced)
+
+        basis = StabilizerOp(kernel, np.ones(kernel.shape[0]))
+        # order the basis so clique representatives appear at the beginning
+        basis_order = np.lexsort(basis.adjacency_matrix)
+        basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
+        self.n_cliques = np.count_nonzero(~np.all(basis.adjacency_matrix, axis=1))
+
+        return basis
+
+    @cached_property
     def decompose_noncontextual(self):
         """
         """
-        adj_mat = self.noncontextual_operator.adjacency_matrix
-
-        # mask universally commuting terms and those that anticommute with some element
-        mask_universal = np.where(np.all(adj_mat, axis=1))
-        mask_non_universal = np.where(np.any(~adj_mat, axis=1))
-        # elements in the same clique have identicial rows in the adjacency matrix
-        non_universal = adj_mat[mask_non_universal]
-        # order lexicographically and take difference between adjacent rows
-        term_ordering = np.lexsort(non_universal.T)
-        diff_adjacent = np.diff(non_universal[term_ordering], axis=0)
-        # the unique terms are those which are non-zero
-        mask_unique_terms = np.append(True, ~np.all(diff_adjacent==0, axis=1))
-        # determine the inverse mapping
-        inverse_index = np.zeros_like(term_ordering)
-        inverse_index[term_ordering] = np.cumsum(mask_unique_terms) - 1
+        # note the first two columns will never both be 1... definition of noncontextual set!
+        # where the 1 appears determines which clique the term is in
+        self.noncontextual_reconstruction = self.noncontextual_operator.basis_reconstruction(self.noncontextual_basis)
+        mask_non_universal, clique_index = np.where(self.noncontextual_reconstruction[:,0:self.n_cliques])
+        mask_universal = np.where(np.all(self.noncontextual_reconstruction[:,0:self.n_cliques]==0, axis=1)) 
 
         decomposed = {}
-
         univ_symp = self.noncontextual_operator.symp_matrix[mask_universal]
         univ_coef = self.noncontextual_operator.coeff_vec[mask_universal]
         decomposed['symmetry'] = PauliwordOp(univ_symp, univ_coef)
 
-        for i in np.unique(inverse_index):
-            mask_clique = inverse_index==i
+        for i in np.unique(clique_index):
+            mask_clique = clique_index==i
             Ci_symp = self.noncontextual_operator.symp_matrix[mask_non_universal][mask_clique]
             Ci_coef = self.noncontextual_operator.coeff_vec[mask_non_universal][mask_clique]
             decomposed[f'clique_{i}'] = PauliwordOp(Ci_symp, Ci_coef)
 
         return decomposed
 
-    @cached_property
-    def noncontextual_symmetry_generators(self) -> StabilizerOp:
-        """ Find an independent basis for the noncontextual symmetry
+    def noncontextual_objective_function(self, 
+            nu: np.array, 
+            r: np.array
+        ) -> float:
+        """ The classical objective function that encodes the noncontextual energies
         """
-        # swap order of XZ blocks in symplectic matrix to ZX
-        ZX_symp = np.hstack([self.noncontextual_operator.Z_block, 
-                             self.noncontextual_operator.X_block])
-        reduced = gf2_gaus_elim(ZX_symp)
-        kernel  = gf2_basis_for_gf2_rref(reduced)
+        G_prod = (-1)**np.count_nonzero(np.logical_and(self.G_indices==1, nu == -1), axis=1)
+        r_part = np.sum(self.r_indices*r, axis=1)
+        r_part[np.where(r_part==0)]=1
+        return np.sum(self.noncontextual_operator.coeff_vec*G_prod*r_part).real
 
-        return StabilizerOp(kernel, np.ones(kernel.shape[0]))
+    def solve_noncontextual(self, ref_state: np.array = None) -> None:
+        """ Minimize the classical objective function, yielding the noncontextual ground state
+        TODO allow any number of cliques and implement effective discrete optimizer (such as hypermapper)
+        """
+        if ref_state is not None:
+            fix_nu = np.prod((-1) ** (self.symmetry_generators.Z_block & ref_state), axis=1)
+            # update the symmetry generator G coefficients
+            self.symmetry_generators.coeff_vec*=fix_nu
+            if self.n_cliques==2:
+                def convex_problem(theta):
+                    r = np.array([np.cos(theta), np.sin(theta)])
+                    return self.noncontextual_objective_function(fix_nu, r)
+                opt_out = minimize_scalar(convex_problem)
+                self.noncontextual_energy = opt_out['fun']
+                theta = opt_out['x']
+                r = np.array([np.cos(theta), np.sin(theta)])
+                # update the C(r) operator coefficients
+                self.clique_operator.coeff_vec*=r
+            else:
+                raise NotImplementedError('Currently only works for two cliques')
+        else:
+            raise NotImplementedError('Currently only works provided a reference state')
+            # Allow discrete optimization over generator value assignment here, e.g. with hypermapper
+    
+    @cached_property
+    def unitary_partitioning(self):
+        """ Implementation of the unitary partitiong procedure 
+        described in https://doi.org/10.1103/PhysRevA.101.062322 (Section A)
+        
+        TODO Currently works only when number of cliques M=2
+        """
+        C0 = self.clique_operator[0]
+        C1 = self.clique_operator[1]
 
+        pauli_rotation = (C0*C1).multiply_by_constant(-1j)
+        angle = np.arctan(C0.coeff_vec/C1.coeff_vec)
+        #if you wish to rotate onto +1 eigenstate:
+        if abs(C1.coeff_vec+np.cos(angle)) < 1e-15:
+            angle += np.pi
+            
+        return pauli_rotation, angle
+
+    def contextual_subspace_projection(self,
+            stabilizer_indices: List[int],
+            aux_operator: PauliwordOp = None
+        ) -> PauliwordOp:
+        """ input a list indexing the stabilizers one wishes to enforce
+        index 0 always corresponds to the clique operator C(r)
+        """
+        # this is set in fix_stabilizers for now
+        sector = np.ones(len(stabilizer_indices), dtype=int)
+
+        if aux_operator is not None:
+            operator_to_project = aux_operator.copy()
+        else:
+            operator_to_project = self.operator.copy()
+
+        if 0 in stabilizer_indices:
+            stabilizer_indices.pop(stabilizer_indices.index(0))
+            stabilizer_indices = [i-1 for i in stabilizer_indices]
+            UP_rot, UP_angle = self.unitary_partitioning
+            rotated_clique_op = self.clique_operator._rotate_by_single_Pword(
+                UP_rot, UP_angle
+                ).cleanup_zeros()
+            fix_stabilizers = reduce(lambda x,y: x+y,
+                [rotated_clique_op]+[self.symmetry_generators[i] for i in stabilizer_indices])
+            insert_rotation = [list(UP_rot.to_dictionary.keys())[0], UP_angle]
+        else:
+            stabilizer_indices = [i-1 for i in stabilizer_indices]
+            fix_stabilizers = reduce(lambda x,y: x+y,
+                [self.symmetry_generators[i] for i in stabilizer_indices])
+            insert_rotation = None
+
+        super().__init__(fix_stabilizers, target_sqp=self.target_sqp)
+
+        return self.perform_projection(
+            operator_to_project, 
+            sector, 
+            insert_rotation=insert_rotation
+        )
+        
 
