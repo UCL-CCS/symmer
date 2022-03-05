@@ -280,7 +280,7 @@ class PauliwordOp:
         as one may wish to allow zero coefficients (e.g. as an Ansatz parameter angle)
         """
         clean_operator = self.cleanup()
-        mask_nonzero = np.where(clean_operator.coeff_vec!=0)
+        mask_nonzero = np.where(abs(clean_operator.coeff_vec)>1e-15)
         return PauliwordOp(clean_operator.symp_matrix[mask_nonzero], 
                             clean_operator.coeff_vec[mask_nonzero])
 
