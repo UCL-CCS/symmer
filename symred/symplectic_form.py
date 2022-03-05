@@ -326,14 +326,28 @@ class PauliwordOp:
         P_final = reduce(lambda x,y: x+y, P_updated_list)
         return P_final
 
-    def __getitem__(self, index: int) -> "PauliwordOp":
+    def __getitem__(self, key: Union[slice, int]) -> "PauliwordOp":
         """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
         from the indexed row and coefficient from the symplectic matrix 
         """
-        assert(index<self.n_terms), 'Index out of range'
-        symp_index = self.symp_matrix[index]
-        coef_index = self.coeff_vec[index]
-        return PauliwordOp(symp_index, [coef_index])
+        if isinstance(key, int):
+            if key<0:
+                # allow negative subscript
+                key+=self.n_terms
+            assert(key<self.n_terms), 'Index out of range'
+            symp_index = self.symp_matrix[key]
+            coef_index = self.coeff_vec[key]
+            return PauliwordOp(symp_index, [coef_index])
+        elif isinstance(key, slice):
+            start, stop = key.start, key.stop
+            if start is None:
+                start=0
+            if stop is None:
+                stop=self.n_terms
+            mask = np.arange(start, stop, key.step)
+            symp_index = self.symp_matrix[mask]
+            coef_index = self.coeff_vec[mask]
+            return PauliwordOp(symp_index, coef_index)
 
     def __iter__(self):
         """ Makes a PauliwordOp instance iterable
