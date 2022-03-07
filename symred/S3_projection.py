@@ -44,75 +44,12 @@ class S3_projection:
             Manually overrides the qubit positions selected in stabilizer_rotations, 
             although the rotation procedure can be a bit unpredictable so take care!
         """
-        # store stabilizers and their assignments as PauliwordOp object
-        # this facilitates various manipulations such as Pauli rotations
-      
         self.stabilizers = stabilizers
         self.target_sqp = target_sqp
-        try:
-            self.rotations, self.angles = zip(*self.stabilizer_rotations)
-            self.rotated_stabilizers = self.stabilizers.recursive_rotate_by_Pword(
-                pauli_rot_list=self.rotations,
-                angles=self.angles
-            )
-        except:
-            # in the case that the input stabilizers are already single-qubit Pauli operators
-            self.rotations, self.angles = [], []
-            self.rotated_stabilizers = self.stabilizers
     
-
-    @cached_property
-    def stabilizer_rotations(self) -> List[Tuple[str, float]]:
-        """ 
-        Implementation of procedure described in https://doi.org/10.22331/q-2021-05-14-456 (Lemma A.2)
-        
-        Returns 
-        - a dictionary of stabilizers with the rotations mapping each to a 
-          single Pauli in the formList[Tuple[rotation, angle, gen_rot]], 
-        
-        - a dictionary of qubit positions that we have rotated onto and 
-          the eigenvalues post-rotation
-        """
-        stabilizer_ref = self.stabilizers.copy()
-        rotations=[]
-
-        def append_rotation(base_pauli: np.array, index: int) -> str:
-            """ force the indexed qubit to a Pauli Y in the base Pauli
-            """
-            X_index = index % self.stabilizers.n_qubits # index in the X block
-            base_pauli[np.array([X_index, X_index+self.stabilizers.n_qubits])]=1
-            base_pauli = symplectic_to_string(base_pauli)
-            # None angle defaults to pi/2 for Clifford rotation
-            rotations.append((base_pauli, None))
-            # return the pauli rotation to update stabilizer_ref as we go
-            return base_pauli
-
-        # This part produces rotations onto single-qubit Paulis (sqp) - might be a combination of X and Z
-        # while loop active until each row of symplectic matrix contains a single non-zero element
-        while np.any(~(np.count_nonzero(stabilizer_ref.symp_matrix, axis=1)==1)):
-            unique_position = np.where(np.count_nonzero(stabilizer_ref.symp_matrix, axis=0)==1)[0]
-            reduced = stabilizer_ref.symp_matrix[:,unique_position]
-            unique_stabilizer = np.where(np.any(reduced, axis=1))
-            for row in stabilizer_ref.symp_matrix[unique_stabilizer]:
-                if np.count_nonzero(row) != 1:
-                    # find the free indices and pick one (there is some freedom over this)
-                    available_positions = np.intersect1d(unique_position, np.where(row))
-                    pauli_rotation = PauliwordOp([append_rotation(row.copy(), available_positions[0])], [1])
-                    # update the stabilizers by performing the rotation
-                    stabilizer_ref = stabilizer_ref._rotate_by_single_Pword(pauli_rotation)
-
-        # This part produces rotations onto the target sqp
-        for row in stabilizer_ref.symp_matrix:
-            sqp_index = np.where(row)[0]
-            if ((self.target_sqp == 'Z' and sqp_index< self.stabilizers.n_qubits) or 
-                (self.target_sqp == 'X' and sqp_index>=self.stabilizers.n_qubits)):
-                pauli_rotation = append_rotation(np.zeros(2*self.stabilizers.n_qubits, dtype=int), sqp_index)
-
-        return rotations
-
     def _perform_projection(self, 
             operator: PauliwordOp,
-            sym_sector: Union[List[int], np.array]
+            #sym_sector: Union[List[int], np.array]
         ) -> PauliwordOp:
         """ method for projecting an operator over fixed qubit positions 
         stabilized by single Pauli operators (obtained via Clifford operations)
@@ -123,20 +60,21 @@ class S3_projection:
         self.rotated_flag = False
 
         # overwrite the coefficient vector to the assigned eigenvalues defined by the symmetry sector
-        rotated_stabilizers = self.rotated_stabilizers.copy()
-        rotated_stabilizers.coeff_vec*=np.array(sym_sector, dtype=int)
-        stab_positions = np.einsum("ij->j",rotated_stabilizers.symp_matrix)
-        stab_q_indices = np.where(stab_positions)[0]
-        assert(len(stab_q_indices)== rotated_stabilizers.n_terms), 'unique indices and stabilizers do not match'
+        #rotated_stabilizers = self.rotated_stabilizers.copy()
+        #rotated_stabilizers.coeff_vec#*=np.array(sym_sector, dtype=int)
+        #stab_positions = np.einsum("ij->j",self.rotated_stabilizers.symp_matrix)
+        #stab_q_indices = np.where(stab_positions)[0]
+        #assert(len(stab_q_indices)== rotated_stabilizers.n_terms), 'unique indices and stabilizers do not match'
+        stab_q_indices = np.where(self.rotated_stabilizers.symp_matrix)[1]
 
         # remove terms that do not commute with the rotated stabilizers
-        commutes_with_all_stabilizers = np.all(operator.commutes_termwise(rotated_stabilizers), axis=1)
+        commutes_with_all_stabilizers = np.all(operator.commutes_termwise(self.rotated_stabilizers), axis=1)
         op_anticommuting_removed = operator.symp_matrix[commutes_with_all_stabilizers]
         cf_anticommuting_removed = operator.coeff_vec[commutes_with_all_stabilizers]
 
         # determine sign flipping from eigenvalue assignment
         # currently ill-defined for single-qubit Y stabilizers
-        eigval_assignment = op_anticommuting_removed[:,stab_q_indices]*rotated_stabilizers.coeff_vec
+        eigval_assignment = op_anticommuting_removed[:,stab_q_indices]*self.rotated_stabilizers.coeff_vec
         eigval_assignment[eigval_assignment==0]=1 # 0 entries are identity, so fix as 1 in product
         coeff_sign_flip = cf_anticommuting_removed*(np.prod(eigval_assignment, axis=1)).T
 
@@ -155,7 +93,8 @@ class S3_projection:
             
     def perform_projection(self,
             operator: PauliwordOp,
-            sym_sector: Union[List[int], np.array],
+            ref_state: Union[List[int], np.array]=None,
+            sector: Union[List[int], np.array]=None,
             insert_rotation:Tuple[str,float]=None
         ) -> PauliwordOp:
         """ Input a PauliwordOp and returns the reduced operator corresponding 
@@ -165,8 +104,14 @@ class S3_projection:
         to be performed prior to the stabilizer rotations, for example 
         unitary partitioning in CS-VQE
         """
-        stab_rotations = list(self.rotations)
-        angles = list(self.angles)
+        if sector is None and ref_state is not None:
+            #assert(ref_state is not None), 'If no sector is provided then a reference state must be given instead'
+            self.stabilizers.update_sector(ref_state)
+        elif sector is not None:
+            self.stabilizers.coeff_vec = np.array(sector, dtype=int)
+        self.rotated_stabilizers = self.stabilizers.rotate_onto_single_qubit_paulis()
+
+        stab_rotations, angles = self.stabilizers.stabilizer_rotations
         # ...and insert any supplementary ones coming from the child class
         if insert_rotation is not None:
             stab_rotations.insert(0, insert_rotation[0])
@@ -174,15 +119,16 @@ class S3_projection:
 
         # perform the full list of rotations on the input operator...
         if stab_rotations != []:
-            op_rotated = operator.recursive_rotate_by_Pword(pauli_rot_list=stab_rotations, angles=angles)
+            op_rotated = operator.recursive_rotate_by_Pword(
+                pauli_rot_list=stab_rotations, 
+                angles=angles
+            )
         else:
             op_rotated = operator
         
         self.rotated_flag = True
         # ...and finally perform the stabilizer subspace projection
-        op_project = self._perform_projection(operator=op_rotated, sym_sector=sym_sector)
-    
-        return op_project
+        return self._perform_projection(operator=op_rotated)
 
 class QubitTapering(S3_projection):
     """ Class for performing qubit tapering as per https://arxiv.org/abs/1701.08213.
@@ -220,17 +166,6 @@ class QubitTapering(S3_projection):
 
         return StabilizerOp(kernel, np.ones(kernel.shape[0]))
 
-    def identify_symmetry_sector(self, 
-            ref_state: Union[List[int], np.array]
-        ) -> np.array:
-        """ Given the specified reference state, e.g. Hartree-Fock |1...10...0>, 
-        determine the correspinding sector by measuring the symmetry generators
-
-        TODO: currently only supports single basis vector reference - should accept a linear combination
-        """
-        ref_state = np.array(ref_state)
-        return (-1)**np.count_nonzero(self.symmetry_generators.Z_block & ref_state, axis=1)
-
     def taper_it(self,
             ref_state: Union[List[int], np.array]=None,
             sector: Union[List[int], np.array]=None,
@@ -245,29 +180,27 @@ class QubitTapering(S3_projection):
         especially useful when considering an Ansatz defined over the full system that 
         one wishes to restrict to the same stabilizer subspace as the Hamiltonian for 
         use in VQE, for example.
-        """     
-        if sector is None:
-            assert(ref_state is not None), 'If no sector is provided then a reference state must be given instead'
-            sector = self.identify_symmetry_sector(ref_state)
-        
+        """
         if aux_operator is not None:
             operator_to_taper = aux_operator.copy()
         else:
             operator_to_taper = self.operator.copy()
 
-        return self.perform_projection(operator_to_taper, sector)
+        return self.perform_projection(
+            operator=operator_to_taper,
+            ref_state=ref_state,
+            sector=sector
+        )
 
     def taper_reference_state(self, 
             ref_state: Union[List[int], np.array],
-            sector: Union[List[int], np.array]=None, 
+            #sector: Union[List[int], np.array]=None, 
         ) -> np.array:
         """ taper the reference state by dropping any qubit positions
         projected during the perform_projection method
         """
-        if sector is None:
-            sector = self.identify_symmetry_sector(ref_state)
         # ensure the stabilizer subspace projection has been called
-        self.taper_it(sector=sector)
+        self.taper_it(ref_state=ref_state)
         # find the non-stabilized qubit positions by combining X+Z blocks and 
         # summing down columns to find the non-identity (stabilized) qubit positions
         non_identity = self.rotated_stabilizers.X_block + self.rotated_stabilizers.Z_block
@@ -382,7 +315,18 @@ class CS_VQE(S3_projection):
         self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
         self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
         self.clique_operator = self.noncontextual_basis[:self.n_cliques]
-        self.symmetry_generators = self.noncontextual_basis[self.n_cliques:]
+        symmetry_generators = self.noncontextual_basis[self.n_cliques:]
+        self.symmetry_generators = StabilizerOp(
+            symmetry_generators.symp_matrix,
+            symmetry_generators.coeff_vec
+        )
+        #heavy_ops = []
+        #for index, op1 in enumerate(self.symmetry_generators):
+        #    for op2 in self.symmetry_generators[index+1:]:
+        #        op1*=op2
+        #    heavy_ops.append(op1)
+        #self.symmetry_generators = reduce(lambda x,y: x+y,heavy_ops)
+
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
         self.solve_noncontextual(ref_state)
@@ -456,9 +400,9 @@ class CS_VQE(S3_projection):
         TODO allow any number of cliques and implement effective discrete optimizer (such as hypermapper)
         """
         if ref_state is not None:
-            fix_nu = np.prod((-1) ** (self.symmetry_generators.Z_block & ref_state), axis=1)
             # update the symmetry generator G coefficients
-            self.symmetry_generators.coeff_vec*=fix_nu
+            self.symmetry_generators.update_sector(ref_state=ref_state)
+            fix_nu = self.symmetry_generators.coeff_vec
             if self.n_cliques==2:
                 def convex_problem(theta):
                     r = np.array([np.cos(theta), np.sin(theta)])
@@ -468,7 +412,7 @@ class CS_VQE(S3_projection):
                 theta = opt_out['x']
                 r = np.array([np.cos(theta), np.sin(theta)])
                 # update the C(r) operator coefficients
-                self.clique_operator.coeff_vec*=r
+                self.clique_operator.coeff_vec = r
             else:
                 raise NotImplementedError('Currently only works for two cliques')
         else:
@@ -524,11 +468,11 @@ class CS_VQE(S3_projection):
                 [self.symmetry_generators[i] for i in stabilizer_indices])
             insert_rotation = None
 
+        fix_stabilizers = StabilizerOp(fix_stabilizers.symp_matrix, fix_stabilizers.coeff_vec)
         super().__init__(fix_stabilizers, target_sqp=self.target_sqp)
 
         return self.perform_projection(
-            operator_to_project, 
-            sector, 
+            operator=operator_to_project,
             insert_rotation=insert_rotation
         )
         
