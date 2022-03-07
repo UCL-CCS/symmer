@@ -4,7 +4,7 @@ from openfermion import QubitOperator
 from symred.utils import gf2_gaus_elim
 import numpy as np
 from copy import deepcopy
-from typing import List, Union, Dict
+from typing import List, Union, Dict, Tuple
 from scipy.sparse import csr_matrix
 import warnings
 warnings.simplefilter('always', UserWarning)
@@ -119,7 +119,7 @@ class PauliwordOp:
     """
     def __init__(self, 
             operator:   Union[List[str], Dict[str, float], np.array], 
-            coeff_list: Union[List[complex], np.array] = None
+            coeff_vec: Union[List[complex], np.array] = None
         ) -> None:
         """ 
         PauliwordOp may be initialized from either a dictionary in the form {pauli:coeff, ...}, 
@@ -137,15 +137,15 @@ class PauliwordOp:
             self.n_qubits = self.symp_matrix.shape[1]//2
         else:
             if isinstance(operator, dict):
-                operator, coeff_list = zip(*operator.items())
+                operator, coeff_vec = zip(*operator.items())
                 operator = list(operator)
             if isinstance(operator, list):
                 self._init_from_paulistring_list(operator)
             else:
                 raise ValueError(f'unkown operator type: must be dict or np.array: {type(operator)}')
         
-        assert(coeff_list is not None), 'A list of coefficients has not been supplied'
-        self.coeff_vec = np.asarray(coeff_list, dtype=complex)
+        assert(coeff_vec is not None), 'A list of coefficients has not been supplied'
+        self.coeff_vec = np.asarray(coeff_vec, dtype=complex)
         self.n_terms = self.symp_matrix.shape[0]
         assert(self.n_terms==len(self.coeff_vec)), 'coeff list and Pauliwords not same length'
         assert(set(np.unique(self.symp_matrix)).issubset({0,1})), 'symplectic array not defined with 0 and 1 only'
@@ -531,18 +531,20 @@ class StabilizerOp(PauliwordOp):
     by algebraically independent, with all coefficients set to one.
     """
     def __init__(self,
-                 operator:   Union[List[str], Dict[str, float], np.array],
-                 coeff_list: Union[List[complex], np.array] = None):
+            operator:   Union[List[str], Dict[str, float], np.array],
+            coeff_vec: Union[List[complex], np.array] = None,
+            target_sqp: str = 'X'):
         """
         """
-        super().__init__(operator, coeff_list)
+        super().__init__(operator, coeff_vec)
         self._check_stab()
         self._check_independent()
+        self.target_sqp = target_sqp
 
     def _check_stab(self):
-        """ Checks the stabilizer coefficients are +1
+        """ Checks the stabilizer coefficients are +/-1
         """
-        assert(np.all(self.coeff_vec==1)), 'Stabilizer coefficients not +1'
+        assert(set(self.coeff_vec).issubset({+1,-1})), 'Stabilizer coefficients not +1'
 
     def _check_independent(self):
         """ Check the supplied stabilizers are algebraically independent
@@ -552,3 +554,80 @@ class StabilizerOp(PauliwordOp):
             if np.all(row==0):
                 # there is a dependent row
                 raise ValueError('The supplied stabilizers are not independent')
+
+    @cached_property
+    def stabilizer_rotations(self) -> Tuple[List[str], List[Union[None,float]]]:
+        """ 
+        Implementation of procedure described in https://doi.org/10.22331/q-2021-05-14-456 (Lemma A.2)
+        
+        Returns 
+        - a dictionary of stabilizers with the rotations mapping each to a 
+          single Pauli in the formList[Tuple[rotation, angle, gen_rot]], 
+        
+        - a dictionary of qubit positions that we have rotated onto and 
+          the eigenvalues post-rotation
+        """
+        stabilizer_ref = self.copy()
+        rotations=[]
+        angles=[]
+
+        def append_rotation(base_pauli: np.array, index: int) -> str:
+            """ force the indexed qubit to a Pauli Y in the base Pauli
+            """
+            X_index = index % self.n_qubits # index in the X block
+            base_pauli[np.array([X_index, X_index+self.n_qubits])]=1
+            base_pauli = symplectic_to_string(base_pauli)
+            # None angle defaults to pi/2 for Clifford rotation
+            rotations.append(base_pauli)
+            angles.append(None)
+            # return the pauli rotation to update stabilizer_ref as we go
+            return base_pauli
+
+        # This part produces rotations onto single-qubit Paulis (sqp) - might be a combination of X and Z
+        # while loop active until each row of symplectic matrix contains a single non-zero element
+        while np.any(~(np.count_nonzero(stabilizer_ref.symp_matrix, axis=1)==1)):
+            unique_position = np.where(np.count_nonzero(stabilizer_ref.symp_matrix, axis=0)==1)[0]
+            reduced = stabilizer_ref.symp_matrix[:,unique_position]
+            unique_stabilizer = np.where(np.any(reduced, axis=1))
+            for row in stabilizer_ref.symp_matrix[unique_stabilizer]:
+                if np.count_nonzero(row) != 1:
+                    # find the free indices and pick one (there is some freedom over this)
+                    available_positions = np.intersect1d(unique_position, np.where(row))
+                    pauli_rotation = PauliwordOp([append_rotation(row.copy(), available_positions[0])], [1])
+                    # update the stabilizers by performing the rotation
+                    stabilizer_ref = stabilizer_ref._rotate_by_single_Pword(pauli_rotation)
+
+        # This part produces rotations onto the target sqp
+        for row in stabilizer_ref.symp_matrix:
+            sqp_index = np.where(row)[0]
+            if ((self.target_sqp == 'Z' and sqp_index< self.n_qubits) or 
+                (self.target_sqp == 'X' and sqp_index>=self.n_qubits)):
+                pauli_rotation = append_rotation(np.zeros(2*self.n_qubits, dtype=int), sqp_index)
+
+        return rotations, angles
+
+    def update_sector(self, 
+            ref_state: Union[List[int], np.array]
+        ) -> None:
+        """ Given the specified reference state, e.g. Hartree-Fock |1...10...0>, 
+        determine the corresponding sector by measuring the stabilizers
+
+        TODO: currently only measures in Z basis
+            only supports single basis vector reference - should accept a linear combination
+        """
+        ref_state = np.array(ref_state)
+        self.coeff_vec = (-1)**np.count_nonzero(self.Z_block & ref_state, axis=1)
+
+    def rotate_onto_single_qubit_paulis(self) -> PauliwordOp:
+        """
+        """
+        rotations, angles = self.stabilizer_rotations
+        if rotations != []:
+            rotated_stabilizers = self.recursive_rotate_by_Pword(rotations, angles)
+        else:
+            rotated_stabilizers = self
+        return StabilizerOp(
+            rotated_stabilizers.symp_matrix,
+            rotated_stabilizers.coeff_vec
+        )
+
