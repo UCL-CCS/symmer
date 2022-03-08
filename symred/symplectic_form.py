@@ -567,44 +567,50 @@ class StabilizerOp(PauliwordOp):
         - a dictionary of qubit positions that we have rotated onto and 
           the eigenvalues post-rotation
         """
-        stabilizer_ref = self.copy()
         rotations=[]
-        angles=[]
+        used_indices=[]
 
-        def append_rotation(base_pauli: np.array, index: int) -> str:
-            """ force the indexed qubit to a Pauli Y in the base Pauli
-            """
-            X_index = index % self.n_qubits # index in the X block
-            base_pauli[np.array([X_index, X_index+self.n_qubits])]=1
-            base_pauli = symplectic_to_string(base_pauli)
-            # None angle defaults to pi/2 for Clifford rotation
-            rotations.append(base_pauli)
-            angles.append(None)
-            # return the pauli rotation to update stabilizer_ref as we go
-            return base_pauli
+        def update_sets(base_vector, pivot_index):
+            pivot_index_X = pivot_index % self.n_qubits # index in the X block
+            base_vector[np.array([pivot_index_X, pivot_index_X+self.n_qubits])]=1
 
-        # This part produces rotations onto single-qubit Paulis (sqp) - might be a combination of X and Z
-        # while loop active until each row of symplectic matrix contains a single non-zero element
-        while np.any(~(np.count_nonzero(stabilizer_ref.symp_matrix, axis=1)==1)):
-            unique_position = np.where(np.count_nonzero(stabilizer_ref.symp_matrix, axis=0)==1)[0]
-            reduced = stabilizer_ref.symp_matrix[:,unique_position]
-            unique_stabilizer = np.where(np.any(reduced, axis=1))
-            for row in stabilizer_ref.symp_matrix[unique_stabilizer]:
-                if np.count_nonzero(row) != 1:
-                    # find the free indices and pick one (there is some freedom over this)
-                    available_positions = np.intersect1d(unique_position, np.where(row))
-                    pauli_rotation = PauliwordOp([append_rotation(row.copy(), available_positions[0])], [1])
-                    # update the stabilizers by performing the rotation
-                    stabilizer_ref = stabilizer_ref._rotate_by_single_Pword(pauli_rotation)
+            rotations.append(symplectic_to_string(base_vector))
+            used_indices.append(pivot_index_X)
+            used_indices.append(pivot_index_X + self.n_qubits)
+            
+            return PauliwordOp(base_vector, [1])
+
+        def _recursive_rotate_onto_sqp(basis: StabilizerOp):
+            if basis is None:
+                return None
+            else:
+                row_sum = np.einsum('ij->i',basis.symp_matrix)
+                col_sum = np.einsum('ij->j',basis.symp_matrix)
+                sort_rows_by_weight = np.argsort(row_sum)
+                pivot_row = basis.symp_matrix[sort_rows_by_weight][0]
+                non_I = np.setdiff1d(np.where(pivot_row)[0], np.array(used_indices))
+                support = pivot_row*col_sum
+                pivot_point = non_I[np.argmin(support[non_I])]
+                pivot_rotation = update_sets(pivot_row.copy(), pivot_point)
+                rotated_basis = basis._rotate_by_single_Pword(pivot_rotation)
+                non_sqp = np.where(np.einsum('ij->i', rotated_basis.symp_matrix)!=1)[0].tolist()
+                try:
+                    new_basis = reduce(lambda x,y:x+y, [rotated_basis[i] for i in non_sqp])
+                except:
+                    new_basis = None
+                return _recursive_rotate_onto_sqp(new_basis)
+
+        _recursive_rotate_onto_sqp(self.copy())
+        rotated_op = self.recursive_rotate_by_Pword(rotations)
 
         # This part produces rotations onto the target sqp
-        for row in stabilizer_ref.symp_matrix:
+        for row in rotated_op.symp_matrix:
             sqp_index = np.where(row)[0]
             if ((self.target_sqp == 'Z' and sqp_index< self.n_qubits) or 
                 (self.target_sqp == 'X' and sqp_index>=self.n_qubits)):
-                pauli_rotation = append_rotation(np.zeros(2*self.n_qubits, dtype=int), sqp_index)
+                update_sets(np.zeros(2*self.n_qubits, dtype=int), sqp_index)
 
-        return rotations, angles
+        return rotations, [None for i in range(len(rotations))]
 
     def update_sector(self, 
             ref_state: Union[List[int], np.array]
