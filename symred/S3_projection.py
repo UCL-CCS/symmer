@@ -1,6 +1,7 @@
-from functools import cached_property, reduce
+from functools import reduce
+from cached_property import cached_property
 from shutil import ExecError
-from weakref import ref
+# from weakref import ref
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
 from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, greedy_dfs, to_indep_set
 from scipy.optimize import minimize_scalar
