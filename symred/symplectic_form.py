@@ -39,6 +39,7 @@ def symplectic_to_string(symp_vec) -> str:
 
     return Pword_string
 
+
 def string_to_symplectic(pauli_str, n_qubits):
     """
     """
@@ -57,6 +58,7 @@ def string_to_symplectic(pauli_str, n_qubits):
     symp_vec[n_qubits:] += Y_loc
 
     return symp_vec
+
 
 def count1_in_int_bitstring(i):
     """
