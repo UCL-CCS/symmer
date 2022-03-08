@@ -1,7 +1,8 @@
 from functools import cached_property, reduce
 from shutil import ExecError
+from weakref import ref
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
+from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, greedy_dfs, to_indep_set
 from scipy.optimize import minimize_scalar
 from typing import Dict, List, Tuple, Union
 import numpy as np
@@ -208,92 +209,6 @@ class QubitTapering(S3_projection):
         
         return ref_state[free_qubit_positions]
 
-#########################################################################
-#### For now uses the legacy code for identifying noncontextual sets ####
-###################### TODO graph techniques! ###########################
-#########################################################################
-
-from datetime import datetime
-from datetime import timedelta
-
-# Takes two Pauli operators specified as strings (e.g., 'XIZYZ') and determines whether they commute:
-def commute(x,y):
-    assert len(x)==len(y), print(x,y)
-    s = 1
-    for i in range(len(x)):
-        if x[i]!='I' and y[i]!='I' and x[i]!=y[i]:
-            s = s*(-1)
-    if s==1:
-        return 1
-    else:
-        return 0
-
-# Input: S, a list of Pauli operators specified as strings.
-# Output: a boolean indicating whether S is contextual or not.
-def contextualQ(S,verbose=False):
-    # Store T all elements of S that anticommute with at least one other element in S (takes O(|S|**2) time).
-    T=[]
-    Z=[] # complement of T
-    for i in range(len(S)):
-        if any(not commute(S[i],S[j]) for j in range(len(S))):
-            T.append(S[i])
-        else:
-            Z.append(S[i])
-    # Search in T for triples in which exactly one pair anticommutes; if any exist, S is contextual.
-    for i in range(len(T)): # WLOG, i indexes the operator that commutes with both others.
-        for j in range(len(T)):
-            for k in range(j,len(T)): # Ordering of j, k does not matter.
-                if i!=j and i!=k and commute(T[i],T[j]) and commute(T[i],T[k]) and not commute(T[j],T[k]):
-                    if verbose:
-                        return [True,None,None]
-                    else:
-                        return True
-    if verbose:
-        return [False,Z,T]
-    else:
-        return False
-
-def greedy_dfs(ham,cutoff,criterion='weight'):
-    
-    weight = {k:abs(ham[k]) for k in ham.keys()}
-    possibilities = [k for k, v in sorted(weight.items(), key=lambda item: -item[1])] # sort in decreasing order of weight
-    
-    best_guesses = [[]]
-    stack = [[[],0]]
-    start_time = datetime.now()
-    delta = timedelta(seconds=cutoff)
-    
-    i = 0
-    
-    while datetime.now()-start_time < delta and stack:
-        
-        while i < len(possibilities):
-#             print(i)
-            next_set = stack[-1][0]+[possibilities[i]]
-#             print(next_set)
-#             iscontextual = contextualQ(next_set)
-#             print('  ',iscontextual,'\n')
-            if not contextualQ(next_set):
-                stack.append([next_set,i+1])
-            i += 1
-        
-        if criterion == 'weight':
-            new_weight = sum([abs(ham[p]) for p in stack[-1][0]])
-            old_weight = sum([abs(ham[p]) for p in best_guesses[-1]])
-            if new_weight > old_weight:
-                best_guesses.append(stack[-1][0])
-                # print(len(stack[-1][0]))
-                # print(stack[-1][0],'\n')
-            
-        if criterion == 'size' and len(stack[-1][0]) > len(best_guesses[-1]):
-            best_guesses.append(stack[-1][0])
-            # print(len(stack[-1][0]))
-            # print(stack[-1][0],'\n')
-            
-        top = stack.pop()
-        i = top[1]
-    
-    return best_guesses
 
 class CS_VQE(S3_projection):
     """
@@ -311,7 +226,7 @@ class CS_VQE(S3_projection):
         self.contextual_operator = (operator-self.noncontextual_operator).cleanup_zeros()
         # decompose the noncontextual set into a dictionary of its 
         # universally commuting elements and anticommuting cliques
-        self.decompose_noncontextual
+        self.decompose_noncontextual()
         self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
         self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
         self.clique_operator = self.noncontextual_basis[:self.n_cliques]
@@ -320,12 +235,6 @@ class CS_VQE(S3_projection):
             symmetry_generators.symp_matrix,
             symmetry_generators.coeff_vec
         )
-        #heavy_ops = []
-        #for index, op1 in enumerate(self.symmetry_generators):
-        #    for op2 in self.symmetry_generators[index+1:]:
-        #        op1*=op2
-        #    heavy_ops.append(op1)
-        #self.symmetry_generators = reduce(lambda x,y: x+y,heavy_ops)
 
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
@@ -352,8 +261,8 @@ class CS_VQE(S3_projection):
                              self.noncontextual_operator.X_block[mask_universal]])
         reduced = gf2_gaus_elim(ZX_symp)
         kernel  = gf2_basis_for_gf2_rref(reduced)
-
         basis = StabilizerOp(kernel, np.ones(kernel.shape[0]))
+
         # order the basis so clique representatives appear at the beginning
         basis_order = np.lexsort(basis.adjacency_matrix)
         basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
@@ -361,7 +270,7 @@ class CS_VQE(S3_projection):
 
         return basis
 
-    @cached_property
+    #@cached_property
     def decompose_noncontextual(self):
         """
         """
@@ -383,6 +292,15 @@ class CS_VQE(S3_projection):
             decomposed[f'clique_{i}'] = PauliwordOp(Ci_symp, Ci_coef)
 
         return decomposed
+
+    def update_basis(self, basis):
+        """ for testing purposes
+        """
+        basis_order = np.lexsort(basis.adjacency_matrix)
+        basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
+        self.noncontextual_basis = basis
+        self.__init__(self.operator, self.ref_state)
+
 
     def noncontextual_objective_function(self, 
             nu: np.array, 
@@ -458,7 +376,7 @@ class CS_VQE(S3_projection):
             UP_rot, UP_angle = self.unitary_partitioning
             rotated_clique_op = self.clique_operator._rotate_by_single_Pword(
                 UP_rot, UP_angle
-                ).cleanup_zeros()
+                ).cleanup_zeros(zero_threshold=1e-5)
             fix_stabilizers = reduce(lambda x,y: x+y,
                 [rotated_clique_op]+[self.symmetry_generators[i] for i in stabilizer_indices])
             insert_rotation = [list(UP_rot.to_dictionary.keys())[0], UP_angle]
@@ -468,7 +386,11 @@ class CS_VQE(S3_projection):
                 [self.symmetry_generators[i] for i in stabilizer_indices])
             insert_rotation = None
 
-        fix_stabilizers = StabilizerOp(fix_stabilizers.symp_matrix, fix_stabilizers.coeff_vec)
+        fix_stabilizers = StabilizerOp(
+            fix_stabilizers.symp_matrix, 
+            np.array(fix_stabilizers.coeff_vec, dtype=int),
+            target_sqp=self.target_sqp
+        )
         super().__init__(fix_stabilizers, target_sqp=self.target_sqp)
 
         return self.perform_projection(
@@ -476,4 +398,49 @@ class CS_VQE(S3_projection):
             insert_rotation=insert_rotation
         )
         
+class CheatS_VQE(S3_projection):
+    """
+    """
+    def __init__(self, 
+            operator: PauliwordOp,
+            ref_state: np.array,
+            target_sqp: str = 'Z'):
+        self.operator = operator
+        self.ref_state = ref_state
+        self.target_sqp = target_sqp        
+
+    def project_onto_subspace(self, basis: StabilizerOp):
+        """
+        """
+        basis = StabilizerOp(
+            basis.symp_matrix, 
+            np.ones(basis.n_terms, dtype=int), 
+            target_sqp=self.target_sqp
+        )
+        basis.update_sector(ref_state=self.ref_state)
+        super().__init__(basis, target_sqp=self.target_sqp)
+        
+        return self.perform_projection(
+            operator=self.operator.copy()
+        )
+
+    def weighted_objective(self, 
+            basis: StabilizerOp, 
+            aux_operator: PauliwordOp = None
+        ) -> float:
+        """
+        """
+        if aux_operator is not None:
+            weighted_op = aux_operator
+        else:
+            weighted_op = self.operator
+        return np.sqrt(
+            np.sum(
+                np.square(
+                    weighted_op.coeff_vec[np.all(weighted_op.commutes_termwise(basis), axis=1)]
+                        )
+                    )
+                )
+
+
 
