@@ -274,13 +274,13 @@ class PauliwordOp:
 
         return PauliwordOp(reduced_symplectic_matrix, reduced_coeff_vec)
 
-    def cleanup_zeros(self):
+    def cleanup_zeros(self, zero_threshold=1e-15):
         """ 
         Delete terms with zero coefficient - this is not included in the cleanup method
         as one may wish to allow zero coefficients (e.g. as an Ansatz parameter angle)
         """
         clean_operator = self.cleanup()
-        mask_nonzero = np.where(abs(clean_operator.coeff_vec)>1e-15)
+        mask_nonzero = np.where(abs(clean_operator.coeff_vec)>zero_threshold)
         return PauliwordOp(clean_operator.symp_matrix[mask_nonzero], 
                             clean_operator.coeff_vec[mask_nonzero])
 
@@ -544,7 +544,7 @@ class StabilizerOp(PauliwordOp):
     def _check_stab(self):
         """ Checks the stabilizer coefficients are +/-1
         """
-        assert(set(self.coeff_vec).issubset({+1,-1})), 'Stabilizer coefficients not +1'
+        assert(set(self.coeff_vec).issubset({+1,-1})), 'Stabilizer coefficients not +/-1'
 
     def _check_independent(self):
         """ Check the supplied stabilizers are algebraically independent
@@ -618,8 +618,8 @@ class StabilizerOp(PauliwordOp):
         ref_state = np.array(ref_state)
         self.coeff_vec = (-1)**np.count_nonzero(self.Z_block & ref_state, axis=1)
 
-    def rotate_onto_single_qubit_paulis(self) -> PauliwordOp:
-        """
+    def rotate_onto_single_qubit_paulis(self) -> "StabilizerOp":
+        """ Returns the rotated single-qubit Pauli stabilizers
         """
         rotations, angles = self.stabilizer_rotations
         if rotations != []:
