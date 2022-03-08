@@ -1,0 +1,155 @@
+import numpy as np
+from copy import deepcopy
+from typing import Dict, List
+import openfermion as of
+from openfermion import get_fermion_operator, jordan_wigner, FermionOperator
+from openfermionpyscf import PyscfMolecularData
+from itertools import combinations
+from symred.S3_projection import QubitTapering, CS_VQE
+from symred.symplectic_form import PauliwordOp, StabilizerOp
+from symred.utils import greedy_dfs
+
+# comment out due to incompatible versions of Cirq and OpenFermion in Orquestra
+def QubitOperator_to_dict(op, num_qubits):
+    assert(type(op) == of.QubitOperator)
+    op_dict = {}
+    term_dict = op.terms
+    terms = list(term_dict.keys())
+
+    for t in terms:    
+        letters = ['I' for i in range(num_qubits)]
+        for i in t:
+            letters[i[0]] = i[1]
+        p_string = ''.join(letters)        
+        op_dict[p_string] = term_dict[t]
+         
+    return op_dict
+
+class build_molecule_for_projection(CS_VQE):
+    """ Class for assessing various generator removal ordering heuristics
+    """
+    def __init__(self,
+                calculated_molecule: PyscfMolecularData)-> None:
+        """
+        """
+        dashes = "------------------------------------------------"
+        # Orbital nums and HF state
+        self.n_electrons  = calculated_molecule.n_electrons
+        self.n_qubits     = 2*calculated_molecule.n_orbitals
+        self.hf_state = np.concatenate([
+            np.ones(self.n_electrons, dtype=int),
+            np.zeros(self.n_qubits-self.n_electrons, dtype=int)
+            ]
+        )
+        hf_string   = ''.join([str(i) for i in list(self.hf_state)])
+        print(dashes)
+        print('Information concerning the full system:')
+        print(dashes)
+        print(f'Number of qubits in full problem: {self.n_qubits}')
+        print(f'The Hartree-Fock state is |{hf_string}>')
+        
+        # reference energies
+        self.hf_energy  = calculated_molecule.hf_energy
+        self.mp_energy  = calculated_molecule.mp2_energy
+        self.cisd_energy= calculated_molecule.cisd_energy
+        self.ccsd_energy= calculated_molecule.ccsd_energy
+        self.fci_energy = calculated_molecule.fci_energy
+        print(f'HF   energy = {self.hf_energy: .8f}') #Hartree-Fock
+        print(f'MP2  energy = {self.mp_energy: .8f}') #Møller–Plesset
+        print(f'CISD energy = {self.cisd_energy: .8f}')
+        print(f'CCSD energy = {self.ccsd_energy: .8f}')
+        if self.fci_energy is not None:
+            print(f'FCI energy  = {self.fci_energy:.8f}')
+        print(dashes)
+        
+        # Hamiltonian
+        ham_ferm_data = calculated_molecule.get_molecular_hamiltonian()
+        self.ham_fermionic = get_fermion_operator(ham_ferm_data)
+        ham_jw = jordan_wigner(self.ham_fermionic)
+        self.ham_dict = QubitOperator_to_dict(ham_jw, self.n_qubits)
+        self.ham = PauliwordOp(self.ham_dict)
+        self.ham_sor = PauliwordOp({op:coeff for op, coeff in self.second_order_response().items() if op in self.ham_dict})
+        self.ham_sor.coeff_vec/=np.max(self.ham_sor.coeff_vec)
+
+        # taper Hamiltonian
+        taper_hamiltonian = QubitTapering(self.ham)
+        self.ham_tap = taper_hamiltonian.taper_it(ref_state=self.hf_state)
+        self.sor_tap = taper_hamiltonian.taper_it(aux_operator=self.ham_sor, ref_state=self.hf_state)
+        self.n_taper = taper_hamiltonian.n_taper
+        self.hf_tapered = taper_hamiltonian.taper_reference_state(self.hf_state)
+        hf_tap_str = ''.join([str(i) for i in self.hf_tapered])
+        self.HL_index = list(self.hf_tapered).index(0) #index HOMO-LUMO gap
+        print("Tapering information:")
+        print(dashes)
+        print(f'We are able to taper {self.n_taper} qubits from the Hamiltonian')
+        print('The symmetry sector is:') 
+        print(taper_hamiltonian.symmetry_generators)
+        print(f'The tapered Hartree-Fock state is |{hf_tap_str}>')
+        print(dashes)
+
+        # build CS-VQE model
+        super().__init__(operator=self.ham_tap,
+                        ref_state=self.hf_tapered,
+                        target_sqp='Z')
+
+        print("CS-VQE information:")
+        print(dashes)
+        print("Noncontextual GS energy:", self.noncontextual_energy)#, ' // matches original?', match_original)
+        print("Symmetry generators:    ") 
+        print(self.symmetry_generators)
+        print("Clique representatives: ")
+        print(self.clique_operator)
+        print(dashes)
+
+    def update_basis(self, basis):
+        """ for testing purposes
+        """
+        basis_order = np.lexsort(basis.adjacency_matrix)
+        basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
+        self.noncontextual_basis = basis
+        super().__init__(operator=self.ham_tap, ref_state=self.hf_tapered)
+    
+    def sor_data(self):
+        """ Calculate the w(i) function 
+        as in https://arxiv.org/pdf/1406.4920.pdf
+        """
+        w = {i:0 for i in range(self.n_qubits)}
+        for f_op,coeff in self.ham_fermionic.terms.items():
+            if len(f_op)==2:
+                (p,p_ex),(q,q_ex) = f_op
+                # self-interaction terms p==q
+                if p==q:
+                    w[p] += coeff
+            if len(f_op)==4:
+                (p,p_ex),(q,q_ex),(r,r_ex),(s,s_ex) = f_op
+                #want p==r and q==s for hopping
+                if p==r:
+                    if q==s and self.hf_state[q]==1:
+                        w[p]+=coeff
+        return w
+
+
+    def second_order_response(self):
+        """ Calculate the I_a Hamiltonian term importance metric 
+        as in https://arxiv.org/pdf/1406.4920.pdf
+        """
+        w = self.sor_data()
+        f_out = FermionOperator()
+        for H_a,coeff in self.ham_fermionic.terms.items():
+            if len(H_a)==4:
+                (p,p_ex),(q,q_ex),(r,r_ex),(s,s_ex) = H_a
+                Delta_pqrs = abs(w[p]+w[q]-w[r]-w[s])
+                if Delta_pqrs == 0:
+                    I_a = 1e15
+                else:
+                    I_a = (abs(coeff)**2)/Delta_pqrs
+                
+                f_out += FermionOperator(H_a, I_a)
+        f_out_jw = jordan_wigner(f_out)
+        f_out_q = QubitOperator_to_dict(f_out_jw, self.n_qubits)
+        return f_out_q
+            
+
+    ###############################################
+    # heuristics with HOMO-LUMO as starting point #
+    ###############################################

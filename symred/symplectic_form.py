@@ -175,7 +175,7 @@ class PauliwordOp:
         out_string = ''
         for pauli_vec, ceoff in zip(self.symp_matrix, self.coeff_vec):
             p_string = symplectic_to_string(pauli_vec)
-            out_string += (f'{ceoff} {p_string} +\n')
+            out_string += (f'{ceoff: .8f} {p_string} +\n')
         return out_string[:-3]
 
     def copy(self) -> "PauliwordOp":

@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 
 def gf2_gaus_elim(gf2_matrix: np.array) -> np.array:
     """
@@ -88,6 +89,32 @@ def gf2_basis_for_gf2_rref(gf2_matrix_in_rreform: np.array) -> np.array:
     basis = rrf[zero_rrf, gf2_matrix_in_rreform.shape[0]:]
 
     return basis
+
+def get_ground_state(sparse_operator, initial_guess=None):
+    """Compute lowest eigenvalue and eigenstate.
+    Args:
+        sparse_operator (LinearOperator): Operator to find the ground state of.
+        initial_guess (ndarray): Initial guess for ground state.  A good
+            guess dramatically reduces the cost required to converge.
+    Returns
+    -------
+        eigenvalue:
+            The lowest eigenvalue, a float.
+        eigenstate:
+            The lowest eigenstate in scipy.sparse csc format.
+    """
+    values, vectors = sp.sparse.linalg.eigsh(sparse_operator,
+                                                k=1,
+                                                v0=initial_guess,
+                                                which='SA',
+                                                maxiter=1e7)
+
+    order = np.argsort(values)
+    values = values[order]
+    vectors = vectors[:, order]
+    eigenvalue = values[0]
+    eigenstate = vectors[:, 0]
+    return eigenvalue, eigenstate.T
 
 #########################################################################
 #### For now uses the legacy code for identifying noncontextual sets ####
