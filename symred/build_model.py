@@ -82,7 +82,8 @@ class build_molecule_for_projection(CS_VQE):
         print("Tapering information:")
         print(dashes)
         print(f'We are able to taper {self.n_taper} qubits from the Hamiltonian')
-        print(f'The symmetry sector is {taper_hamiltonian.symmetry_sec}')
+        print('The symmetry sector is:') 
+        print(taper_hamiltonian.symmetry_generators)
         print(f'The tapered Hartree-Fock state is |{hf_tap_str}>')
         print(dashes)
 
@@ -91,15 +92,22 @@ class build_molecule_for_projection(CS_VQE):
                         ref_state=self.hf_tapered,
                         target_sqp='Z')
 
-
         print("CS-VQE information:")
         print(dashes)
         print("Noncontextual GS energy:", self.noncontextual_energy)#, ' // matches original?', match_original)
-        print("Symmetry generators:    ", self.symmetry_generators)
-        if self.cliquereps != []:
-            print("Clique representatives: ", self.clique_operator)
+        print("Symmetry generators:    ") 
+        print(self.symmetry_generators)
+        print("Clique representatives: ")
+        print(self.clique_operator)
         print(dashes)
 
+    def update_basis(self, basis):
+        """ for testing purposes
+        """
+        basis_order = np.lexsort(basis.adjacency_matrix)
+        basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
+        self.noncontextual_basis = basis
+        super().__init__(operator=self.ham_tap, ref_state=self.hf_tapered)
     
     def sor_data(self):
         """ Calculate the w(i) function 

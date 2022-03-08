@@ -235,7 +235,6 @@ class CS_VQE(S3_projection):
             symmetry_generators.symp_matrix,
             symmetry_generators.coeff_vec
         )
-
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
         self.solve_noncontextual(ref_state)
@@ -292,15 +291,6 @@ class CS_VQE(S3_projection):
             decomposed[f'clique_{i}'] = PauliwordOp(Ci_symp, Ci_coef)
 
         return decomposed
-
-    def update_basis(self, basis):
-        """ for testing purposes
-        """
-        basis_order = np.lexsort(basis.adjacency_matrix)
-        basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
-        self.noncontextual_basis = basis
-        self.__init__(self.operator, self.ref_state)
-
 
     def noncontextual_objective_function(self, 
             nu: np.array, 
