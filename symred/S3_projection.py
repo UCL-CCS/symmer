@@ -1,3 +1,4 @@
+from copy import deepcopy
 from functools import cached_property, reduce
 from shutil import ExecError
 from weakref import ref
@@ -13,9 +14,6 @@ class S3_projection:
     and Contextual-Subspace VQE. The methods defined herein serve the 
     following purposes:
 
-    - stabilizer_rotations
-        This method determines a sequence of Clifford rotations mapping the
-        provided stabilizers onto single-qubit Paulis (sqp), either X or Z
     - _perform_projection
         Assuming the input operator has been rotated via the Clifford operations 
         found in the above stabilizer_rotations method, this will effect the 
@@ -59,15 +57,7 @@ class S3_projection:
         if not self.rotated_flag:
             raise ExecError('The operator has not been rotated - intended for use with perform_projection method')
         self.rotated_flag = False
-
-        # overwrite the coefficient vector to the assigned eigenvalues defined by the symmetry sector
-        #rotated_stabilizers = self.rotated_stabilizers.copy()
-        #rotated_stabilizers.coeff_vec#*=np.array(sym_sector, dtype=int)
-        #stab_positions = np.einsum("ij->j",self.rotated_stabilizers.symp_matrix)
-        #stab_q_indices = np.where(stab_positions)[0]
-        #assert(len(stab_q_indices)== rotated_stabilizers.n_terms), 'unique indices and stabilizers do not match'
-        stab_q_indices = np.where(self.rotated_stabilizers.symp_matrix)[1]
-
+        
         # remove terms that do not commute with the rotated stabilizers
         commutes_with_all_stabilizers = np.all(operator.commutes_termwise(self.rotated_stabilizers), axis=1)
         op_anticommuting_removed = operator.symp_matrix[commutes_with_all_stabilizers]
@@ -75,6 +65,7 @@ class S3_projection:
 
         # determine sign flipping from eigenvalue assignment
         # currently ill-defined for single-qubit Y stabilizers
+        stab_q_indices = np.where(self.rotated_stabilizers.symp_matrix)[1]
         eigval_assignment = op_anticommuting_removed[:,stab_q_indices]*self.rotated_stabilizers.coeff_vec
         eigval_assignment[eigval_assignment==0]=1 # 0 entries are identity, so fix as 1 in product
         coeff_sign_flip = cf_anticommuting_removed*(np.prod(eigval_assignment, axis=1)).T
@@ -245,9 +236,9 @@ class CS_VQE(S3_projection):
         """ Extract a noncontextual set of Pauli terms from the operator
         TODO graph-based approach, currently uses legacy implementation
         """
-        #op_dict = self.operator.to_dictionary
-        #noncontextual_set = greedy_dfs(op_dict, cutoff=1)[-1]
-        #return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
+        op_dict = self.operator.to_dictionary
+        noncontextual_set = greedy_dfs(op_dict, cutoff=10)[-1]
+        return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
         
         diagonal_mask = np.where(np.all(self.operator.X_block==0, axis=1))
         off_diag_mask = np.setdiff1d(np.arange(self.operator.coeff_vec.shape[0]), diagonal_mask)
@@ -368,35 +359,39 @@ class CS_VQE(S3_projection):
         """ input a list indexing the stabilizers one wishes to enforce
         index 0 always corresponds to the clique operator C(r)
         """
-        # this is set in fix_stabilizers for now
-        sector = np.ones(len(stabilizer_indices), dtype=int)
-
         if aux_operator is not None:
             operator_to_project = aux_operator.copy()
         else:
             operator_to_project = self.operator.copy()
 
-        if 0 in stabilizer_indices:
-            stabilizer_indices.pop(stabilizer_indices.index(0))
-            stabilizer_indices = [i-1 for i in stabilizer_indices]
+        # from the supplied indices determine the corresponding stabilizers to enforce
+        stab_indices = deepcopy(stabilizer_indices)
+        if 0 in stab_indices:
+            # in this case apply the unitary partitioning rotations
+            stab_indices.pop(stab_indices.index(0))
+            stab_indices = [i-1 for i in stab_indices]
             UP_rot, UP_angle = self.unitary_partitioning
             rotated_clique_op = self.clique_operator._rotate_by_single_Pword(
                 UP_rot, UP_angle
                 ).cleanup_zeros(zero_threshold=1e-5)
+            rotated_clique_op.coeff_vec=np.round(rotated_clique_op.coeff_vec)
             fix_stabilizers = reduce(lambda x,y: x+y,
-                [rotated_clique_op]+[self.symmetry_generators[i] for i in stabilizer_indices])
+                [rotated_clique_op]+[self.symmetry_generators[i] for i in stab_indices])
             insert_rotation = [list(UP_rot.to_dictionary.keys())[0], UP_angle]
         else:
-            stabilizer_indices = [i-1 for i in stabilizer_indices]
+            stab_indices = [i-1 for i in stab_indices]
             fix_stabilizers = reduce(lambda x,y: x+y,
-                [self.symmetry_generators[i] for i in stabilizer_indices])
+                [self.symmetry_generators[i] for i in stab_indices])
             insert_rotation = None
 
+        # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
         fix_stabilizers = StabilizerOp(
             fix_stabilizers.symp_matrix, 
             np.array(fix_stabilizers.coeff_vec, dtype=int),
             target_sqp=self.target_sqp
         )
+
+        # instantiate the parent S3_projection classwith the stabilizers we are enforcing
         super().__init__(fix_stabilizers, target_sqp=self.target_sqp)
 
         return self.perform_projection(
@@ -405,7 +400,12 @@ class CS_VQE(S3_projection):
         )
         
 class CheatS_VQE(S3_projection):
-    """
+    """ A lightweight CS-VQE implementation in which we choose an arbitrary
+    Pauli Z-basis and project in accordance with it. Can be interpretted as
+    CS-VQE with the noncontextual set taken as the diagonal Hamiltonian terms.
+
+    Second-order-response-corrected VQE... identify the independent Z-basis
+    that maxises the SOR objective function
     """
     def __init__(self, 
             operator: PauliwordOp,
@@ -416,7 +416,7 @@ class CheatS_VQE(S3_projection):
         self.target_sqp = target_sqp        
 
     def project_onto_subspace(self, basis: StabilizerOp):
-        """
+        """ Project the operator in accordance with the supplied basis
         """
         basis = StabilizerOp(
             basis.symp_matrix, 
@@ -434,7 +434,8 @@ class CheatS_VQE(S3_projection):
             basis: StabilizerOp, 
             aux_operator: PauliwordOp = None
         ) -> float:
-        """
+        """ Evaluate the score of the input basis according to some operator
+        e.g. specify the aux_operator as the SOR Hamiltonian
         """
         if aux_operator is not None:
             weighted_op = aux_operator
