@@ -184,6 +184,13 @@ class PauliwordOp:
         """
         return deepcopy(self)
 
+    def sort(self) -> "PauliwordOp":
+        """
+        Sort the terms by coefficient magnitude
+        """
+        sort_order = np.argsort(-abs(self.coeff_vec))
+        return PauliwordOp(self.symp_matrix[sort_order], self.coeff_vec[sort_order])
+
     def basis_reconstruction(self, 
             operator_basis: "PauliwordOp"
         ) -> np.array:
@@ -529,6 +536,10 @@ class PauliwordOp:
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
     by algebraically independent, with all coefficients set to one.
+
+    - stabilizer_rotations
+        This method determines a sequence of Clifford rotations mapping the
+        provided stabilizers onto single-qubit Paulis (sqp), either X or Z
     """
     def __init__(self,
             operator:   Union[List[str], Dict[str, float], np.array],
@@ -568,9 +579,14 @@ class StabilizerOp(PauliwordOp):
           the eigenvalues post-rotation
         """
         rotations=[]
-        used_indices=[]
-
+        
         def update_sets(base_vector, pivot_index):
+            """ 
+            - ammend the X_, Z_block positions at pivot_index to 1
+                (corresponds with fixing the pivot_index qubit to Pauli Y)
+            - append the rotation to the rotations list
+            - update used_indices with the fixed qubit position.
+            """
             pivot_index_X = pivot_index % self.n_qubits # index in the X block
             base_vector[np.array([pivot_index_X, pivot_index_X+self.n_qubits])]=1
 
@@ -581,6 +597,10 @@ class StabilizerOp(PauliwordOp):
             return PauliwordOp(base_vector, [1])
 
         def _recursive_rotate_onto_sqp(basis: StabilizerOp):
+            """ recursively generates Clifford operations mapping the input basis 
+            onto single-qubit Pauli operators. Works in order of increasing term
+            weight (i.e. the number of non-identity positions)
+            """
             if basis is None:
                 return None
             else:
@@ -600,8 +620,20 @@ class StabilizerOp(PauliwordOp):
                     new_basis = None
                 return _recursive_rotate_onto_sqp(new_basis)
 
-        _recursive_rotate_onto_sqp(self.copy())
-        rotated_op = self.recursive_rotate_by_Pword(rotations)
+        # identify any basis elements that already single-qubit Paulis 
+        row_sum = np.einsum('ij->i',self.symp_matrix)
+        sqp_indices = np.where(self.symp_matrix[np.where(row_sum==1)])[1]
+        sqp_X_block = sqp_indices % self.n_qubits
+        used_indices = list(np.concatenate([sqp_X_block, sqp_X_block+self.n_qubits]))
+        # find rotations for the non-single-qubit Pauli terms
+        non_sqp_basis = StabilizerOp(self.symp_matrix[np.where(row_sum!=1)],
+                                    self.coeff_vec[np.where(row_sum!=1)])
+        if non_sqp_basis.n_terms != 0:
+            # i.e. the operator does not already consist of single-qubit Paulis
+            _recursive_rotate_onto_sqp(non_sqp_basis)
+            rotated_op = self.recursive_rotate_by_Pword(rotations)
+        else:
+            rotated_op = self
 
         # This part produces rotations onto the target sqp
         for row in rotated_op.symp_matrix:
