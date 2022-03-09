@@ -230,6 +230,7 @@ class CS_VQE(S3_projection):
         self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
         self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
         self.clique_operator = self.noncontextual_basis[:self.n_cliques]
+
         symmetry_generators = self.noncontextual_basis[self.n_cliques:]
         self.symmetry_generators = StabilizerOp(
             symmetry_generators.symp_matrix,
@@ -244,24 +245,39 @@ class CS_VQE(S3_projection):
         """ Extract a noncontextual set of Pauli terms from the operator
         TODO graph-based approach, currently uses legacy implementation
         """
-        op_dict = self.operator.to_dictionary
-        noncontextual_set = greedy_dfs(op_dict, cutoff=1)[-1]
-        return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
+        #op_dict = self.operator.to_dictionary
+        #noncontextual_set = greedy_dfs(op_dict, cutoff=1)[-1]
+        #return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
+        
+        diagonal_mask = np.where(np.all(self.operator.X_block==0, axis=1))
+        off_diag_mask = np.setdiff1d(np.arange(self.operator.coeff_vec.shape[0]), diagonal_mask)
+        largest_off_diag_index = off_diag_mask[np.argmax(abs(self.operator.coeff_vec[off_diag_mask]))]
+        mask = np.append(diagonal_mask, largest_off_diag_index)
+        return PauliwordOp(self.operator.symp_matrix[mask], self.operator.coeff_vec[mask])        
+       
 
     @cached_property
     def noncontextual_basis(self) -> StabilizerOp:
         """ Find an independent basis for the noncontextual symmetry
         """
-        # mask universally commuting terms
-        adj_mat = self.noncontextual_operator.adjacency_matrix
-        mask_universal = np.where(np.all(adj_mat, axis=1))
+        # construct universally commuting basis first
         # swap order of XZ blocks in symplectic matrix to ZX
-        ZX_symp = np.hstack([self.noncontextual_operator.Z_block[mask_universal], 
-                             self.noncontextual_operator.X_block[mask_universal]])
+        ZX_symp = np.hstack([self.noncontextual_operator.Z_block, 
+                             self.noncontextual_operator.X_block])
         reduced = gf2_gaus_elim(ZX_symp)
         kernel  = gf2_basis_for_gf2_rref(reduced)
-        basis = StabilizerOp(kernel, np.ones(kernel.shape[0]))
-
+        universal_basis = StabilizerOp(kernel, np.ones(kernel.shape[0]))
+        clique_rep_indices = np.where(
+            np.all(
+                self.noncontextual_operator.basis_reconstruction(universal_basis)==0, 
+                axis=1
+                )
+            )[0][1:]
+        clique_operator = reduce(
+            lambda x,y:x+y, 
+            [self.noncontextual_operator[int(i)] for i in clique_rep_indices]
+            )
+        basis = universal_basis + clique_operator
         # order the basis so clique representatives appear at the beginning
         basis_order = np.lexsort(basis.adjacency_matrix)
         basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
