@@ -172,10 +172,16 @@ class PauliwordOp:
         Returns:
             out_string (str): human-readable PauliwordOp string
         """
+        # only display single significant figure if StabilizerOp object
+        if isinstance(self, StabilizerOp):
+            sigfig = '.0f'
+        else:
+            sigfig = '.10f'
+
         out_string = ''
-        for pauli_vec, ceoff in zip(self.symp_matrix, self.coeff_vec):
+        for pauli_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
             p_string = symplectic_to_string(pauli_vec)
-            out_string += (f'{ceoff: .8f} {p_string} +\n')
+            out_string += (f'{format(coeff, sigfig)} {p_string} +\n')
         return out_string[:-3]
 
     def copy(self) -> "PauliwordOp":
@@ -550,7 +556,12 @@ class StabilizerOp(PauliwordOp):
         super().__init__(operator, coeff_vec)
         self._check_stab()
         self._check_independent()
-        self.target_sqp = target_sqp
+        if target_sqp in ['X', 'Z']:
+            self.target_sqp = target_sqp
+        elif target_sqp == 'Y':
+            raise NotImplementedError('Currently only accepts X or Z and target single-qubit Pauli')
+        else:
+            raise ValueError('Target single-qubit Pauli not recognised - must be X or Z')
 
     def _check_stab(self):
         """ Checks the stabilizer coefficients are +/-1
@@ -572,11 +583,8 @@ class StabilizerOp(PauliwordOp):
         Implementation of procedure described in https://doi.org/10.22331/q-2021-05-14-456 (Lemma A.2)
         
         Returns 
-        - a dictionary of stabilizers with the rotations mapping each to a 
-          single Pauli in the formList[Tuple[rotation, angle, gen_rot]], 
-        
-        - a dictionary of qubit positions that we have rotated onto and 
-          the eigenvalues post-rotation
+            - a list of Pauli rotations in the form List[str]
+            - a list of rotation angles in the form List[float]
         """
         rotations=[]
         
@@ -586,6 +594,7 @@ class StabilizerOp(PauliwordOp):
                 (corresponds with fixing the pivot_index qubit to Pauli Y)
             - append the rotation to the rotations list
             - update used_indices with the fixed qubit position.
+            - also returns the Pauli rotation so it may be applied in _recursive_rotate_onto_sqp
             """
             pivot_index_X = pivot_index % self.n_qubits # index in the X block
             base_vector[np.array([pivot_index_X, pivot_index_X+self.n_qubits])]=1
