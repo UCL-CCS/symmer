@@ -3,6 +3,7 @@ from cached_property import cached_property
 from openfermion import QubitOperator
 from symred.utils import gf2_gaus_elim
 import numpy as np
+import scipy as sp
 from copy import deepcopy
 from typing import List, Union, Dict
 from scipy.sparse import csr_matrix
@@ -554,3 +555,35 @@ class StabilizerOp(PauliwordOp):
             if np.all(row==0):
                 # there is a dependent row
                 raise ValueError('The supplied stabilizers are not independent')
+
+
+class QubitHamiltonian(PauliwordOp):
+    """
+    Qubit Hamiltonian made up as a linear combination of Pauliwords
+
+    """
+    def __init__(self,
+            operator: Union[List[str], Dict[str, float], np.array],
+            coeff_list=None):
+        super().__init__(operator, coeff_list)
+
+        self.eig_vals = None
+        self.eig_vecs = None
+    def Get_ground_state(self, n_eig_vals=1):
+        sparse_hamiltonian_mat = self.to_sparse_matrix
+        H_mat_shape = sparse_hamiltonian_mat.shape[0]
+        assert (n_eig_vals<=H_mat_shape), 'cannot have more eigenvalues than dimension of matrix'
+        if H_mat_shape<=64:
+            # dense eigh
+            eig_values, eig_vectors = np.linalg.eigh(sparse_hamiltonian_mat.todense())
+        else:
+            # sparse eigh
+            eig_values, eig_vectors = sp.sparse.linalg.eigsh(sparse_hamiltonian_mat,
+                                                     k=n_eig_vals,
+                                                     # v0=initial_guess,
+                                                     which='SA',
+                                                     maxiter=1e7)
+
+        order = np.argsort(eig_values)
+        self.eig_vals = eig_values[order]
+        self.eig_vecs = eig_vectors[:, order].T
