@@ -161,6 +161,78 @@ def contextualQ(S,verbose=False):
     else:
         return False
 
+def quasi_model(ham_dict):
+    terms = [str(k) for k in ham_dict.keys()]
+    check = contextualQ(terms,verbose=True)
+    assert(not check[0]) # Hamiltonian should be noncontextual
+    Z = check[1] # get set of universally-commuting terms, Z, and its complement, T
+    T = check[2]
+    
+    # Partition T into cliques:
+    C=[]
+    while T:
+        C.append([T.pop()]) # remove the last element from T and put it in a new sublist in C
+        for i in range(len(T)-1,-1,-1): # among the remaining elements in T...
+            t=T[i]
+            if commute(C[-1][0],t): # check if each commutes with the current clique
+                C[-1].append(t) # if so, add it to the current clique...
+                T.remove(t) # and remove it from T
+                
+    # Get full set of universally-commuting component operators:
+    Gprime = [[z,1] for z in Z] # elements are stored together with their sign
+    Ci1s=[]
+    for Cii in C: # for each clique...
+        Ci=Cii
+        Ci1=Ci.pop() # pull out one element
+        Ci1s.append(Ci1) # append it to a list of these
+        for c in Ci: Gprime.append(pauli_mult(c,Ci1)) # add the remaining elements, multiplied by Ci1, to the commuting set
+    
+    # Get independent generating set for universally-commuting component operators:
+    G_p = dict.fromkeys([g[0] for g in Gprime],[])
+    G,G_mappings = to_indep_set(G_p)
+    
+    # Remove duplicates and identities from G:
+    G = list(dict.fromkeys([g[0] for g in G]))
+    # Remove identities from product list:
+    i=len(G)-1
+    while i>=0:
+        if all([G[i][j]=='I' for j in range(len(G[i]))]):
+            del G[i]
+        i=i-1
+    
+    # Rewrite the values in G_mappings as lists of the form e.g. [sgn, 'XYZ', 'XZY',...]:
+    Gprime = list(dict.fromkeys([g[0] for g in Gprime]))
+    for g in G_mappings.keys():
+        ps = G_mappings[g]
+        sgn = int(np.real(np.prod([p[1] for p in ps])))
+        ps = [[p[0] for p in ps],sgn]
+        # Remove identities from product list:
+        i=len(ps[0])-1
+        while i>=0:
+            if all([ps[0][i][j]=='I' for j in range(len(ps[0][i]))]):
+                del ps[0][i]
+            i=i-1
+        G_mappings[g] = ps
+        
+    # Assemble all the mappings from terms in the Hamiltonian to their products in R:
+    all_mappings = dict.fromkeys(terms)
+    for z in Z:
+        mapping = G_mappings[z]
+        all_mappings[z] = [mapping[0]]+[[]]+[mapping[1]]
+        
+    for Ci1 in Ci1s:
+        all_mappings[Ci1] = [[],[Ci1],1]
+    
+    for i in range(len(C)):
+        Ci=C[i]
+        Ci1=Ci1s[i]
+        for Cij in Ci:
+            mult = pauli_mult(Cij,Ci1)
+            mapping = G_mappings[mult[0]]
+            all_mappings[Cij] = [mapping[0]]+[[Ci1]]+[mult[1]*mapping[1]]
+    
+    return G,Ci1s,all_mappings
+
 def greedy_dfs(ham,cutoff,criterion='weight'):
     
     weight = {k:abs(ham[k]) for k in ham.keys()}
