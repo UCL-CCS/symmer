@@ -1,5 +1,6 @@
 import numpy as np
 import scipy as sp
+from typing import Tuple
 
 def gf2_gaus_elim(gf2_matrix: np.array) -> np.array:
     """
@@ -90,10 +91,10 @@ def gf2_basis_for_gf2_rref(gf2_matrix_in_rreform: np.array) -> np.array:
 
     return basis
 
-def get_ground_state(sparse_operator, initial_guess=None):
+def get_ground_state_sparse(sparse_matrix, initial_guess=None):
     """Compute lowest eigenvalue and eigenstate.
     Args:
-        sparse_operator (LinearOperator): Operator to find the ground state of.
+        sparse_operator: Operator to find the ground state of.
         initial_guess (ndarray): Initial guess for ground state.  A good
             guess dramatically reduces the cost required to converge.
     Returns
@@ -103,7 +104,7 @@ def get_ground_state(sparse_operator, initial_guess=None):
         eigenstate:
             The lowest eigenstate in scipy.sparse csc format.
     """
-    values, vectors = sp.sparse.linalg.eigsh(sparse_operator,
+    values, vectors = sp.sparse.linalg.eigsh(sparse_matrix,
                                                 k=1,
                                                 v0=initial_guess,
                                                 which='SA',
@@ -115,6 +116,21 @@ def get_ground_state(sparse_operator, initial_guess=None):
     eigenvalue = values[0]
     eigenstate = vectors[:, 0]
     return eigenvalue, eigenstate.T
+
+def exact_gs_energy(sparse_matrix, initial_guess=None) -> Tuple[float, np.array]:
+    """ Return the ground state energy and corresponding 
+    ground statevector for the input operator
+    """
+
+    if sparse_matrix.shape[0] > 2**5:
+        ground_energy, ground_state = get_ground_state_sparse(sparse_matrix, initial_guess=initial_guess)
+    else:
+        dense_matrix = sparse_matrix.toarray()
+        eigvals, eigvecs = np.linalg.eigh(dense_matrix)
+        ground_energy, ground_state = sorted(zip(eigvals,eigvecs.T), key=lambda x:x[0])[0]
+
+    return ground_energy, np.array(ground_state)
+
 
 #########################################################################
 #### For now uses the legacy code for identifying noncontextual sets ####
@@ -160,6 +176,78 @@ def contextualQ(S,verbose=False):
         return [False,Z,T]
     else:
         return False
+
+def quasi_model(ham_dict):
+    terms = [str(k) for k in ham_dict.keys()]
+    check = contextualQ(terms,verbose=True)
+    assert(not check[0]) # Hamiltonian should be noncontextual
+    Z = check[1] # get set of universally-commuting terms, Z, and its complement, T
+    T = check[2]
+    
+    # Partition T into cliques:
+    C=[]
+    while T:
+        C.append([T.pop()]) # remove the last element from T and put it in a new sublist in C
+        for i in range(len(T)-1,-1,-1): # among the remaining elements in T...
+            t=T[i]
+            if commute(C[-1][0],t): # check if each commutes with the current clique
+                C[-1].append(t) # if so, add it to the current clique...
+                T.remove(t) # and remove it from T
+                
+    # Get full set of universally-commuting component operators:
+    Gprime = [[z,1] for z in Z] # elements are stored together with their sign
+    Ci1s=[]
+    for Cii in C: # for each clique...
+        Ci=Cii
+        Ci1=Ci.pop() # pull out one element
+        Ci1s.append(Ci1) # append it to a list of these
+        for c in Ci: Gprime.append(pauli_mult(c,Ci1)) # add the remaining elements, multiplied by Ci1, to the commuting set
+    
+    # Get independent generating set for universally-commuting component operators:
+    G_p = dict.fromkeys([g[0] for g in Gprime],[])
+    G,G_mappings = to_indep_set(G_p)
+    
+    # Remove duplicates and identities from G:
+    G = list(dict.fromkeys([g[0] for g in G]))
+    # Remove identities from product list:
+    i=len(G)-1
+    while i>=0:
+        if all([G[i][j]=='I' for j in range(len(G[i]))]):
+            del G[i]
+        i=i-1
+    
+    # Rewrite the values in G_mappings as lists of the form e.g. [sgn, 'XYZ', 'XZY',...]:
+    Gprime = list(dict.fromkeys([g[0] for g in Gprime]))
+    for g in G_mappings.keys():
+        ps = G_mappings[g]
+        sgn = int(np.real(np.prod([p[1] for p in ps])))
+        ps = [[p[0] for p in ps],sgn]
+        # Remove identities from product list:
+        i=len(ps[0])-1
+        while i>=0:
+            if all([ps[0][i][j]=='I' for j in range(len(ps[0][i]))]):
+                del ps[0][i]
+            i=i-1
+        G_mappings[g] = ps
+        
+    # Assemble all the mappings from terms in the Hamiltonian to their products in R:
+    all_mappings = dict.fromkeys(terms)
+    for z in Z:
+        mapping = G_mappings[z]
+        all_mappings[z] = [mapping[0]]+[[]]+[mapping[1]]
+        
+    for Ci1 in Ci1s:
+        all_mappings[Ci1] = [[],[Ci1],1]
+    
+    for i in range(len(C)):
+        Ci=C[i]
+        Ci1=Ci1s[i]
+        for Cij in Ci:
+            mult = pauli_mult(Cij,Ci1)
+            mapping = G_mappings[mult[0]]
+            all_mappings[Cij] = [mapping[0]]+[[Ci1]]+[mult[1]*mapping[1]]
+    
+    return G,Ci1s,all_mappings
 
 def greedy_dfs(ham,cutoff,criterion='weight'):
     

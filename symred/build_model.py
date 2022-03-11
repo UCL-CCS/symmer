@@ -29,7 +29,9 @@ class build_molecule_for_projection(CS_VQE):
     """ Class for assessing various generator removal ordering heuristics
     """
     def __init__(self,
-                calculated_molecule: PyscfMolecularData)-> None:
+            calculated_molecule: PyscfMolecularData,
+            basis_weighting = 'ham_coeff'
+        )-> None:
         """
         """
         dashes = "------------------------------------------------"
@@ -41,6 +43,7 @@ class build_molecule_for_projection(CS_VQE):
             np.zeros(self.n_qubits-self.n_electrons, dtype=int)
             ]
         )
+        self.HL_index = list(self.hf_state).index(0) #index HOMO-LUMO gap
         hf_string   = ''.join([str(i) for i in list(self.hf_state)])
         print(dashes)
         print('Information concerning the full system:')
@@ -76,9 +79,11 @@ class build_molecule_for_projection(CS_VQE):
         self.ham_tap = taper_hamiltonian.taper_it(ref_state=self.hf_state)
         self.sor_tap = taper_hamiltonian.taper_it(aux_operator=self.ham_sor, ref_state=self.hf_state)
         self.n_taper = taper_hamiltonian.n_taper
-        self.hf_tapered = taper_hamiltonian.taper_reference_state(self.hf_state)
+        self.tapered_qubits   = taper_hamiltonian.stab_qubit_indices
+        self.untapered_qubits = taper_hamiltonian.free_qubit_indices
+        self.hf_tapered = taper_hamiltonian.tapered_ref_state
         hf_tap_str = ''.join([str(i) for i in self.hf_tapered])
-        self.HL_index = list(self.hf_tapered).index(0) #index HOMO-LUMO gap
+        
         print("Tapering information:")
         print(dashes)
         print(f'We are able to taper {self.n_taper} qubits from the Hamiltonian')
@@ -88,9 +93,21 @@ class build_molecule_for_projection(CS_VQE):
         print(dashes)
 
         # build CS-VQE model
+        if basis_weighting == 'ham_coeff':
+            weighting_operator = None
+        elif basis_weighting == 'SOR':
+            weighting_operator = self.sor_tap
+        elif basis_weighting == 'num_commuting':
+            weighting_operator = self.ham_tap.copy()
+            weighting_operator.coeff_vec = np.ones(weighting_operator.n_terms)
+        else:
+            raise ValueError(f'Invalid basis_weighting {basis_weighting}:\n'+
+                                'Must be one of ham_coeff, SOR or num_commuting.')
+
         super().__init__(operator=self.ham_tap,
                         ref_state=self.hf_tapered,
-                        target_sqp='Z')
+                        target_sqp='Z',
+                        basis_weighting_operator=weighting_operator)
 
         print("CS-VQE information:")
         print(dashes)

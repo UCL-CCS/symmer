@@ -1,7 +1,7 @@
-from functools import reduce
-from cached_property import cached_property
+from copy import deepcopy
+from functools import cached_property, reduce
+from itertools import combinations
 from shutil import ExecError
-# from weakref import ref
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
 from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, greedy_dfs, to_indep_set
 from scipy.optimize import minimize_scalar
@@ -14,9 +14,6 @@ class S3_projection:
     and Contextual-Subspace VQE. The methods defined herein serve the 
     following purposes:
 
-    - stabilizer_rotations
-        This method determines a sequence of Clifford rotations mapping the
-        provided stabilizers onto single-qubit Paulis (sqp), either X or Z
     - _perform_projection
         Assuming the input operator has been rotated via the Clifford operations 
         found in the above stabilizer_rotations method, this will effect the 
@@ -60,15 +57,7 @@ class S3_projection:
         if not self.rotated_flag:
             raise ExecError('The operator has not been rotated - intended for use with perform_projection method')
         self.rotated_flag = False
-
-        # overwrite the coefficient vector to the assigned eigenvalues defined by the symmetry sector
-        #rotated_stabilizers = self.rotated_stabilizers.copy()
-        #rotated_stabilizers.coeff_vec#*=np.array(sym_sector, dtype=int)
-        #stab_positions = np.einsum("ij->j",self.rotated_stabilizers.symp_matrix)
-        #stab_q_indices = np.where(stab_positions)[0]
-        #assert(len(stab_q_indices)== rotated_stabilizers.n_terms), 'unique indices and stabilizers do not match'
-        stab_q_indices = np.where(self.rotated_stabilizers.symp_matrix)[1]
-
+        
         # remove terms that do not commute with the rotated stabilizers
         commutes_with_all_stabilizers = np.all(operator.commutes_termwise(self.rotated_stabilizers), axis=1)
         op_anticommuting_removed = operator.symp_matrix[commutes_with_all_stabilizers]
@@ -76,22 +65,21 @@ class S3_projection:
 
         # determine sign flipping from eigenvalue assignment
         # currently ill-defined for single-qubit Y stabilizers
-        eigval_assignment = op_anticommuting_removed[:,stab_q_indices]*self.rotated_stabilizers.coeff_vec
+        stab_symp_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1]
+        eigval_assignment = op_anticommuting_removed[:,stab_symp_indices]*self.rotated_stabilizers.coeff_vec
         eigval_assignment[eigval_assignment==0]=1 # 0 entries are identity, so fix as 1 in product
         coeff_sign_flip = cf_anticommuting_removed*(np.prod(eigval_assignment, axis=1)).T
 
         # the projected Pauli terms:
-        all_qubits = np.arange(operator.n_qubits)
-        unfixed_positions = np.setdiff1d(all_qubits,stab_q_indices % operator.n_qubits)
-        unfixed_positions = np.hstack([ unfixed_positions,
-                                        unfixed_positions+operator.n_qubits])
-        project_symplectic = op_anticommuting_removed[:,unfixed_positions]
+        unfixed_XZ_indices = np.hstack([self.free_qubit_indices,
+                                        self.free_qubit_indices+operator.n_qubits])
+        projected_symplectic = op_anticommuting_removed[:,unfixed_XZ_indices]
 
         # there may be duplicate rows in op_projected - these are identified and
         # the corresponding coefficients collected in the cleanup method
-        project_operator = PauliwordOp(project_symplectic, coeff_sign_flip).cleanup()
+        projected_operator = PauliwordOp(projected_symplectic, coeff_sign_flip).cleanup()
         
-        return project_operator
+        return projected_operator
             
     def perform_projection(self,
             operator: PauliwordOp,
@@ -111,7 +99,10 @@ class S3_projection:
             self.stabilizers.update_sector(ref_state)
         elif sector is not None:
             self.stabilizers.coeff_vec = np.array(sector, dtype=int)
+
         self.rotated_stabilizers = self.stabilizers.rotate_onto_single_qubit_paulis()
+        self.stab_qubit_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1] % operator.n_qubits
+        self.free_qubit_indices  = np.setdiff1d(np.arange(operator.n_qubits),self.stab_qubit_indices)
 
         stab_rotations, angles = self.stabilizers.stabilizer_rotations
         # ...and insert any supplementary ones coming from the child class
@@ -183,33 +174,25 @@ class QubitTapering(S3_projection):
         one wishes to restrict to the same stabilizer subspace as the Hamiltonian for 
         use in VQE, for example.
         """
+        # allow an auxiliary operator (e.g. an Ansatz) to be tapered
         if aux_operator is not None:
             operator_to_taper = aux_operator.copy()
         else:
             operator_to_taper = self.operator.copy()
 
-        return self.perform_projection(
+        # taper the operator via S3_projection.perform_projection
+        tapered_operator = self.perform_projection(
             operator=operator_to_taper,
             ref_state=ref_state,
             sector=sector
         )
 
-    def taper_reference_state(self, 
-            ref_state: Union[List[int], np.array],
-            #sector: Union[List[int], np.array]=None, 
-        ) -> np.array:
-        """ taper the reference state by dropping any qubit positions
-        projected during the perform_projection method
-        """
-        # ensure the stabilizer subspace projection has been called
-        self.taper_it(ref_state=ref_state)
-        # find the non-stabilized qubit positions by combining X+Z blocks and 
-        # summing down columns to find the non-identity (stabilized) qubit positions
-        non_identity = self.rotated_stabilizers.X_block + self.rotated_stabilizers.Z_block
-        free_qubit_positions = np.where(np.sum(non_identity, axis=0)==0)
-        
-        return ref_state[free_qubit_positions]
+        # if a reference state was supplied, taper it by dropping any
+        # qubit positions fixed during the perform_projection method
+        if ref_state is not None:
+            self.tapered_ref_state = ref_state[self.free_qubit_indices]
 
+        return tapered_operator
 
 class CS_VQE(S3_projection):
     """
@@ -217,13 +200,18 @@ class CS_VQE(S3_projection):
     def __init__(self,
             operator: PauliwordOp,
             ref_state: np.array = None,
-            target_sqp: str = 'Z'
+            target_sqp: str = 'Z',
+            basis_weighting_operator: PauliwordOp = None
         ) -> None:
         """ 
         """
         self.operator = operator
         self.ref_state = ref_state
         self.target_sqp = target_sqp
+        if basis_weighting_operator is not None:
+            self.basis_weighting_operator = basis_weighting_operator
+        else:
+            self.basis_weighting_operator = operator
         self.contextual_operator = (operator-self.noncontextual_operator).cleanup_zeros()
         # decompose the noncontextual set into a dictionary of its 
         # universally commuting elements and anticommuting cliques
@@ -231,6 +219,7 @@ class CS_VQE(S3_projection):
         self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
         self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
         self.clique_operator = self.noncontextual_basis[:self.n_cliques]
+
         symmetry_generators = self.noncontextual_basis[self.n_cliques:]
         self.symmetry_generators = StabilizerOp(
             symmetry_generators.symp_matrix,
@@ -245,24 +234,95 @@ class CS_VQE(S3_projection):
         """ Extract a noncontextual set of Pauli terms from the operator
         TODO graph-based approach, currently uses legacy implementation
         """
-        op_dict = self.operator.to_dictionary
-        noncontextual_set = greedy_dfs(op_dict, cutoff=1)[-1]
-        return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
+        #op_dict = self.operator.to_dictionary
+        #noncontextual_set = greedy_dfs(op_dict, cutoff=10)[-1]
+        #return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
+        
+        diagonal_mask = np.where(np.all(self.operator.X_block==0, axis=1))
+        off_diag_mask = np.setdiff1d(np.arange(self.operator.coeff_vec.shape[0]), diagonal_mask)
+        largest_off_diag_index = off_diag_mask[np.argmax(abs(self.operator.coeff_vec[off_diag_mask]))]
+        mask = np.append(diagonal_mask, largest_off_diag_index)
+        return PauliwordOp(self.operator.symp_matrix[mask], self.operator.coeff_vec[mask])        
+    
+    def basis_score(self, 
+            basis: StabilizerOp
+        ) -> float:
+        """ Evaluate the score of an input basis according 
+        to the basis weighting operator, for example:
+            - set Hamiltonian cofficients to 1 for unweighted number of commuting terms
+            - specify as the SOR Hamiltonian to weight according to second-order response
+            - if None given then weights by Hamiltonian coefficient magnitude
+        """
+        return np.sqrt(
+            np.sum(
+                np.square(
+                    self.basis_weighting_operator.coeff_vec[
+                        np.all(self.basis_weighting_operator.commutes_termwise(basis), axis=1)
+                        ]
+                )
+            )
+        )
 
     @cached_property
     def noncontextual_basis(self) -> StabilizerOp:
         """ Find an independent basis for the noncontextual symmetry
         """
-        # mask universally commuting terms
-        adj_mat = self.noncontextual_operator.adjacency_matrix
-        mask_universal = np.where(np.all(adj_mat, axis=1))
+        # construct universally commuting basis first
         # swap order of XZ blocks in symplectic matrix to ZX
-        ZX_symp = np.hstack([self.noncontextual_operator.Z_block[mask_universal], 
-                             self.noncontextual_operator.X_block[mask_universal]])
+        ZX_symp = np.hstack([self.noncontextual_operator.Z_block, 
+                             self.noncontextual_operator.X_block])
         reduced = gf2_gaus_elim(ZX_symp)
         kernel  = gf2_basis_for_gf2_rref(reduced)
-        basis = StabilizerOp(kernel, np.ones(kernel.shape[0]))
+        universal_basis = StabilizerOp(kernel, np.ones(kernel.shape[0]))
+        clique_rep_indices = np.where(
+            np.all(
+                self.noncontextual_operator.basis_reconstruction(universal_basis)==0, 
+                axis=1
+                )
+            )[0][1:]
+        clique_operator = reduce(
+            lambda x,y:x+y, 
+            [self.noncontextual_operator[int(i)] for i in clique_rep_indices]
+            )
 
+        # find the clique operator with only Pauli Z's and append to universal terms
+        Z_clique_op = clique_operator[int(np.where(np.all(clique_operator.X_block==0, axis=1))[0][0])]
+        X_clique_op = clique_operator[int(np.where(np.any(clique_operator.X_block!=0, axis=1))[0][0])]
+        anticommuting_position = np.where(np.logical_and(X_clique_op.X_block, Z_clique_op.Z_block))[1]
+        # find the basis of universally commuting generators that maximises 
+        # commutativity with the operator w.r.t. some weighting objective
+        basis_to_optimize = universal_basis + Z_clique_op
+        sort_order = np.lexsort(basis_to_optimize.Z_block.T)
+        to_max = basis_to_optimize.symp_matrix.shape[0]
+        matrix = basis_to_optimize.Z_block[sort_order]
+        avoid_index = int(np.where(matrix[:,anticommuting_position])[0][0])
+
+        best_generators = []
+        for i in range(to_max):
+            generator_bin = []
+            try_combinations = []
+            for r in range(self.operator.n_qubits-i):
+                try_combinations += list(combinations(range(i+1, to_max), r=r))
+            for comb in try_combinations:
+                mod_row = matrix[i].copy()
+                for j in comb:
+                    if j!=avoid_index:
+                        mod_row+=matrix[j]
+                mod_row%=2
+                test_basis_symp = np.vstack(best_generators+[mod_row])
+                test_basis = StabilizerOp(
+                    np.hstack([np.zeros_like(test_basis_symp), test_basis_symp]), 
+                    np.ones(i+1)
+                )
+                score = self.basis_score(test_basis)
+                generator_bin.append([mod_row,score])
+            best_generators.append(sorted(generator_bin, key=lambda x:-x[1])[0][0])
+        
+        basis_Z_block = np.vstack(best_generators)
+        universal_basis = StabilizerOp(np.hstack([np.zeros_like(basis_Z_block), basis_Z_block]), 
+                            np.ones(len(best_generators)))
+        
+        basis = universal_basis + X_clique_op
         # order the basis so clique representatives appear at the beginning
         basis_order = np.lexsort(basis.adjacency_matrix)
         basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
@@ -339,10 +399,10 @@ class CS_VQE(S3_projection):
         C1 = self.clique_operator[1]
 
         pauli_rotation = (C0*C1).multiply_by_constant(-1j)
-        angle = np.arctan(C0.coeff_vec/C1.coeff_vec)
+        angle = np.arctan(C1.coeff_vec/C0.coeff_vec)
         #if you wish to rotate onto +1 eigenstate:
-        if abs(C1.coeff_vec+np.cos(angle)) < 1e-15:
-            angle += np.pi
+        #if abs(C1.coeff_vec+np.cos(angle)) < 1e-15:
+        #    angle += np.pi
             
         return pauli_rotation, angle
 
@@ -353,35 +413,39 @@ class CS_VQE(S3_projection):
         """ input a list indexing the stabilizers one wishes to enforce
         index 0 always corresponds to the clique operator C(r)
         """
-        # this is set in fix_stabilizers for now
-        sector = np.ones(len(stabilizer_indices), dtype=int)
-
         if aux_operator is not None:
             operator_to_project = aux_operator.copy()
         else:
             operator_to_project = self.operator.copy()
 
-        if 0 in stabilizer_indices:
-            stabilizer_indices.pop(stabilizer_indices.index(0))
-            stabilizer_indices = [i-1 for i in stabilizer_indices]
+        # from the supplied indices determine the corresponding stabilizers to enforce
+        stab_indices = deepcopy(stabilizer_indices)
+        if 0 in stab_indices:
+            # in this case apply the unitary partitioning rotations
+            stab_indices.pop(stab_indices.index(0))
+            stab_indices = [i-1 for i in stab_indices]
             UP_rot, UP_angle = self.unitary_partitioning
             rotated_clique_op = self.clique_operator._rotate_by_single_Pword(
                 UP_rot, UP_angle
                 ).cleanup_zeros(zero_threshold=1e-5)
+            rotated_clique_op.coeff_vec=np.round(rotated_clique_op.coeff_vec)
             fix_stabilizers = reduce(lambda x,y: x+y,
-                [rotated_clique_op]+[self.symmetry_generators[i] for i in stabilizer_indices])
+                [rotated_clique_op]+[self.symmetry_generators[i] for i in stab_indices])
             insert_rotation = [list(UP_rot.to_dictionary.keys())[0], UP_angle]
         else:
-            stabilizer_indices = [i-1 for i in stabilizer_indices]
+            stab_indices = [i-1 for i in stab_indices]
             fix_stabilizers = reduce(lambda x,y: x+y,
-                [self.symmetry_generators[i] for i in stabilizer_indices])
+                [self.symmetry_generators[i] for i in stab_indices])
             insert_rotation = None
 
+        # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
         fix_stabilizers = StabilizerOp(
             fix_stabilizers.symp_matrix, 
             np.array(fix_stabilizers.coeff_vec, dtype=int),
             target_sqp=self.target_sqp
         )
+
+        # instantiate the parent S3_projection classwith the stabilizers we are enforcing
         super().__init__(fix_stabilizers, target_sqp=self.target_sqp)
 
         return self.perform_projection(
@@ -390,7 +454,12 @@ class CS_VQE(S3_projection):
         )
         
 class CheatS_VQE(S3_projection):
-    """
+    """ A lightweight CS-VQE implementation in which we choose an arbitrary
+    Pauli Z-basis and project in accordance with it. Can be interpretted as
+    CS-VQE with the noncontextual set taken as the diagonal Hamiltonian terms.
+
+    Second-order-response-corrected VQE... identify the independent Z-basis
+    that maxises the SOR objective function
     """
     def __init__(self, 
             operator: PauliwordOp,
@@ -401,7 +470,7 @@ class CheatS_VQE(S3_projection):
         self.target_sqp = target_sqp        
 
     def project_onto_subspace(self, basis: StabilizerOp):
-        """
+        """ Project the operator in accordance with the supplied basis
         """
         basis = StabilizerOp(
             basis.symp_matrix, 
@@ -419,7 +488,8 @@ class CheatS_VQE(S3_projection):
             basis: StabilizerOp, 
             aux_operator: PauliwordOp = None
         ) -> float:
-        """
+        """ Evaluate the score of the input basis according to some operator
+        e.g. specify the aux_operator as the SOR Hamiltonian
         """
         if aux_operator is not None:
             weighted_op = aux_operator
