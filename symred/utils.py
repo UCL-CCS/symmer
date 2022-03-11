@@ -1,5 +1,6 @@
 import numpy as np
 import scipy as sp
+from typing import Tuple
 
 def gf2_gaus_elim(gf2_matrix: np.array) -> np.array:
     """
@@ -90,10 +91,10 @@ def gf2_basis_for_gf2_rref(gf2_matrix_in_rreform: np.array) -> np.array:
 
     return basis
 
-def get_ground_state(sparse_operator, initial_guess=None):
+def get_ground_state_sparse(sparse_matrix, initial_guess=None):
     """Compute lowest eigenvalue and eigenstate.
     Args:
-        sparse_operator (LinearOperator): Operator to find the ground state of.
+        sparse_operator: Operator to find the ground state of.
         initial_guess (ndarray): Initial guess for ground state.  A good
             guess dramatically reduces the cost required to converge.
     Returns
@@ -103,7 +104,7 @@ def get_ground_state(sparse_operator, initial_guess=None):
         eigenstate:
             The lowest eigenstate in scipy.sparse csc format.
     """
-    values, vectors = sp.sparse.linalg.eigsh(sparse_operator,
+    values, vectors = sp.sparse.linalg.eigsh(sparse_matrix,
                                                 k=1,
                                                 v0=initial_guess,
                                                 which='SA',
@@ -115,6 +116,21 @@ def get_ground_state(sparse_operator, initial_guess=None):
     eigenvalue = values[0]
     eigenstate = vectors[:, 0]
     return eigenvalue, eigenstate.T
+
+def exact_gs_energy(sparse_matrix, initial_guess=None) -> Tuple[float, np.array]:
+    """ Return the ground state energy and corresponding 
+    ground statevector for the input operator
+    """
+
+    if sparse_matrix.shape[0] > 2**5:
+        ground_energy, ground_state = get_ground_state_sparse(sparse_matrix, initial_guess=initial_guess)
+    else:
+        dense_matrix = sparse_matrix.toarray()
+        eigvals, eigvecs = np.linalg.eigh(dense_matrix)
+        ground_energy, ground_state = sorted(zip(eigvals,eigvecs.T), key=lambda x:x[0])[0]
+
+    return ground_energy, np.array(ground_state)
+
 
 #########################################################################
 #### For now uses the legacy code for identifying noncontextual sets ####
