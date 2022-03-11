@@ -1,5 +1,6 @@
 from copy import deepcopy
 from functools import cached_property, reduce
+from itertools import combinations
 from shutil import ExecError
 from weakref import ref
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
@@ -65,23 +66,21 @@ class S3_projection:
 
         # determine sign flipping from eigenvalue assignment
         # currently ill-defined for single-qubit Y stabilizers
-        stab_q_indices = np.where(self.rotated_stabilizers.symp_matrix)[1]
-        eigval_assignment = op_anticommuting_removed[:,stab_q_indices]*self.rotated_stabilizers.coeff_vec
+        stab_symp_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1]
+        eigval_assignment = op_anticommuting_removed[:,stab_symp_indices]*self.rotated_stabilizers.coeff_vec
         eigval_assignment[eigval_assignment==0]=1 # 0 entries are identity, so fix as 1 in product
         coeff_sign_flip = cf_anticommuting_removed*(np.prod(eigval_assignment, axis=1)).T
 
         # the projected Pauli terms:
-        all_qubits = np.arange(operator.n_qubits)
-        unfixed_positions = np.setdiff1d(all_qubits,stab_q_indices % operator.n_qubits)
-        unfixed_positions = np.hstack([ unfixed_positions,
-                                        unfixed_positions+operator.n_qubits])
-        project_symplectic = op_anticommuting_removed[:,unfixed_positions]
+        unfixed_XZ_indices = np.hstack([self.free_qubit_indices,
+                                        self.free_qubit_indices+operator.n_qubits])
+        projected_symplectic = op_anticommuting_removed[:,unfixed_XZ_indices]
 
         # there may be duplicate rows in op_projected - these are identified and
         # the corresponding coefficients collected in the cleanup method
-        project_operator = PauliwordOp(project_symplectic, coeff_sign_flip).cleanup()
+        projected_operator = PauliwordOp(projected_symplectic, coeff_sign_flip).cleanup()
         
-        return project_operator
+        return projected_operator
             
     def perform_projection(self,
             operator: PauliwordOp,
@@ -101,7 +100,10 @@ class S3_projection:
             self.stabilizers.update_sector(ref_state)
         elif sector is not None:
             self.stabilizers.coeff_vec = np.array(sector, dtype=int)
+
         self.rotated_stabilizers = self.stabilizers.rotate_onto_single_qubit_paulis()
+        self.stab_qubit_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1] % operator.n_qubits
+        self.free_qubit_indices  = np.setdiff1d(np.arange(operator.n_qubits),self.stab_qubit_indices)
 
         stab_rotations, angles = self.stabilizers.stabilizer_rotations
         # ...and insert any supplementary ones coming from the child class
@@ -173,33 +175,25 @@ class QubitTapering(S3_projection):
         one wishes to restrict to the same stabilizer subspace as the Hamiltonian for 
         use in VQE, for example.
         """
+        # allow an auxiliary operator (e.g. an Ansatz) to be tapered
         if aux_operator is not None:
             operator_to_taper = aux_operator.copy()
         else:
             operator_to_taper = self.operator.copy()
 
-        return self.perform_projection(
+        # taper the operator via S3_projection.perform_projection
+        tapered_operator = self.perform_projection(
             operator=operator_to_taper,
             ref_state=ref_state,
             sector=sector
         )
 
-    def taper_reference_state(self, 
-            ref_state: Union[List[int], np.array],
-            #sector: Union[List[int], np.array]=None, 
-        ) -> np.array:
-        """ taper the reference state by dropping any qubit positions
-        projected during the perform_projection method
-        """
-        # ensure the stabilizer subspace projection has been called
-        self.taper_it(ref_state=ref_state)
-        # find the non-stabilized qubit positions by combining X+Z blocks and 
-        # summing down columns to find the non-identity (stabilized) qubit positions
-        non_identity = self.rotated_stabilizers.X_block + self.rotated_stabilizers.Z_block
-        free_qubit_positions = np.where(np.sum(non_identity, axis=0)==0)
-        
-        return ref_state[free_qubit_positions]
+        # if a reference state was supplied, taper it by dropping any
+        # qubit positions fixed during the perform_projection method
+        if ref_state is not None:
+            self.tapered_ref_state = ref_state[self.free_qubit_indices]
 
+        return tapered_operator
 
 class CS_VQE(S3_projection):
     """
@@ -207,13 +201,18 @@ class CS_VQE(S3_projection):
     def __init__(self,
             operator: PauliwordOp,
             ref_state: np.array = None,
-            target_sqp: str = 'Z'
+            target_sqp: str = 'Z',
+            basis_weighting_operator: PauliwordOp = None
         ) -> None:
         """ 
         """
         self.operator = operator
         self.ref_state = ref_state
         self.target_sqp = target_sqp
+        if basis_weighting_operator is not None:
+            self.basis_weighting_operator = basis_weighting_operator
+        else:
+            self.basis_weighting_operator = operator
         self.contextual_operator = (operator-self.noncontextual_operator).cleanup_zeros()
         # decompose the noncontextual set into a dictionary of its 
         # universally commuting elements and anticommuting cliques
@@ -236,16 +235,34 @@ class CS_VQE(S3_projection):
         """ Extract a noncontextual set of Pauli terms from the operator
         TODO graph-based approach, currently uses legacy implementation
         """
-        op_dict = self.operator.to_dictionary
-        noncontextual_set = greedy_dfs(op_dict, cutoff=10)[-1]
-        return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
+        #op_dict = self.operator.to_dictionary
+        #noncontextual_set = greedy_dfs(op_dict, cutoff=10)[-1]
+        #return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
         
         diagonal_mask = np.where(np.all(self.operator.X_block==0, axis=1))
         off_diag_mask = np.setdiff1d(np.arange(self.operator.coeff_vec.shape[0]), diagonal_mask)
         largest_off_diag_index = off_diag_mask[np.argmax(abs(self.operator.coeff_vec[off_diag_mask]))]
         mask = np.append(diagonal_mask, largest_off_diag_index)
         return PauliwordOp(self.operator.symp_matrix[mask], self.operator.coeff_vec[mask])        
-       
+    
+    def basis_score(self, 
+            basis: StabilizerOp
+        ) -> float:
+        """ Evaluate the score of an input basis according 
+        to the basis weighting operator, for example:
+            - set Hamiltonian cofficients to 1 for unweighted number of commuting terms
+            - specify as the SOR Hamiltonian to weight according to second-order response
+            - if None given then weights by Hamiltonian coefficient magnitude
+        """
+        return np.sqrt(
+            np.sum(
+                np.square(
+                    self.basis_weighting_operator.coeff_vec[
+                        np.all(self.basis_weighting_operator.commutes_termwise(basis), axis=1)
+                        ]
+                )
+            )
+        )
 
     @cached_property
     def noncontextual_basis(self) -> StabilizerOp:
@@ -268,7 +285,45 @@ class CS_VQE(S3_projection):
             lambda x,y:x+y, 
             [self.noncontextual_operator[int(i)] for i in clique_rep_indices]
             )
-        basis = universal_basis + clique_operator
+
+        # find the clique operator with only Pauli Z's and append to universal terms
+        Z_clique_op = clique_operator[int(np.where(np.all(clique_operator.X_block==0, axis=1))[0][0])]
+        X_clique_op = clique_operator[int(np.where(np.any(clique_operator.X_block!=0, axis=1))[0][0])]
+        anticommuting_position = np.where(np.logical_and(X_clique_op.X_block, Z_clique_op.Z_block))[1]
+        # find the basis of universally commuting generators that maximises 
+        # commutativity with the operator w.r.t. some weighting objective
+        basis_to_optimize = universal_basis + Z_clique_op
+        sort_order = np.lexsort(basis_to_optimize.Z_block.T)
+        to_max = basis_to_optimize.symp_matrix.shape[0]
+        matrix = basis_to_optimize.Z_block[sort_order]
+        avoid_index = int(np.where(matrix[:,anticommuting_position])[0][0])
+
+        best_generators = []
+        for i in range(to_max):
+            generator_bin = []
+            try_combinations = []
+            for r in range(self.operator.n_qubits-i):
+                try_combinations += list(combinations(range(i+1, to_max), r=r))
+            for comb in try_combinations:
+                mod_row = matrix[i].copy()
+                for j in comb:
+                    if j!=avoid_index:
+                        mod_row+=matrix[j]
+                mod_row%=2
+                test_basis_symp = np.vstack(best_generators+[mod_row])
+                test_basis = StabilizerOp(
+                    np.hstack([np.zeros_like(test_basis_symp), test_basis_symp]), 
+                    np.ones(i+1)
+                )
+                score = self.basis_score(test_basis)
+                generator_bin.append([mod_row,score])
+            best_generators.append(sorted(generator_bin, key=lambda x:-x[1])[0][0])
+        
+        basis_Z_block = np.vstack(best_generators)
+        universal_basis = StabilizerOp(np.hstack([np.zeros_like(basis_Z_block), basis_Z_block]), 
+                            np.ones(len(best_generators)))
+        
+        basis = universal_basis + X_clique_op
         # order the basis so clique representatives appear at the beginning
         basis_order = np.lexsort(basis.adjacency_matrix)
         basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
@@ -345,10 +400,10 @@ class CS_VQE(S3_projection):
         C1 = self.clique_operator[1]
 
         pauli_rotation = (C0*C1).multiply_by_constant(-1j)
-        angle = np.arctan(C0.coeff_vec/C1.coeff_vec)
+        angle = np.arctan(C1.coeff_vec/C0.coeff_vec)
         #if you wish to rotate onto +1 eigenstate:
-        if abs(C1.coeff_vec+np.cos(angle)) < 1e-15:
-            angle += np.pi
+        #if abs(C1.coeff_vec+np.cos(angle)) < 1e-15:
+        #    angle += np.pi
             
         return pauli_rotation, angle
 

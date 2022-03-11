@@ -566,7 +566,7 @@ class StabilizerOp(PauliwordOp):
     def _check_stab(self):
         """ Checks the stabilizer coefficients are +/-1
         """
-        assert(set(self.coeff_vec).issubset({+1,-1})), 'Stabilizer coefficients not +/-1'
+        assert(set(self.coeff_vec).issubset({+1,-1})), f'Stabilizer coefficients not +/-1: {self.coeff_vec}'
 
     def _check_independent(self):
         """ Check the supplied stabilizers are algebraically independent
