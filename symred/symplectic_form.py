@@ -1,6 +1,6 @@
 from functools import reduce
 from cached_property import cached_property
-from openfermion import QubitOperator
+from openfermion import QubitOperator, MajoranaOperator
 from symred.utils import gf2_gaus_elim
 import numpy as np
 import scipy as sp
@@ -529,6 +529,7 @@ class PauliwordOp:
         else:
             return False
 
+
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
     by algebraically independent, with all coefficients set to one.
@@ -555,6 +556,202 @@ class StabilizerOp(PauliwordOp):
             if np.all(row==0):
                 # there is a dependent row
                 raise ValueError('The supplied stabilizers are not independent')
+
+
+class MajoranaOp:
+    """
+    A class thats represents an operator defined as Majorana fermionic operators (stored in a symplectic representation).
+
+    Note Majorana operators follow the following definition:
+
+    { γ_{j} , γ_{k} } = 2δ_{jk}I (aka same as the Pauli group!)
+
+    """
+
+    def __init__(self,
+                 list_lists_OR_sympletic_form,
+                 coeff_list
+                 ) -> None:
+        """
+        TODO
+        """
+        self.coeff_vec = np.asarray(coeff_list, dtype=complex)
+        self.initalize_op(list_lists_OR_sympletic_form)
+        self.term_index_list = np.arange(0, self.n_sites, 1)
+        self.n_terms = self.symp_matrix.shape[0]
+
+    def initalize_op(self, input_term):
+
+        if isinstance(input_term, np.ndarray):
+            if (len(input_term)==0)and (len(self.coeff_vec)==1):
+                self.n_sites = 1
+                self.symp_matrix = np.array([[0]], dtype=int)
+            else:
+                self.n_sites = input_term.shape[1]
+                self.symp_matrix = input_term
+        else:
+            flat_list = set(item for sublist in input_term for item in sublist)
+            if flat_list:
+                self.n_sites = max(flat_list) + 1
+            else:
+                self.n_sites = 1
+            n_terms = len(input_term)
+            self.symp_matrix = np.zeros((n_terms, self.n_sites), dtype=int)
+            for ind, term in enumerate(input_term):
+                self.symp_matrix[ind, term] = 1
+
+        assert (self.symp_matrix.shape[0] == len(self.coeff_vec)), 'incorrect number of coefficients'
+
+    def __str__(self) -> str:
+        """
+        Defines the print behaviour of MajoranaOp -
+        returns the operator in an easily readable format
+
+        Returns:
+            out_string (str): human-readable MajoranaOp string
+        """
+        out_string = ''
+        for majorana_vec, ceoff in zip(self.symp_matrix, self.coeff_vec):
+            maj_inds = self.term_index_list[majorana_vec.astype(bool)]
+            maj_string = ' '.join([f'γ{ind}' for ind in maj_inds])
+            if maj_string == '':
+                maj_string = 'I'
+
+            out_string += (f'{ceoff} {maj_string} +\n')
+        return out_string[:-3]
+
+    def commutes(self, M_OP):
+
+        termwise_commutes = self.commutes_termwise(M_OP)
+        unique_terms = np.unique(termwise_commutes.flatten())  # equiv of set operation
+
+        return np.all(unique_terms == 0)
+
+    def commutes_termwise(self, M_OP):
+        # 1 means terms anticommute!
+        # 0 means terms commute!
+        # { γA, γB } = [1 + (−1)|A||B|+|A∩B|]γAγB
+        if self.n_sites != M_OP.n_sites:
+            sites = min(self.n_sites, M_OP.n_sites)
+        else:
+            sites = self.n_sites
+
+        suppA = np.einsum('ij->i', self.symp_matrix)
+        suppB = np.einsum('ij->i', M_OP.symp_matrix)
+        AtimeB = np.outer(suppA, suppB)
+
+        # only look over common inds
+        AandB = np.dot(self.symp_matrix[:, :sites], M_OP.symp_matrix[:, :sites].T)
+        comm_flag = (AtimeB + AandB) % 2
+
+        return comm_flag
+
+    def adjacency_matrix(self):
+        """ Checks which terms of self commute within itself
+        """
+        adj = self.commutes_termwise(self)
+        return adj
+
+    def copy(self) -> "MajoranaOp":
+        """
+        Create a carbon copy of the class instance
+        """
+        return deepcopy(self)
+
+    def __add__(self,
+                M_OP: "MajoranaOp"
+                ) -> "MajoranaOp":
+        """ Add to this PauliwordOp another PauliwordOp by stacking the
+        respective symplectic matrices and cleaning any resulting duplicates
+        """
+        if self.n_sites != M_OP.n_sites:
+            if self.n_sites < M_OP.n_sites:
+                temp_mat = np.zeros((self.n_terms, M_OP.n_sites))
+                temp_mat[:, :self.n_sites] += self.symp_matrix
+                P_symp_mat_new = np.vstack((temp_mat, M_OP.symp_matrix))
+            else:
+                temp_mat = np.zeros((M_OP.n_terms, self.n_sites))
+                temp_mat[:, :M_OP.n_sites] += M_OP.symp_matrix
+                P_symp_mat_new = np.vstack((self.symp_matrix, temp_mat))
+        else:
+            P_symp_mat_new = np.vstack((self.symp_matrix, M_OP.symp_matrix))
+
+        P_new_coeffs = np.hstack((self.coeff_vec, M_OP.coeff_vec))
+
+        # cleanup run to remove duplicate rows (Pauliwords)
+        return MajoranaOp(P_symp_mat_new, P_new_coeffs).cleanup()
+
+    def cleanup(self) -> "MajoranaOp":
+        """ Remove duplicated rows of symplectic matrix terms, whilst summing
+        the corresponding coefficients of the deleted rows in coeff
+        """
+        # convert sym form to list of ints
+        int_list = self.symp_matrix @ (1 << np.arange(self.symp_matrix.shape[1])[::-1])
+        re_order_indices = np.argsort(int_list)
+        sorted_int_list = int_list[re_order_indices]
+
+        sorted_symp_matrix = self.symp_matrix[re_order_indices]
+        sorted_coeff_vec = self.coeff_vec[re_order_indices]
+
+        # determine the first indices of each element in the sorted list (and ignore duplicates)
+        elements, indices = np.unique(sorted_int_list, return_counts=True)
+        row_summing = np.append([0], np.cumsum(indices))[:-1]  # [0, index1, index2,...]
+
+        # reduced_symplectic_matrix = np.add.reduceat(sorted_symp_matrix, row_summing, axis=0)
+        reduced_symplectic_matrix = sorted_symp_matrix[row_summing]
+        reduced_coeff_vec = np.add.reduceat(sorted_coeff_vec, row_summing, axis=0)
+
+        # return nonzero coeff terms!
+        mask_nonzero = np.where(abs(reduced_coeff_vec) > 1e-15)
+        return MajoranaOp(reduced_symplectic_matrix[mask_nonzero],
+                          reduced_coeff_vec[mask_nonzero])
+
+    def to_OF_op(self):
+        open_f_op = MajoranaOperator()
+        for majorana_vec, ceoff in zip(self.symp_matrix, self.coeff_vec):
+            maj_inds = self.term_index_list[majorana_vec.astype(bool)]
+
+            open_f_op += MajoranaOperator(term=tuple(maj_inds),
+                                          coefficient=ceoff)
+        return open_f_op
+
+    def __mul__(self,
+                M_OP: "MajoranaOp"
+                ) -> "MajoranaOp":
+        """
+        Right-multiplication of this MajoranaOp by another MajoranaOp
+        """
+        if self.n_sites != M_OP.n_sites:
+            if self.n_sites < M_OP.n_sites:
+                temp_mat_self = np.zeros((self.n_terms, M_OP.n_sites))
+                temp_mat_self[:, :self.n_sites] += self.symp_matrix
+                temp_mat_M_OP = M_OP.symp_matrix
+            else:
+                temp_mat_M_OP = np.zeros((M_OP.n_terms, self.n_sites))
+                temp_mat_M_OP[:, :M_OP.n_sites] += M_OP.symp_matrix
+                temp_mat_self = self.symp_matrix
+        else:
+            temp_mat_M_OP = M_OP.symp_matrix
+            temp_mat_self = self.symp_matrix
+
+        new_vec = np.zeros((self.n_terms * M_OP.n_terms, max(temp_mat_M_OP.shape[1],
+                                                             temp_mat_self.shape[1])
+                            ))
+
+        new_coeff_vec = np.outer(self.coeff_vec, M_OP.coeff_vec).flatten()
+        sign_dict = {0: 1, 1: -1}
+        ind = 0
+        for ind1, vec in enumerate(temp_mat_self):
+            for ind2, vec2 in enumerate(temp_mat_M_OP):
+                new_vec[ind] = np.logical_xor(vec, vec2).astype(int)
+
+                # track changes to make operator in normal order
+                #                 reordering_sign = sum(sum(vec[i+1:]) for i, term in enumerate(vec2[:-1]) if term!=0)%2
+                reordering_sign = sum(term * (sum(vec[i + 1:])) for i, term in enumerate(vec2[:-1])) % 2
+                new_coeff_vec[ind] *= sign_dict[reordering_sign]
+                ind += 1
+
+        return MajoranaOp(new_vec, new_coeff_vec).cleanup()
 
 
 class QubitHamiltonian(PauliwordOp):
