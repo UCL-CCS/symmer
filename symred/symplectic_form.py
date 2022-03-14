@@ -1,6 +1,6 @@
 from functools import reduce
 from cached_property import cached_property
-from openfermion import QubitOperator, MajoranaOperator
+from openfermion import QubitOperator, MajoranaOperator, get_sparse_operator, FermionOperator, count_qubits, get_majorana_operator #, get_fermion_operator
 from symred.utils import gf2_gaus_elim
 import numpy as np
 import scipy as sp
@@ -556,6 +556,38 @@ class StabilizerOp(PauliwordOp):
             if np.all(row==0):
                 # there is a dependent row
                 raise ValueError('The supplied stabilizers are not independent')
+
+
+def convert_openF_fermionic_op_to_maj_op(fermionic_op):
+    """
+    Convserion as:
+        a_{p} = 0.5*(γ_{2p} + iγ_{2p+1})
+        a†_{p} = 0.5*(γ_{2p} - iγ_{2p+1})
+     note goes from N to 2N sites!
+
+    # uses inbuilt functions in OpenFermion and maps to symplectic form
+
+    """
+    if not isinstance(fermionic_op, FermionOperator):
+        raise ValueError('not an openfermion Fermionic operator')
+
+    N_sites = count_qubits(fermionic_op)
+    maj_operator = get_majorana_operator(ham)
+
+    N_terms = len(maj_operator.terms)
+    majorana = np.zeros((N_terms, 2 * N_sites))
+    coeffs = np.zeros(N_terms, dtype=complex)
+    for ind, term_coeff in enumerate(maj_operator.terms.items()):
+        majorana[ind, term_coeff[0]] = 1
+        coeffs[ind] = term_coeff[1]
+
+    op_out = MajoranaOp(majorana, coeffs).cleanup()
+
+    #     if op_out.to_OF_op() != get_majorana_operator(fermionic_op):
+    #         # check using openF == comparison
+    #         raise ValueError('op not converted correctly')
+
+    return op_out
 
 
 class MajoranaOp:
