@@ -3,11 +3,14 @@ from copy import deepcopy
 from typing import Dict, List
 import openfermion as of
 from openfermion import get_fermion_operator, jordan_wigner, FermionOperator
+from openfermion.circuits import ( uccsd_singlet_get_packed_amplitudes,
+                                   uccsd_singlet_generator, uccsd_generator,
+                                   uccsd_convert_amplitude_format)
 from openfermionpyscf import PyscfMolecularData
 from itertools import combinations
 from symred.S3_projection import QubitTapering, CS_VQE
 from symred.symplectic_form import PauliwordOp, StabilizerOp
-from symred.utils import greedy_dfs
+from symred.utils import greedy_dfs, exact_gs_energy
 
 # comment out due to incompatible versions of Cirq and OpenFermion in Orquestra
 def QubitOperator_to_dict(op, num_qubits):
@@ -74,10 +77,20 @@ class build_molecule_for_projection(CS_VQE):
         self.ham_sor = PauliwordOp({op:coeff for op, coeff in self.second_order_response().items() if op in self.ham_dict})
         self.ham_sor.coeff_vec/=np.max(self.ham_sor.coeff_vec)
 
-        # taper Hamiltonian
+        # UCCSD Ansatz (for singlets)
+        ccsd_single_amps = calculated_molecule.ccsd_single_amps
+        ccsd_double_amps = calculated_molecule.ccsd_double_amps
+        packed_amps = uccsd_singlet_get_packed_amplitudes(ccsd_single_amps,  ccsd_double_amps, self.n_qubits, self.n_electrons)
+        ucc_singlet = uccsd_singlet_generator(packed_amps, self.n_qubits, self.n_electrons)
+        ucc_jw = jordan_wigner(ucc_singlet)
+        self.ucc_dict = QubitOperator_to_dict(ucc_jw, self.n_qubits)
+        self.ucc = PauliwordOp(self.ucc_dict)
+
+        # taper Hamiltonians + ansatz
         taper_hamiltonian = QubitTapering(self.ham)
         self.ham_tap = taper_hamiltonian.taper_it(ref_state=self.hf_state)
         self.sor_tap = taper_hamiltonian.taper_it(aux_operator=self.ham_sor, ref_state=self.hf_state)
+        self.ucc_tap = taper_hamiltonian.taper_it(aux_operator=self.ucc, ref_state=self.hf_state)
         self.n_taper = taper_hamiltonian.n_taper
         self.tapered_qubits   = taper_hamiltonian.stab_qubit_indices
         self.untapered_qubits = taper_hamiltonian.free_qubit_indices
@@ -100,6 +113,9 @@ class build_molecule_for_projection(CS_VQE):
         elif basis_weighting == 'num_commuting':
             weighting_operator = self.ham_tap.copy()
             weighting_operator.coeff_vec = np.ones(weighting_operator.n_terms)
+        elif basis_weighting == 'UCCSD':
+            weighting_operator = self.ucc_tap.copy()
+            weighting_operator.coeff_vec = np.sin(weighting_operator.coeff_vec.imag)
         else:
             raise ValueError(f'Invalid basis_weighting {basis_weighting}:\n'+
                                 'Must be one of ham_coeff, SOR or num_commuting.')
@@ -166,7 +182,27 @@ class build_molecule_for_projection(CS_VQE):
         f_out_q = QubitOperator_to_dict(f_out_jw, self.n_qubits)
         return f_out_q
             
+    ###############################################
+    ######### for running VQE simulations #########
+    ###############################################
 
-    ###############################################
-    # heuristics with HOMO-LUMO as starting point #
-    ###############################################
+    def greedy_search(self, N_sim, depth=1):
+        """
+        Greedy search for optimal stabilizer relaxation ordering
+        """
+        all_indices = set(range(self.ham_tap.n_qubits))
+        best_relax_indices = []
+        for index in range(N_sim):
+            cs_vqe_errors = []
+            for i in range(self.ham_tap.n_qubits):
+                if i not in best_relax_indices:
+                    stab_indices = list(all_indices-set(best_relax_indices+[i]))
+                    projected = self.contextual_subspace_projection(stab_indices)
+                    nrg = exact_gs_energy(projected.to_sparse_matrix)[0]
+                    error = abs(nrg-self.fci_energy)
+                    cs_vqe_errors.append([i, abs(nrg-self.fci_energy)])
+            best_index, best_error = sorted(cs_vqe_errors, key=lambda x:x[1])[0]
+            print(f'{projected.n_qubits}-qubit CS-VQE error: {best_error: .6f}')
+            best_relax_indices.append(best_index)
+        print('------ done ------')
+        return list(all_indices-set(best_relax_indices))
