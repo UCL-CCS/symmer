@@ -1,4 +1,4 @@
-name: pull_request Continuous_Integratio_And_Deployment
+name: pull_request Continuous_Integration_And_Deployment
 on: 
   pull_request:
     branches: [main]
