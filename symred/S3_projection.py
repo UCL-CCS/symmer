@@ -1,5 +1,6 @@
 from copy import deepcopy
-from functools import cached_property, reduce
+from functools import reduce
+from cached_property import cached_property
 from itertools import combinations
 from shutil import ExecError
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
