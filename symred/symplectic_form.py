@@ -572,7 +572,7 @@ def convert_openF_fermionic_op_to_maj_op(fermionic_op):
         raise ValueError('not an openfermion Fermionic operator')
 
     N_sites = count_qubits(fermionic_op)
-    maj_operator = get_majorana_operator(ham)
+    maj_operator = get_majorana_operator(fermionic_op)
 
     N_terms = len(maj_operator.terms)
     majorana = np.zeros((N_terms, 2 * N_sites))
@@ -590,6 +590,26 @@ def convert_openF_fermionic_op_to_maj_op(fermionic_op):
     return op_out
 
 
+def bubble_sort_maj(array):
+
+    arr = np.asarray(array)
+    n_sites = arr.shape[0]
+    sign_dict = {0: +1, 1:-1}
+    # Traverse through all array elements
+    swap_counter = 0
+    for i in range(n_sites):
+        swapped = False
+        for j in range(0, n_sites - i - 1):
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+                swapped = True
+                swap_counter+=1
+
+        if swapped == False:
+            break
+
+    return arr.tolist(), sign_dict[swap_counter%2]
+
 class MajoranaOp:
     """
     A class thats represents an operator defined as Majorana fermionic operators (stored in a symplectic representation).
@@ -605,7 +625,7 @@ class MajoranaOp:
                  coeff_list
                  ) -> None:
         """
-        TODO
+        TODO: need to fix ordering in init! ( aka if one defines [[12,10]] then we get y_10 y_12 (but order change here must change sign!)
         """
         self.coeff_vec = np.asarray(coeff_list, dtype=complex)
         self.initalize_op(list_lists_OR_sympletic_form)
@@ -630,7 +650,9 @@ class MajoranaOp:
             n_terms = len(input_term)
             self.symp_matrix = np.zeros((n_terms, self.n_sites), dtype=int)
             for ind, term in enumerate(input_term):
-                self.symp_matrix[ind, term] = 1
+                ordered_term, sign = bubble_sort_maj(term)
+                self.symp_matrix[ind, ordered_term] = 1
+                self.coeff_vec[ind] *= sign
 
         assert (self.symp_matrix.shape[0] == len(self.coeff_vec)), 'incorrect number of coefficients'
 
@@ -663,6 +685,7 @@ class MajoranaOp:
         # 1 means terms anticommute!
         # 0 means terms commute!
         # { γA, γB } = [1 + (−1)|A||B|+|A∩B|]γAγB
+        # https://arxiv.org/pdf/2101.09349.pdf (eq 9)
         if self.n_sites != M_OP.n_sites:
             sites = min(self.n_sites, M_OP.n_sites)
         else:
