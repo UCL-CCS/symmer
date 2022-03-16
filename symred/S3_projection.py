@@ -225,6 +225,7 @@ class QubitTapering(S3_projection):
         # if a reference state was supplied, taper it by dropping any
         # qubit positions fixed during the perform_projection method
         if ref_state is not None:
+            ref_state = np.array(ref_state)
             self.tapered_ref_state = ref_state[self.free_qubit_indices]
 
         return tapered_operator
