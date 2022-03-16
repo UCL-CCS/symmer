@@ -9,6 +9,47 @@ from scipy.optimize import minimize_scalar
 from typing import Dict, List, Tuple, Union
 import numpy as np
 
+def unitary_partitioning_rotations(AC_op: PauliwordOp) -> List[Tuple[str,float]]:
+    """ Perform unitary partitioning as per https://doi.org/10.1103/PhysRevA.101.062322 (Section A)
+    Note unitary paritioning only works when the terms are mutually anticommuting
+    """
+    # check the terms are mutually anticommuting to avoid an infinite loop:
+    assert(
+        np.all(
+            np.array(AC_op.adjacency_matrix, dtype=int)
+                      ==np.eye(AC_op.n_terms, AC_op.n_terms)
+        )
+    ), 'Operator terms are not mutually anticommuting'
+    
+    rotations = []
+    
+    def _recursive_unitary_partitioning(AC_op: PauliwordOp) -> None:
+        """ Always retains the first term of the operator, deletes the second 
+        term at each level of recursion and reads out the necessary rotations
+        """
+        if AC_op.n_terms == 1:
+            return None
+        else:
+            op_for_rotation = AC_op.copy()
+            A0, A1 = op_for_rotation[0], op_for_rotation[1]
+            angle = np.arctan(A1.coeff_vec / A0.coeff_vec)
+            # set coefficients to 1 since we only want to track sign flip from here
+            A0.coeff_vec, A1.coeff_vec = [1], [1]
+            pauli_rot = (A0 * A1).multiply_by_constant(-1j)
+            angle*=pauli_rot.coeff_vec
+            # perform the rotation, thus deleting a single term from the input operator
+            AC_op_rotated = op_for_rotation._rotate_by_single_Pword(pauli_rot, angle).cleanup_zeros()
+            
+            # append the rotation to list
+            rotations.append((symplectic_to_string(pauli_rot.symp_matrix[0]), angle.real[0]))
+            
+            return _recursive_unitary_partitioning(AC_op_rotated)
+    
+    _recursive_unitary_partitioning(AC_op)
+    
+    return rotations
+
+
 class S3_projection:
     """ Base class for enabling qubit reduction techniques derived from
     the Stabilizer SubSpace (S3) projection framework, such as tapering
@@ -86,7 +127,7 @@ class S3_projection:
             operator: PauliwordOp,
             ref_state: Union[List[int], np.array]=None,
             sector: Union[List[int], np.array]=None,
-            insert_rotation:Tuple[str,float]=None
+            insert_rotations:List[Tuple[str, float]]=[]
         ) -> PauliwordOp:
         """ Input a PauliwordOp and returns the reduced operator corresponding 
         with the specified stabilizers and eigenvalues.
@@ -105,18 +146,12 @@ class S3_projection:
         self.stab_qubit_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1] % operator.n_qubits
         self.free_qubit_indices  = np.setdiff1d(np.arange(operator.n_qubits),self.stab_qubit_indices)
 
-        stab_rotations, angles = self.stabilizers.stabilizer_rotations
-        # ...and insert any supplementary ones coming from the child class
-        if insert_rotation is not None:
-            stab_rotations.insert(0, insert_rotation[0])
-            angles.insert(0, insert_rotation[1])
+        # insert any supplementary rotations coming from the child class
+        stab_rotations = insert_rotations + self.stabilizers.stabilizer_rotations
 
         # perform the full list of rotations on the input operator...
         if stab_rotations != []:
-            op_rotated = operator.recursive_rotate_by_Pword(
-                pauli_rot_list=stab_rotations, 
-                angles=angles
-            )
+            op_rotated = operator.recursive_rotate_by_Pword(stab_rotations)
         else:
             op_rotated = operator
         
@@ -191,6 +226,7 @@ class QubitTapering(S3_projection):
         # if a reference state was supplied, taper it by dropping any
         # qubit positions fixed during the perform_projection method
         if ref_state is not None:
+            ref_state = np.array(ref_state)
             self.tapered_ref_state = ref_state[self.free_qubit_indices]
 
         return tapered_operator
@@ -219,7 +255,7 @@ class CS_VQE(S3_projection):
         self.decompose_noncontextual()
         self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
         self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
-        self.clique_operator = self.noncontextual_basis[:self.n_cliques]
+        self.clique_operator = (self.noncontextual_basis[:self.n_cliques]).sort(by='Z')
 
         symmetry_generators = self.noncontextual_basis[self.n_cliques:]
         self.symmetry_generators = StabilizerOp(
@@ -388,24 +424,6 @@ class CS_VQE(S3_projection):
         else:
             raise NotImplementedError('Currently only works provided a reference state')
             # Allow discrete optimization over generator value assignment here, e.g. with hypermapper
-    
-    @cached_property
-    def unitary_partitioning(self):
-        """ Implementation of the unitary partitiong procedure 
-        described in https://doi.org/10.1103/PhysRevA.101.062322 (Section A)
-        
-        TODO Currently works only when number of cliques M=2
-        """
-        C0 = self.clique_operator[0]
-        C1 = self.clique_operator[1]
-
-        pauli_rotation = (C0*C1).multiply_by_constant(-1j)
-        angle = np.arctan(C1.coeff_vec/C0.coeff_vec)
-        #if you wish to rotate onto +1 eigenstate:
-        #if abs(C1.coeff_vec+np.cos(angle)) < 1e-15:
-        #    angle += np.pi
-            
-        return pauli_rotation, angle
 
     def contextual_subspace_projection(self,
             stabilizer_indices: List[int],
@@ -425,19 +443,17 @@ class CS_VQE(S3_projection):
             # in this case apply the unitary partitioning rotations
             stab_indices.pop(stab_indices.index(0))
             stab_indices = [i-1 for i in stab_indices]
-            UP_rot, UP_angle = self.unitary_partitioning
-            rotated_clique_op = self.clique_operator._rotate_by_single_Pword(
-                UP_rot, UP_angle
-                ).cleanup_zeros(zero_threshold=1e-5)
+            UP_rotations = unitary_partitioning_rotations(self.clique_operator)
+            rotated_clique_op = self.clique_operator.recursive_rotate_by_Pword(UP_rotations).cleanup_zeros(zero_threshold=1e-15)
             rotated_clique_op.coeff_vec=np.round(rotated_clique_op.coeff_vec)
             fix_stabilizers = reduce(lambda x,y: x+y,
                 [rotated_clique_op]+[self.symmetry_generators[i] for i in stab_indices])
-            insert_rotation = [list(UP_rot.to_dictionary.keys())[0], UP_angle]
+            insert_rotations = UP_rotations
         else:
             stab_indices = [i-1 for i in stab_indices]
             fix_stabilizers = reduce(lambda x,y: x+y,
                 [self.symmetry_generators[i] for i in stab_indices])
-            insert_rotation = None
+            insert_rotations = []
 
         # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
         fix_stabilizers = StabilizerOp(
@@ -451,7 +467,7 @@ class CS_VQE(S3_projection):
 
         return self.perform_projection(
             operator=operator_to_project,
-            insert_rotation=insert_rotation
+            insert_rotations=insert_rotations
         )
         
 class CheatS_VQE(S3_projection):
