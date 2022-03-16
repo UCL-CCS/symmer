@@ -190,11 +190,20 @@ class PauliwordOp:
         """
         return deepcopy(self)
 
-    def sort(self) -> "PauliwordOp":
+    def sort(self, by='magnitude') -> "PauliwordOp":
         """
-        Sort the terms by coefficient magnitude
+        Sort the terms by some criterion, either magnitude, X, Y or Z
         """
-        sort_order = np.argsort(-abs(self.coeff_vec))
+        if by=='magnitude':
+            sort_order = np.argsort(-abs(self.coeff_vec))
+        elif by=='Z':
+            sort_order = np.argsort(np.einsum('ij->i', self.n_qubits*self.X_block + self.Z_block))
+        elif by=='X':
+            sort_order = np.argsort(np.einsum('ij->i', self.X_block + self.n_qubits*self.Z_block))
+        elif by=='Y':
+            sort_order = np.argsort(np.einsum('ij->i', abs(self.X_block - self.Z_block)))
+        else:
+            raise ValueError('Only permitted sort by values are magnitude, X, Y or Z')
         return PauliwordOp(self.symp_matrix[sort_order], self.coeff_vec[sort_order])
 
     def basis_reconstruction(self, 
@@ -453,8 +462,7 @@ class PauliwordOp:
         return commute_self + anticom_part
 
     def recursive_rotate_by_Pword(self, 
-            pauli_rot_list: Union[List[str], List[np.array]], 
-            angles: List[float] = None
+            rotations: List[Tuple[str, float]]
         ) -> "PauliwordOp":
         """ 
         Performs single Pauli rotations recursively left-to-right given a list of paulis supplied 
@@ -463,16 +471,12 @@ class PauliwordOp:
 
         If no angles are given then rotations are assumed to be pi/2 (Clifford)
         """
-        if isinstance(pauli_rot_list[0], str):
-            pauli_rot_list = [string_to_symplectic(r, self.n_qubits) for r in pauli_rot_list]
-        if angles is None:
-            angles = [None for t in range(len(pauli_rot_list))]
-        assert(len(angles) == len(pauli_rot_list)), 'Mismatch between number of angles and number of Pauli terms'
-        P_rotating = self.copy()
-        for pauli_single,angle in zip(pauli_rot_list, angles):#.symp_matrix,Pword.coeff_vec,angles):
-            Pword_temp = PauliwordOp(pauli_single, [1]) # enforcing coefficient to be 1, see above
-            P_rotating = P_rotating._rotate_by_single_Pword(Pword_temp, angle).cleanup()
-        return P_rotating
+        op_copy = self.copy()
+        for pauli_rotation,angle in rotations:
+            symp_rotation = string_to_symplectic(pauli_rotation, self.n_qubits)
+            Pword_temp = PauliwordOp(symp_rotation, [1]) # enforcing coefficient to be 1, see above
+            op_copy = op_copy._rotate_by_single_Pword(Pword_temp, angle).cleanup()
+        return op_copy
 
     @cached_property
     def PauliwordOp_to_OF(self) -> List[QubitOperator]:
@@ -599,7 +603,7 @@ class StabilizerOp(PauliwordOp):
             pivot_index_X = pivot_index % self.n_qubits # index in the X block
             base_vector[np.array([pivot_index_X, pivot_index_X+self.n_qubits])]=1
 
-            rotations.append(symplectic_to_string(base_vector))
+            rotations.append((symplectic_to_string(base_vector), None))
             used_indices.append(pivot_index_X)
             used_indices.append(pivot_index_X + self.n_qubits)
             
@@ -651,7 +655,7 @@ class StabilizerOp(PauliwordOp):
                 (self.target_sqp == 'X' and sqp_index>=self.n_qubits)):
                 update_sets(np.zeros(2*self.n_qubits, dtype=int), sqp_index)
 
-        return rotations, [None for i in range(len(rotations))]
+        return rotations
 
     def update_sector(self, 
             ref_state: Union[List[int], np.array]
@@ -668,9 +672,8 @@ class StabilizerOp(PauliwordOp):
     def rotate_onto_single_qubit_paulis(self) -> "StabilizerOp":
         """ Returns the rotated single-qubit Pauli stabilizers
         """
-        rotations, angles = self.stabilizer_rotations
-        if rotations != []:
-            rotated_stabilizers = self.recursive_rotate_by_Pword(rotations, angles)
+        if self.stabilizer_rotations != []:
+            rotated_stabilizers = self.recursive_rotate_by_Pword(self.stabilizer_rotations)
         else:
             rotated_stabilizers = self
         return StabilizerOp(
