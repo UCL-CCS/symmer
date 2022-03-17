@@ -4,9 +4,9 @@ from cached_property import cached_property
 from itertools import combinations
 from shutil import ExecError
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, greedy_dfs, to_indep_set, quasi_model
+from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, quasi_model, unit_n_sphere_cartesian_coords
 from quantumtools.Hamiltonian import HamiltonianGraph
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize_scalar, differential_evolution
 from typing import Dict, List, Tuple, Union
 import numpy as np
 
@@ -422,24 +422,22 @@ class CS_VQE(S3_projection):
 
     def solve_noncontextual(self, ref_state: np.array = None) -> None:
         """ Minimize the classical objective function, yielding the noncontextual ground state
-        TODO allow any number of cliques and implement effective discrete optimizer (such as hypermapper)
+        TODO implement effective discrete optimizer (such as hypermapper)
         """
         if ref_state is not None:
-            # update the symmetry generator G coefficients
+            # update the symmetry generator G coefficients w.r.t. the reference state
             self.symmetry_generators.update_sector(ref_state=ref_state)
             fix_nu = self.symmetry_generators.coeff_vec
-            if self.n_cliques==2:
-                def convex_problem(theta):
-                    r = np.array([np.cos(theta), np.sin(theta)])
-                    return self.noncontextual_objective_function(fix_nu, r)
-                opt_out = minimize_scalar(convex_problem)
-                self.noncontextual_energy = opt_out['fun']
-                theta = opt_out['x']
-                r = np.array([np.cos(theta), np.sin(theta)])
-                # update the C(r) operator coefficients
-                self.clique_operator.coeff_vec = r
-            else:
-                raise NotImplementedError('Currently only works for two cliques')
+            # the optimization problem is now convex
+            def convex_problem(angles):
+                r = unit_n_sphere_cartesian_coords(angles)
+                return self.noncontextual_objective_function(fix_nu, r)
+            # given M cliques, optimize over the unit (M-1)-sphere and convert to cartesians for the r vector
+            bounds = [(0, np.pi) for i in range(self.n_cliques-2)]+[(0, 2*np.pi)]
+            optimzer_output = differential_evolution(convex_problem, bounds)
+            self.noncontextual_energy = optimzer_output['fun']
+            optimal_angles = optimzer_output['x']
+            self.clique_operator.coeff_vec = unit_n_sphere_cartesian_coords(optimal_angles)
         else:
             raise NotImplementedError('Currently only works provided a reference state')
             # Allow discrete optimization over generator value assignment here, e.g. with hypermapper

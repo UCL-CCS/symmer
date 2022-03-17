@@ -131,7 +131,14 @@ def exact_gs_energy(sparse_matrix, initial_guess=None) -> Tuple[float, np.array]
 
     return ground_energy, np.array(ground_state)
 
-
+def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
+    """ Input an array of angles of length n, returns the n+1 cartesian coordinates 
+    of the corresponding unit n-sphere in (n+1)-dimensional Euclidean space.
+    """
+    cartesians = [np.prod(np.sin(angles[:i]))*np.cos(angles[i]) for i in range(len(angles))]
+    cartesians.append(np.prod(np.sin(angles)))
+    return np.array(cartesians)
+    
 #########################################################################
 #### For now uses the legacy code for identifying noncontextual sets ####
 ###################### TODO graph techniques! ###########################
