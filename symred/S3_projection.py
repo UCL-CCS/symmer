@@ -4,7 +4,8 @@ from cached_property import cached_property
 from itertools import combinations
 from shutil import ExecError
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, greedy_dfs, to_indep_set
+from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, greedy_dfs, to_indep_set, quasi_model
+from quantumtools.Hamiltonian import HamiltonianGraph
 from scipy.optimize import minimize_scalar
 from typing import Dict, List, Tuple, Union
 import numpy as np
@@ -269,18 +270,24 @@ class CS_VQE(S3_projection):
     @cached_property
     def noncontextual_operator(self):
         """ Extract a noncontextual set of Pauli terms from the operator
+
+        Implementation of the algorithm in https://doi.org/10.1103/PhysRevLett.123.200501
+        Does a single pass over the Hamiltonian and appends terms to noncontextual_operator 
+        that do not make it contextual - easy to do multiple passes although this does not 
+        seem to yield better results from experimentation.
+
         TODO graph-based approach, currently uses legacy implementation
         """
-        #op_dict = self.operator.to_dictionary
-        #noncontextual_set = greedy_dfs(op_dict, cutoff=10)[-1]
-        #return PauliwordOp({op:op_dict[op] for op in noncontextual_set})
-        
-        diagonal_mask = np.where(np.all(self.operator.X_block==0, axis=1))
-        off_diag_mask = np.setdiff1d(np.arange(self.operator.coeff_vec.shape[0]), diagonal_mask)
-        largest_off_diag_index = off_diag_mask[np.argmax(abs(self.operator.coeff_vec[off_diag_mask]))]
-        mask = np.append(diagonal_mask, largest_off_diag_index)
-        return PauliwordOp(self.operator.symp_matrix[mask], self.operator.coeff_vec[mask])        
-    
+        # order the operator terms by coefficient magnitude
+        check_ops = self.operator.sort(by='magnitude')
+        # initialise as identity with 0 coefficient
+        I_symp = np.zeros(2*self.operator.n_qubits, dtype=int)
+        noncontextual_operator = PauliwordOp(I_symp, [0])
+        for i in range(check_ops.n_terms):
+            if (noncontextual_operator+check_ops[i]).check_noncontextual:
+                noncontextual_operator+=check_ops[i]
+        return noncontextual_operator
+
     def basis_score(self, 
             basis: StabilizerOp
         ) -> float:
@@ -304,6 +311,18 @@ class CS_VQE(S3_projection):
     def noncontextual_basis(self) -> StabilizerOp:
         """ Find an independent basis for the noncontextual symmetry
         """
+        ham_nc = self.noncontextual_operator.to_dictionary
+        model = quasi_model({op:ham_nc[op] for op in list(ham_nc.keys())[::-1]})
+        symmetry_generators, clique_reps = model[0], model[1]
+        basis = (
+            PauliwordOp(symmetry_generators, np.ones(len(symmetry_generators))) +
+            PauliwordOp(clique_reps, np.ones(len(clique_reps)))
+        )
+        basis_order = np.lexsort(basis.adjacency_matrix)
+        basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
+        self.n_cliques = np.count_nonzero(~np.all(basis.adjacency_matrix, axis=1))
+        return basis
+
         # construct universally commuting basis first
         # swap order of XZ blocks in symplectic matrix to ZX
         ZX_symp = np.hstack([self.noncontextual_operator.Z_block, 
@@ -364,7 +383,7 @@ class CS_VQE(S3_projection):
         basis_order = np.lexsort(basis.adjacency_matrix)
         basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
         self.n_cliques = np.count_nonzero(~np.all(basis.adjacency_matrix, axis=1))
-
+        
         return basis
 
     #@cached_property
