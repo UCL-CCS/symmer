@@ -197,9 +197,9 @@ class PauliwordOp:
         if by=='magnitude':
             sort_order = np.argsort(-abs(self.coeff_vec))
         elif by=='Z':
-            sort_order = np.argsort(np.einsum('ij->i', self.n_qubits*self.X_block + self.Z_block))
+            sort_order = np.argsort(np.einsum('ij->i', (self.n_qubits+1)*self.X_block + self.Z_block))
         elif by=='X':
-            sort_order = np.argsort(np.einsum('ij->i', self.X_block + self.n_qubits*self.Z_block))
+            sort_order = np.argsort(np.einsum('ij->i', self.X_block + (self.n_qubits+1)*self.Z_block))
         elif by=='Y':
             sort_order = np.argsort(np.einsum('ij->i', abs(self.X_block - self.Z_block)))
         else:
@@ -415,6 +415,27 @@ class PauliwordOp:
         """ Checks which terms of self commute within itself
         """
         return self.commutes_termwise(self)
+
+    @cached_property
+    def check_noncontextual(self):
+        """ Returns True if the operator is noncontextual, False if contextual
+        Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
+        """
+        # mask the terms that do not commute universally amongst the operator
+        mask_non_universal = np.where(np.any(~self.adjacency_matrix, axis=1))[0]
+        # look only at the unique rows in the masked adjacency matrix -
+        # identical rows correspond with operators of the same clique
+        unique_commutation_character = np.unique(
+            np.array(
+                self.adjacency_matrix[mask_non_universal,:][:,mask_non_universal], 
+                dtype=int
+                ), 
+            axis=0
+        )
+        # if the unique commutation characteristics are disjoint, i.e. no overlapping ones 
+        # between rows, the operator is noncontextual - hence we sum over rows and check
+        # the resulting vector consists of all ones.
+        return np.all(np.einsum('ij->j', unique_commutation_character)==1)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 
