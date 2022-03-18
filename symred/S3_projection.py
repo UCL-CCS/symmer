@@ -4,7 +4,7 @@ from cached_property import cached_property
 from itertools import combinations
 from shutil import ExecError
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, quasi_model, unit_n_sphere_cartesian_coords
+from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, quasi_model, unit_n_sphere_cartesian_coords, heavy_gaussian_elimination
 from quantumtools.Hamiltonian import HamiltonianGraph
 from scipy.optimize import minimize_scalar, differential_evolution
 from typing import Dict, List, Tuple, Union
@@ -253,22 +253,23 @@ class CS_VQE(S3_projection):
         self.contextual_operator = (operator-self.noncontextual_operator).cleanup_zeros()
         # decompose the noncontextual set into a dictionary of its 
         # universally commuting elements and anticommuting cliques
-        self.decompose_noncontextual()
+        self.noncontextual_reconstruction = (
+            self.noncontextual_operator.basis_reconstruction(self.noncontextual_basis)
+        )
         self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
         self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
         self.clique_operator = (self.noncontextual_basis[:self.n_cliques]).sort(by='Z')
-
-        symmetry_generators = self.noncontextual_basis[self.n_cliques:]
+        symmetry_generators_symp = self.noncontextual_basis.symp_matrix[self.n_cliques:]
         self.symmetry_generators = StabilizerOp(
-            symmetry_generators.symp_matrix,
-            symmetry_generators.coeff_vec
+            symmetry_generators_symp,
+            np.ones(symmetry_generators_symp.shape[0])
         )
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
         self.solve_noncontextual(ref_state)
 
     @cached_property
-    def noncontextual_operator(self):
+    def noncontextual_operator(self) -> PauliwordOp:
         """ Extract a noncontextual set of Pauli terms from the operator
 
         Implementation of the algorithm in https://doi.org/10.1103/PhysRevLett.123.200501
@@ -284,130 +285,55 @@ class CS_VQE(S3_projection):
         I_symp = np.zeros(2*self.operator.n_qubits, dtype=int)
         noncontextual_operator = PauliwordOp(I_symp, [0])
         for i in range(check_ops.n_terms):
-            if (noncontextual_operator+check_ops[i]).check_noncontextual:
+            if (noncontextual_operator+check_ops[i]).is_noncontextual:
                 noncontextual_operator+=check_ops[i]
         return noncontextual_operator
-
-    def basis_score(self, 
-            basis: StabilizerOp
-        ) -> float:
-        """ Evaluate the score of an input basis according 
-        to the basis weighting operator, for example:
-            - set Hamiltonian cofficients to 1 for unweighted number of commuting terms
-            - specify as the SOR Hamiltonian to weight according to second-order response
-            - if None given then weights by Hamiltonian coefficient magnitude
-        """
-        return np.sqrt(
-            np.sum(
-                np.square(
-                    self.basis_weighting_operator.coeff_vec[
-                        np.all(self.basis_weighting_operator.commutes_termwise(basis), axis=1)
-                        ]
-                )
-            )
-        )
 
     @cached_property
     def noncontextual_basis(self) -> StabilizerOp:
         """ Find an independent basis for the noncontextual symmetry
         """
-        ham_nc = self.noncontextual_operator.to_dictionary
-        model = quasi_model({op:ham_nc[op] for op in list(ham_nc.keys())[::-1]})
-        symmetry_generators, clique_reps = model[0], model[1]
-        basis = (
-            PauliwordOp(symmetry_generators, np.ones(len(symmetry_generators))) +
-            PauliwordOp(clique_reps, np.ones(len(clique_reps)))
-        )
-        basis_order = np.lexsort(basis.adjacency_matrix)
-        basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
-        self.n_cliques = np.count_nonzero(~np.all(basis.adjacency_matrix, axis=1))
-        return basis
-
-        # construct universally commuting basis first
-        # swap order of XZ blocks in symplectic matrix to ZX
-        ZX_symp = np.hstack([self.noncontextual_operator.Z_block, 
-                             self.noncontextual_operator.X_block])
-        reduced = gf2_gaus_elim(ZX_symp)
-        kernel  = gf2_basis_for_gf2_rref(reduced)
-        universal_basis = StabilizerOp(kernel, np.ones(kernel.shape[0]))
-        clique_rep_indices = np.where(
-            np.all(
-                self.noncontextual_operator.basis_reconstruction(universal_basis)==0, 
-                axis=1
-                )
-            )[0][1:]
-        clique_operator = reduce(
-            lambda x,y:x+y, 
-            [self.noncontextual_operator[int(i)] for i in clique_rep_indices]
+        self.decomposed = {}
+        # extract the universally commuting noncontextual terms
+        universal_mask = np.where(np.all(self.noncontextual_operator.adjacency_matrix, axis=1))
+        universal_operator = PauliwordOp(self.noncontextual_operator.symp_matrix[universal_mask],
+                                         self.noncontextual_operator.coeff_vec[universal_mask])
+        self.decomposed['symmetry'] = universal_operator
+        # identify the anticommuting cliques
+        clique_union = (self.noncontextual_operator - universal_operator).cleanup_zeros()
+        # order lexicographically and take difference between adjacent rows
+        clique_grouping_order = np.lexsort(clique_union.adjacency_matrix.T)
+        diff_adjacent = np.diff(clique_union.adjacency_matrix[clique_grouping_order], axis=0)
+        # the unique cliques are the non-zero rows in diff_adjacent
+        mask_unique_cliques = np.append(True, ~np.all(diff_adjacent==0, axis=1))
+        # determine the inverse mapping so terms of the same clique have the same index
+        inverse_index = np.zeros_like(clique_grouping_order)
+        inverse_index[clique_grouping_order] = np.cumsum(mask_unique_cliques) - 1
+        mask_cliques = np.stack([np.where(inverse_index==i)[0] for i in np.unique(inverse_index)])
+        # mask each clique and select a class represetative for its contribution in the noncontextual basis
+        clique_reps = []
+        for i, (Ci_symp, Ci_coef) in enumerate(
+            zip(
+                clique_union.symp_matrix[mask_cliques],
+                clique_union.coeff_vec[mask_cliques]
             )
+        ):
+            Ci_operator = PauliwordOp(Ci_symp, Ci_coef)
+            self.decomposed[f'clique_{i}'] = Ci_operator
+            clique_reps.append(Ci_operator.sort(by='magnitude')[0].symp_matrix)
 
-        # find the clique operator with only Pauli Z's and append to universal terms
-        Z_clique_op = clique_operator[int(np.where(np.all(clique_operator.X_block==0, axis=1))[0][0])]
-        X_clique_op = clique_operator[int(np.where(np.any(clique_operator.X_block!=0, axis=1))[0][0])]
-        anticommuting_position = np.where(np.logical_and(X_clique_op.X_block, Z_clique_op.Z_block))[1]
-        # find the basis of universally commuting generators that maximises 
-        # commutativity with the operator w.r.t. some weighting objective
-        basis_to_optimize = universal_basis + Z_clique_op
-        sort_order = np.lexsort(basis_to_optimize.Z_block.T)
-        to_max = basis_to_optimize.symp_matrix.shape[0]
-        matrix = basis_to_optimize.Z_block[sort_order]
-        avoid_index = int(np.where(matrix[:,anticommuting_position])[0][0])
-
-        best_generators = []
-        for i in range(to_max):
-            generator_bin = []
-            try_combinations = []
-            for r in range(self.operator.n_qubits-i):
-                try_combinations += list(combinations(range(i+1, to_max), r=r))
-            for comb in try_combinations:
-                mod_row = matrix[i].copy()
-                for j in comb:
-                    if j!=avoid_index:
-                        mod_row+=matrix[j]
-                mod_row%=2
-                test_basis_symp = np.vstack(best_generators+[mod_row])
-                test_basis = StabilizerOp(
-                    np.hstack([np.zeros_like(test_basis_symp), test_basis_symp]), 
-                    np.ones(i+1)
-                )
-                score = self.basis_score(test_basis)
-                generator_bin.append([mod_row,score])
-            best_generators.append(sorted(generator_bin, key=lambda x:-x[1])[0][0])
-        
-        basis_Z_block = np.vstack(best_generators)
-        universal_basis = StabilizerOp(np.hstack([np.zeros_like(basis_Z_block), basis_Z_block]), 
-                            np.ones(len(best_generators)))
-        
-        basis = universal_basis + X_clique_op
-        # order the basis so clique representatives appear at the beginning
+        # now we are ready to build the noncontextual basis...
+        # perform partial Gaussian elimination on the symmetry terms - the resulting
+        # symmetry generators are heavy in the sense that they have large support
+        reduced_universal = heavy_gaussian_elimination(universal_operator.symp_matrix)
+        # combine the symmetry generators and clique representatives to form the noncontextual basis
+        basis_symp = np.vstack(clique_reps+[reduced_universal])
+        basis = PauliwordOp(basis_symp, np.ones(basis_symp.shape[0]))
         basis_order = np.lexsort(basis.adjacency_matrix)
         basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
         self.n_cliques = np.count_nonzero(~np.all(basis.adjacency_matrix, axis=1))
         
         return basis
-
-    #@cached_property
-    def decompose_noncontextual(self):
-        """
-        """
-        # note the first two columns will never both be 1... definition of noncontextual set!
-        # where the 1 appears determines which clique the term is in
-        self.noncontextual_reconstruction = self.noncontextual_operator.basis_reconstruction(self.noncontextual_basis)
-        mask_non_universal, clique_index = np.where(self.noncontextual_reconstruction[:,0:self.n_cliques])
-        mask_universal = np.where(np.all(self.noncontextual_reconstruction[:,0:self.n_cliques]==0, axis=1)) 
-
-        decomposed = {}
-        univ_symp = self.noncontextual_operator.symp_matrix[mask_universal]
-        univ_coef = self.noncontextual_operator.coeff_vec[mask_universal]
-        decomposed['symmetry'] = PauliwordOp(univ_symp, univ_coef)
-
-        for i in np.unique(clique_index):
-            mask_clique = clique_index==i
-            Ci_symp = self.noncontextual_operator.symp_matrix[mask_non_universal][mask_clique]
-            Ci_coef = self.noncontextual_operator.coeff_vec[mask_non_universal][mask_clique]
-            decomposed[f'clique_{i}'] = PauliwordOp(Ci_symp, Ci_coef)
-
-        return decomposed
 
     def noncontextual_objective_function(self, 
             nu: np.array, 
@@ -485,6 +411,25 @@ class CS_VQE(S3_projection):
         return self.perform_projection(
             operator=operator_to_project,
             insert_rotations=insert_rotations
+        )
+
+    def basis_score(self, 
+            basis: StabilizerOp
+        ) -> float:
+        """ Evaluate the score of an input basis according 
+        to the basis weighting operator, for example:
+            - set Hamiltonian cofficients to 1 for unweighted number of commuting terms
+            - specify as the SOR Hamiltonian to weight according to second-order response
+            - if None given then weights by Hamiltonian coefficient magnitude
+        """
+        return np.sqrt(
+            np.sum(
+                np.square(
+                    self.basis_weighting_operator.coeff_vec[
+                        np.all(self.basis_weighting_operator.commutes_termwise(basis), axis=1)
+                        ]
+                )
+            )
         )
         
 class CheatS_VQE(S3_projection):

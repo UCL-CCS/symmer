@@ -417,7 +417,7 @@ class PauliwordOp:
         return self.commutes_termwise(self)
 
     @cached_property
-    def check_noncontextual(self):
+    def is_noncontextual(self):
         """ Returns True if the operator is noncontextual, False if contextual
         Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
         """
