@@ -6,7 +6,7 @@ from shutil import ExecError
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
 from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, quasi_model, unit_n_sphere_cartesian_coords, heavy_gaussian_elimination
 from quantumtools.Hamiltonian import HamiltonianGraph
-from scipy.optimize import minimize_scalar, differential_evolution
+from scipy.optimize import minimize_scalar, differential_evolution, shgo
 from typing import Dict, List, Tuple, Union
 import numpy as np
 
@@ -49,7 +49,6 @@ def unitary_partitioning_rotations(AC_op: PauliwordOp) -> List[Tuple[str,float]]
     _recursive_unitary_partitioning(AC_op)
     
     return rotations
-
 
 class S3_projection:
     """ Base class for enabling qubit reduction techniques derived from
@@ -258,7 +257,7 @@ class CS_VQE(S3_projection):
         )
         self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
         self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
-        self.clique_operator = (self.noncontextual_basis[:self.n_cliques]).sort(by='Z')
+        self.clique_operator = (self.noncontextual_basis[:self.n_cliques]).sort(key='Z')
         symmetry_generators_symp = self.noncontextual_basis.symp_matrix[self.n_cliques:]
         self.symmetry_generators = StabilizerOp(
             symmetry_generators_symp,
@@ -280,7 +279,7 @@ class CS_VQE(S3_projection):
         TODO graph-based approach, currently uses legacy implementation
         """
         # order the operator terms by coefficient magnitude
-        check_ops = self.operator.sort(by='magnitude')
+        check_ops = self.operator.sort(key='magnitude')
         # initialise as identity with 0 coefficient
         I_symp = np.zeros(2*self.operator.n_qubits, dtype=int)
         noncontextual_operator = PauliwordOp(I_symp, [0])
@@ -320,7 +319,9 @@ class CS_VQE(S3_projection):
         ):
             Ci_operator = PauliwordOp(Ci_symp, Ci_coef)
             self.decomposed[f'clique_{i}'] = Ci_operator
-            clique_reps.append(Ci_operator.sort(by='magnitude')[0].symp_matrix)
+            # choose cliques representative that maximises basis_score
+            rep_scores = [(Ci_operator[i], self.basis_score(Ci_operator[i])) for i in range(len(Ci_coef))]
+            clique_reps.append(sorted(rep_scores, key=lambda x:-x[1])[0][0].symp_matrix)
 
         # now we are ready to build the noncontextual basis...
         # perform partial Gaussian elimination on the symmetry terms - the resulting
@@ -348,26 +349,39 @@ class CS_VQE(S3_projection):
 
     def solve_noncontextual(self, ref_state: np.array = None) -> None:
         """ Minimize the classical objective function, yielding the noncontextual ground state
-        TODO implement effective discrete optimizer (such as hypermapper)
         """
-        if ref_state is not None:
+        def convex_problem(nu):
+            """ given +/-1 value assignments nu, solve for the clique operator coefficients.
+            Note that, with nu fixed, the optimization problem is now convex.
+            """
+            # given M cliques, optimize over the unit (M-1)-sphere and convert to cartesians for the r vector
+            r_bounds = [(0, np.pi)]*(self.n_cliques-2)+[(0, 2*np.pi)]
+            optimizer_output = differential_evolution(
+                func=lambda angles:self.noncontextual_objective_function(
+                    nu, unit_n_sphere_cartesian_coords(angles)
+                    ), 
+                bounds=r_bounds
+            )
+            optimized_energy = optimizer_output['fun']
+            optimized_angles = optimizer_output['x']
+            r_optimal = unit_n_sphere_cartesian_coords(optimized_angles)
+            return optimized_energy, r_optimal
+
+        if ref_state is None:
+            # optimize discrete value assignments nu by relaxation to continuous variables
+            nu_bounds = [(0, np.pi)]*self.symmetry_generators.n_terms
+            optimizer_output = shgo(func=lambda angles:convex_problem(np.cos(angles))[0], bounds=nu_bounds)
+            # if optimization was successful the optimal angles should consist of 0 and pi
+            self.symmetry_generators.coeff_vec = np.array(np.cos(optimizer_output['x']), dtype=int)
+        else:
             # update the symmetry generator G coefficients w.r.t. the reference state
             self.symmetry_generators.update_sector(ref_state=ref_state)
-            fix_nu = self.symmetry_generators.coeff_vec
-            # the optimization problem is now convex
-            def convex_problem(angles):
-                r = unit_n_sphere_cartesian_coords(angles)
-                return self.noncontextual_objective_function(fix_nu, r)
-            # given M cliques, optimize over the unit (M-1)-sphere and convert to cartesians for the r vector
-            bounds = [(0, np.pi) for i in range(self.n_cliques-2)]+[(0, 2*np.pi)]
-            optimzer_output = differential_evolution(convex_problem, bounds)
-            self.noncontextual_energy = optimzer_output['fun']
-            optimal_angles = optimzer_output['x']
-            self.clique_operator.coeff_vec = unit_n_sphere_cartesian_coords(optimal_angles)
-        else:
-            raise NotImplementedError('Currently only works provided a reference state')
-            # Allow discrete optimization over generator value assignment here, e.g. with hypermapper
-
+        
+        # optimize the clique operator coefficients
+        fix_nu = self.symmetry_generators.coeff_vec
+        self.noncontextual_energy, r = convex_problem(fix_nu)
+        self.clique_operator.coeff_vec = r    
+        
     def contextual_subspace_projection(self,
             stabilizer_indices: List[int],
             aux_operator: PauliwordOp = None
