@@ -190,20 +190,26 @@ class PauliwordOp:
         """
         return deepcopy(self)
 
-    def sort(self, by='magnitude') -> "PauliwordOp":
+    def sort(self, by='decreasing', key='magnitude') -> "PauliwordOp":
         """
-        Sort the terms by some criterion, either magnitude, X, Y or Z
+        Sort the terms by some key, either magnitude, weight X, Y or Z
         """
-        if by=='magnitude':
+        if key=='magnitude':
             sort_order = np.argsort(-abs(self.coeff_vec))
-        elif by=='Z':
+        elif key=='weight':
+            sort_order = np.argsort(-np.einsum('ij->i', self.symp_matrix))
+        elif key=='Z':
             sort_order = np.argsort(np.einsum('ij->i', (self.n_qubits+1)*self.X_block + self.Z_block))
-        elif by=='X':
+        elif key=='X':
             sort_order = np.argsort(np.einsum('ij->i', self.X_block + (self.n_qubits+1)*self.Z_block))
-        elif by=='Y':
+        elif key=='Y':
             sort_order = np.argsort(np.einsum('ij->i', abs(self.X_block - self.Z_block)))
         else:
-            raise ValueError('Only permitted sort by values are magnitude, X, Y or Z')
+            raise ValueError('Only permitted sort key values are magnitude, weight, X, Y or Z')
+        if by=='increasing':
+            sort_order = sort_order[::-1]
+        elif by!='decreasing':
+            raise ValueError('Only permitted sort by values are increasing or decreasing')
         return PauliwordOp(self.symp_matrix[sort_order], self.coeff_vec[sort_order])
 
     def basis_reconstruction(self, 
