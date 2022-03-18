@@ -100,7 +100,7 @@ class build_molecule_for_projection(CS_VQE):
         print("Tapering information:")
         print(dashes)
         print(f'We are able to taper {self.n_taper} qubits from the Hamiltonian')
-        print('The symmetry sector is:') 
+        print('The symmetry basis/sector is:') 
         print(taper_hamiltonian.symmetry_generators)
         print(f'The tapered Hartree-Fock state is |{hf_tap_str}>')
         print(dashes)
@@ -186,23 +186,37 @@ class build_molecule_for_projection(CS_VQE):
     ######### for running VQE simulations #########
     ###############################################
 
-    def greedy_search(self, N_sim, depth=1):
+    def _greedy_search(self, n_sim_qubits: int, pool: set, depth: int, print_errors: bool):
         """
-        Greedy search for optimal stabilizer relaxation ordering
+        """
+        if n_sim_qubits<depth:
+            depth = n_sim_qubits
+        if n_sim_qubits == 0:
+            return pool
+        else:
+            cs_vqe_errors = []
+            for relax_indices in combinations(pool, r=depth):
+                relax_indices = list(relax_indices)
+                stab_indices = list(pool.difference(relax_indices))
+                projected = self.contextual_subspace_projection(stab_indices)
+                error = abs(exact_gs_energy(projected.to_sparse_matrix)[0]-self.fci_energy)
+                cs_vqe_errors.append([relax_indices, error])
+            best_relax_indices, best_error = sorted(cs_vqe_errors, key=lambda x:x[1])[0]
+            if print_errors:
+                print(f'{projected.n_qubits}-qubit CS-VQE error: {best_error: .6f}')
+            new_pool = pool.difference(best_relax_indices)
+            return self._greedy_search(n_sim_qubits = n_sim_qubits-depth,
+                            pool=new_pool, 
+                            depth=depth, 
+                            print_errors=print_errors)
+
+    def greedy_search(self, n_sim_qubits, depth=1, print_errors=False):
+        """
         """
         all_indices = set(range(self.ham_tap.n_qubits))
-        best_relax_indices = []
-        for index in range(N_sim):
-            cs_vqe_errors = []
-            for i in range(self.ham_tap.n_qubits):
-                if i not in best_relax_indices:
-                    stab_indices = list(all_indices-set(best_relax_indices+[i]))
-                    projected = self.contextual_subspace_projection(stab_indices)
-                    nrg = exact_gs_energy(projected.to_sparse_matrix)[0]
-                    error = abs(nrg-self.fci_energy)
-                    cs_vqe_errors.append([i, abs(nrg-self.fci_energy)])
-            best_index, best_error = sorted(cs_vqe_errors, key=lambda x:x[1])[0]
-            print(f'{projected.n_qubits}-qubit CS-VQE error: {best_error: .6f}')
-            best_relax_indices.append(best_index)
-        print('------ done ------')
-        return list(all_indices-set(best_relax_indices))
+        return self._greedy_search(
+            n_sim_qubits=n_sim_qubits, 
+            pool=all_indices, 
+            depth=depth, 
+            print_errors=print_errors
+        )

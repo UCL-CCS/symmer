@@ -91,6 +91,29 @@ def gf2_basis_for_gf2_rref(gf2_matrix_in_rreform: np.array) -> np.array:
 
     return basis
 
+def heavy_gaussian_elimination(array_in):
+    """ perform partial Gaussian elimination that obtains leading ones but does 
+    not reduce any further than this (yields basis elements with larger support)
+    """
+    # order array by weight
+    order = np.lexsort(array_in.T)[::-1]
+    to_reduce = array_in[order]
+    max_i, max_j = to_reduce.shape
+    for i1 in range(max_i):
+        # this row will be preserved in final reduced form
+        current_row = to_reduce[i1]
+        # check row not all zeros
+        if np.any(current_row):
+            # identify position of leading one
+            pivot = np.where(current_row)[0][0]
+            for i2 in range(i1+1, max_i):
+                # add the current row to every row below it (mod 2) 
+                if to_reduce[i2, pivot]:
+                    to_reduce[i2]+=current_row
+                    to_reduce%=2
+    # return the reduced non-zero rows
+    return to_reduce[np.where(~np.all(to_reduce==0, axis=1))]               
+
 def get_ground_state_sparse(sparse_matrix, initial_guess=None):
     """Compute lowest eigenvalue and eigenstate.
     Args:
@@ -131,7 +154,14 @@ def exact_gs_energy(sparse_matrix, initial_guess=None) -> Tuple[float, np.array]
 
     return ground_energy, np.array(ground_state)
 
-
+def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
+    """ Input an array of angles of length n, returns the n+1 cartesian coordinates 
+    of the corresponding unit n-sphere in (n+1)-dimensional Euclidean space.
+    """
+    cartesians = [np.prod(np.sin(angles[:i]))*np.cos(angles[i]) for i in range(len(angles))]
+    cartesians.append(np.prod(np.sin(angles)))
+    return np.array(cartesians)
+    
 #########################################################################
 #### For now uses the legacy code for identifying noncontextual sets ####
 ###################### TODO graph techniques! ###########################
