@@ -1,14 +1,17 @@
+# general imports
+import numpy as np
+from scipy.optimize import shgo, differential_evolution
 from copy import deepcopy
+from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
-from itertools import combinations
-from shutil import ExecError
+# specialized imports
 from symred.symplectic_form import PauliwordOp, StabilizerOp, symplectic_to_string
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref, quasi_model, unit_n_sphere_cartesian_coords, heavy_gaussian_elimination
-from quantumtools.Hamiltonian import HamiltonianGraph
-from scipy.optimize import minimize_scalar, differential_evolution, shgo
-from typing import Dict, List, Tuple, Union
-import numpy as np
+from symred.utils import (
+    gf2_gaus_elim, 
+    gf2_basis_for_gf2_rref,
+    heavy_gaussian_elimination,
+    unit_n_sphere_cartesian_coords)
 
 def unitary_partitioning_rotations(AC_op: PauliwordOp) -> List[Tuple[str,float]]:
     """ Perform unitary partitioning as per https://doi.org/10.1103/PhysRevA.101.062322 (Section A)
@@ -67,7 +70,6 @@ class S3_projection:
         auxiliary rotations (that need not be Clifford). This is used in CS-VQE
         to implement unitary partitioning where necessary. 
     """
-    
     rotated_flag = False
 
     def __init__(self,
@@ -96,8 +98,7 @@ class S3_projection:
         stabilized by single Pauli operators (obtained via Clifford operations)
         """
         assert(operator.n_qubits == self.stabilizers.n_qubits), 'The input operator does not have the same number of qubits as the stabilizers'
-        if not self.rotated_flag:
-            raise ExecError('The operator has not been rotated - intended for use with perform_projection method')
+        assert(self.rotated_flag), 'The operator has not been rotated - intended for use with perform_projection method'
         self.rotated_flag = False
         
         # remove terms that do not commute with the rotated stabilizers
@@ -418,7 +419,6 @@ class CS_VQE(S3_projection):
             np.array(fix_stabilizers.coeff_vec, dtype=int),
             target_sqp=self.target_sqp
         )
-
         # instantiate the parent S3_projection classwith the stabilizers we are enforcing
         super().__init__(fix_stabilizers, target_sqp=self.target_sqp)
 

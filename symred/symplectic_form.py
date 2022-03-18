@@ -1,13 +1,24 @@
-from functools import reduce
-from cached_property import cached_property
-from openfermion import QubitOperator, MajoranaOperator, get_sparse_operator, FermionOperator, count_qubits, get_majorana_operator #, get_fermion_operator
-from symred.utils import gf2_gaus_elim
+# general imports
 import numpy as np
 from copy import deepcopy
-from typing import List, Union, Dict, Tuple
+from typing import Dict, List, Tuple, Union
+from functools import reduce
+from cached_property import cached_property
 from scipy.sparse import csr_matrix
 import warnings
 warnings.simplefilter('always', UserWarning)
+# specialized imports
+from symred.utils import gf2_gaus_elim
+from openfermion import (
+    QubitOperator, 
+    MajoranaOperator, 
+    get_sparse_operator, 
+    FermionOperator, 
+    count_qubits, 
+    get_majorana_operator, 
+    #get_fermion_operator
+)
+
 
 def symplectic_to_string(symp_vec) -> str:
     """
@@ -572,7 +583,7 @@ class PauliwordOp:
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
-    by algebraically independent, with all coefficients set to one.
+    by algebraically independent, with all coefficients set to integers +/-1.
 
     - stabilizer_rotations
         This method determines a sequence of Clifford rotations mapping the
