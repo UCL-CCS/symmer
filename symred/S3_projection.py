@@ -11,7 +11,8 @@ from symred.utils import (
     gf2_gaus_elim, 
     gf2_basis_for_gf2_rref,
     heavy_gaussian_elimination,
-    unit_n_sphere_cartesian_coords)
+    unit_n_sphere_cartesian_coords
+    )
 
 def unitary_partitioning_rotations(AC_op: PauliwordOp) -> List[Tuple[str,float]]:
     """ Perform unitary partitioning as per https://doi.org/10.1103/PhysRevA.101.062322 (Section A)
@@ -328,9 +329,19 @@ class CS_VQE(S3_projection):
         # perform partial Gaussian elimination on the symmetry terms - the resulting
         # symmetry generators are heavy in the sense that they have large support
         reduced_universal = heavy_gaussian_elimination(universal_operator.symp_matrix)
+        basis = PauliwordOp(reduced_universal, np.ones(reduced_universal.shape[0]))
+        for i in range(basis.n_terms-1):
+            trials=[]
+            for j in range(i+1, basis.n_terms):
+                test_basis = basis[:i] + basis[i+1:]
+                test_basis += basis[i] * basis[j]
+                trials.append([test_basis, self.basis_score(test_basis)])
+            basis = sorted(trials, key=lambda x:-x[1])[0][0]
         # combine the symmetry generators and clique representatives to form the noncontextual basis
-        basis_symp = np.vstack(clique_reps+[reduced_universal])
-        basis = PauliwordOp(basis_symp, np.ones(basis_symp.shape[0]))
+        #basis_symp = np.vstack(clique_reps+[reduced_universal])
+        #basis = PauliwordOp(basis_symp, np.ones(basis_symp.shape[0]))
+        clique_reps = np.vstack(clique_reps)
+        basis = basis + PauliwordOp(clique_reps, np.ones(clique_reps.shape[0]))
         basis_order = np.lexsort(basis.adjacency_matrix)
         basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
         self.n_cliques = np.count_nonzero(~np.all(basis.adjacency_matrix, axis=1))
