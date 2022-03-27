@@ -187,36 +187,48 @@ class build_molecule_for_projection(CS_VQE):
     ###############################################
 
     def _greedy_search(self, n_sim_qubits: int, pool: set, depth: int, print_errors: bool):
-        """
+        """ for depth d, greedily select stabilizers to relax d-many at a time, choosing
+        that which minimizes the CS-VQE error. This heuristic scales as O(N^d).
+        In https://doi.org/10.22331/q-2021-05-14-456 d=2 was taken.
         """
         if n_sim_qubits<depth:
             depth = n_sim_qubits
         if n_sim_qubits == 0:
+            # once the number of simulation qubits is exhausted, return the stabilizer pool
+            # these are the stabilizers the heuristic has chosen to enforce
             return pool
         else:
             cs_vqe_errors = []
+            # search over combinations from the stabilizer index pool of length d (the depth)
             for relax_indices in combinations(pool, r=depth):
                 relax_indices = list(relax_indices)
                 stab_indices = list(pool.difference(relax_indices))
+                # perform the stabilizer subsapce projection and compute error
+                # to be replaced with actual VQE simulation instead of direct diagonalization
                 projected = self.contextual_subspace_projection(stab_indices)
                 error = abs(exact_gs_energy(projected.to_sparse_matrix)[0]-self.fci_energy)
                 cs_vqe_errors.append([relax_indices, error])
+            # choose the best error and remove the corresponding stabilizer indices from the pool
             best_relax_indices, best_error = sorted(cs_vqe_errors, key=lambda x:x[1])[0]
             if print_errors:
                 print(f'{projected.n_qubits}-qubit CS-VQE error: {best_error: .6f}')
             new_pool = pool.difference(best_relax_indices)
+            # perform an N-d qubit search over the reduced pool 
             return self._greedy_search(n_sim_qubits = n_sim_qubits-depth,
                             pool=new_pool, 
                             depth=depth, 
                             print_errors=print_errors)
 
     def greedy_search(self, n_sim_qubits, depth=1, print_errors=False):
+        """ wraps the _greedy_search recursive method for stabilizer relaxation ordering
         """
-        """
+        # take the full stabilizer pool
         all_indices = set(range(self.ham_tap.n_qubits))
-        return self._greedy_search(
-            n_sim_qubits=n_sim_qubits, 
-            pool=all_indices, 
-            depth=depth, 
-            print_errors=print_errors
+        return list(
+            self._greedy_search(
+                n_sim_qubits=n_sim_qubits, 
+                pool=all_indices, 
+                depth=depth, 
+                print_errors=print_errors
+            )
         )
