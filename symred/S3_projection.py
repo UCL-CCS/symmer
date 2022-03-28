@@ -195,8 +195,12 @@ class QubitTapering(S3_projection):
         ZX_symp = np.hstack([self.operator.Z_block, self.operator.X_block])
         reduced = gf2_gaus_elim(ZX_symp)
         kernel  = gf2_basis_for_gf2_rref(reduced)
+        stabilizers = StabilizerOp(kernel, np.ones(kernel.shape[0]))
 
-        return StabilizerOp(kernel, np.ones(kernel.shape[0]))
+        # TODO choose mutually commuting subset of symmetry generators, throws error for now
+        assert(np.all(stabilizers.adjacency_matrix)), 'Generators are not mutually commuting'
+
+        return stabilizers
 
     def taper_it(self,
             ref_state: Union[List[int], np.array]=None,
