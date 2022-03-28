@@ -403,12 +403,22 @@ class PauliwordOp:
         Omega_Pword_symp = np.hstack((Pword.Z_block,  Pword.X_block)).T
         return (self.symp_matrix @ Omega_Pword_symp) % 2 == 0
 
+    def commutator(self, Pword: "PauliwordOp") -> "PauliwordOp":
+        """ Computes the commutator [A, B] = AB - BA
+        """
+        return (self * Pword - Pword * self).cleanup_zeros()
+
+    def anticommutator(self, Pword: "PauliwordOp") -> "PauliwordOp":
+        """ Computes the anticommutator {A, B} = AB + BA
+        """
+        return (self * Pword + Pword * self).cleanup_zeros()
+
     def commutes(self, 
             Pword: "PauliwordOp"
         ) -> bool:
         """ Checks if every term of self commutes with every term of Pword
         """
-        return np.all(self.commutes_termwise(Pword))
+        return self.commutator(Pword).n_terms == 0
     
     @cached_property
     def adjacency_matrix(self):
