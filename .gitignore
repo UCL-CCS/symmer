@@ -655,6 +655,7 @@ FodyWeavers.xsd
 # Additional files built by Visual Studio
 
 tmp*
+*.hdf5
 
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm+all,jupyternotebooks,visualstudio
 

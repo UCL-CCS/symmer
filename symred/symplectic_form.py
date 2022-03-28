@@ -1,13 +1,24 @@
-from functools import reduce
-from cached_property import cached_property
-from openfermion import QubitOperator, MajoranaOperator, get_sparse_operator, FermionOperator, count_qubits, get_majorana_operator #, get_fermion_operator
-from symred.utils import gf2_gaus_elim
+# general imports
 import numpy as np
 from copy import deepcopy
-from typing import List, Union, Dict, Tuple
+from typing import Dict, List, Tuple, Union
+from functools import reduce
+from cached_property import cached_property
 from scipy.sparse import csr_matrix
 import warnings
 warnings.simplefilter('always', UserWarning)
+# specialized imports
+from symred.utils import gf2_gaus_elim
+from openfermion import (
+    QubitOperator, 
+    MajoranaOperator, 
+    get_sparse_operator, 
+    FermionOperator, 
+    count_qubits, 
+    get_majorana_operator, 
+    #get_fermion_operator
+)
+
 
 def symplectic_to_string(symp_vec) -> str:
     """
@@ -190,20 +201,26 @@ class PauliwordOp:
         """
         return deepcopy(self)
 
-    def sort(self, by='magnitude') -> "PauliwordOp":
+    def sort(self, by='decreasing', key='magnitude') -> "PauliwordOp":
         """
-        Sort the terms by some criterion, either magnitude, X, Y or Z
+        Sort the terms by some key, either magnitude, weight X, Y or Z
         """
-        if by=='magnitude':
+        if key=='magnitude':
             sort_order = np.argsort(-abs(self.coeff_vec))
-        elif by=='Z':
-            sort_order = np.argsort(np.einsum('ij->i', self.n_qubits*self.X_block + self.Z_block))
-        elif by=='X':
-            sort_order = np.argsort(np.einsum('ij->i', self.X_block + self.n_qubits*self.Z_block))
-        elif by=='Y':
+        elif key=='weight':
+            sort_order = np.argsort(-np.einsum('ij->i', self.symp_matrix))
+        elif key=='Z':
+            sort_order = np.argsort(np.einsum('ij->i', (self.n_qubits+1)*self.X_block + self.Z_block))
+        elif key=='X':
+            sort_order = np.argsort(np.einsum('ij->i', self.X_block + (self.n_qubits+1)*self.Z_block))
+        elif key=='Y':
             sort_order = np.argsort(np.einsum('ij->i', abs(self.X_block - self.Z_block)))
         else:
-            raise ValueError('Only permitted sort by values are magnitude, X, Y or Z')
+            raise ValueError('Only permitted sort key values are magnitude, weight, X, Y or Z')
+        if by=='increasing':
+            sort_order = sort_order[::-1]
+        elif by!='decreasing':
+            raise ValueError('Only permitted sort by values are increasing or decreasing')
         return PauliwordOp(self.symp_matrix[sort_order], self.coeff_vec[sort_order])
 
     def basis_reconstruction(self, 
@@ -426,6 +443,27 @@ class PauliwordOp:
         """
         return self.commutes_termwise(self)
 
+    @cached_property
+    def is_noncontextual(self):
+        """ Returns True if the operator is noncontextual, False if contextual
+        Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
+        """
+        # mask the terms that do not commute universally amongst the operator
+        mask_non_universal = np.where(np.any(~self.adjacency_matrix, axis=1))[0]
+        # look only at the unique rows in the masked adjacency matrix -
+        # identical rows correspond with operators of the same clique
+        unique_commutation_character = np.unique(
+            np.array(
+                self.adjacency_matrix[mask_non_universal,:][:,mask_non_universal], 
+                dtype=int
+                ), 
+            axis=0
+        )
+        # if the unique commutation characteristics are disjoint, i.e. no overlapping ones 
+        # between rows, the operator is noncontextual - hence we sum over rows and check
+        # the resulting vector consists of all ones.
+        return np.all(np.einsum('ij->j', unique_commutation_character)==1)
+
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 
             angle: float = None
@@ -555,7 +593,7 @@ class PauliwordOp:
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
-    by algebraically independent, with all coefficients set to one.
+    by algebraically independent, with all coefficients set to integers +/-1.
 
     - stabilizer_rotations
         This method determines a sequence of Clifford rotations mapping the
