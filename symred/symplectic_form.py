@@ -18,6 +18,7 @@ from openfermion import (
     get_majorana_operator, 
     #get_fermion_operator
 )
+from qiskit.circuit import QuantumCircuit, ParameterVector
 
 
 def symplectic_to_string(symp_vec) -> str:
@@ -590,6 +591,93 @@ class PauliwordOp:
             return True
         else:
             return False
+
+class AnsatzOp(PauliwordOp):
+    """ Inherit from PauliwordOp and provide additional functionality
+    for converting operators to quantum circuits
+    """
+    def __init__(self,
+            operator:   Union[List[str], Dict[str, float], np.array],
+            coeff_vec: Union[List[complex], np.array] = None
+        ) -> None:
+        """
+        """
+        coeff_vec = np.array(coeff_vec, dtype=complex)
+        assert(np.all(coeff_vec.imag==0)), 'Coefficients must have zero imaginary component'
+        super().__init__(operator, coeff_vec)
+
+    @cached_property
+    def to_instructions(self) -> Dict[int, Dict[str, List[int]]]:
+        """ Stores a dictionary of gate instructions at each step, where each value
+        is a dictionary indicating the indices on which to apply each H,S,CNOT and RZ gate
+        """
+        circuit_instructions = {}
+        for step, (X,Z) in enumerate(zip(self.X_block, self.Z_block)):
+            # locations for H and S gates to transform into Pauli Z basis
+            H_indices = np.where(X)[0][::-1]
+            S_indices = np.where(X & Z)[0][::-1]
+            # CNOT cascade indices
+            CNOT_indices = np.where(X | Z)[0][::-1]
+            circuit_instructions[step] = {'H_indices':H_indices, 
+                                        'S_indices':S_indices, 
+                                        'CNOT_indices':CNOT_indices,
+                                        'RZ_index':CNOT_indices[-1]}
+        return circuit_instructions
+
+    def to_QuantumCircuit(self, 
+        ref_state: np.array, 
+        trotter_number:int=1, 
+        bind_params:bool=True
+        ) -> str:
+        """
+        Convert the operator to a QASM circuit string for input 
+        into quantum computing packages such as Qiskit and Cirq
+        """
+        def qiskit_ordering(indices):
+            """ we index from left to right - in Qiskit this ordering is reversed
+            """
+            return self.n_qubits - 1 - indices
+
+        qc = QuantumCircuit(self.n_qubits)
+        for i in qiskit_ordering(np.where(ref_state==1)[0]):
+            qc.x(i)
+
+        def CNOT_cascade(cascade_indices, reverse=False):
+            index_pairs = list(zip(cascade_indices[:-1], cascade_indices[1:]))
+            if reverse:
+                index_pairs = index_pairs[::-1]
+            for source, target in index_pairs:
+                qc.cx(source, target)
+
+        def circuit_from_step(angle, H_indices, S_indices, CNOT_indices, RZ_index):
+            # to Pauli X basis
+            for i in S_indices:
+                qc.sdg(i)
+            # to Pauli Z basis
+            for i in H_indices:
+                qc.h(i)
+            # compute parity
+            CNOT_cascade(CNOT_indices)
+            qc.rz(-2*angle, RZ_index)
+            CNOT_cascade(CNOT_indices, reverse=True)
+            for i in H_indices:
+                qc.h(i)
+            for i in S_indices:
+                qc.s(i)
+
+        if bind_params:
+            angles = self.coeff_vec.real/trotter_number
+        else:
+            angles = np.array(ParameterVector('P', self.n_terms))/trotter_number
+
+        assert(len(angles)==len(self.to_instructions)), 'Number of parameters does not match the circuit instructions'
+        for trot_step in range(trotter_number):
+            for step, gate_indices in self.to_instructions.items():
+                qiskit_gate_indices = [qiskit_ordering(indices) for indices in gate_indices.values()]
+                qc.barrier()
+                circuit_from_step(angles[step], *qiskit_gate_indices)
+        
+        return qc
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
