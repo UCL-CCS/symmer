@@ -625,9 +625,9 @@ class AnsatzOp(PauliwordOp):
         return circuit_instructions
 
     def to_QuantumCircuit(self, 
-        ref_state: np.array, 
-        trotter_number:int=1, 
-        bind_params:bool=True
+        ref_state: np.array = None, 
+        trotter_number: int = 1, 
+        bind_params: bool   = True
         ) -> str:
         """
         Convert the operator to a QASM circuit string for input 
