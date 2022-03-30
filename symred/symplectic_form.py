@@ -3,8 +3,11 @@ import numpy as np
 from copy import deepcopy
 from typing import Dict, List, Tuple, Union
 from functools import reduce
+
+from psutil import net_if_stats
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
+from scipy.optimize import minimize
 import warnings
 warnings.simplefilter('always', UserWarning)
 # specialized imports
@@ -593,8 +596,7 @@ class PauliwordOp:
             return False
 
 class AnsatzOp(PauliwordOp):
-    """ Inherit from PauliwordOp and provide additional functionality
-    for converting operators to quantum circuits
+    """ Based on PauliwordOp and introduces functionality for converting operators to quantum circuits
     """
     def __init__(self,
             operator:   Union[List[str], Dict[str, float], np.array],
@@ -605,6 +607,7 @@ class AnsatzOp(PauliwordOp):
         coeff_vec = np.array(coeff_vec, dtype=complex)
         assert(np.all(coeff_vec.imag==0)), 'Coefficients must have zero imaginary component'
         super().__init__(operator, coeff_vec)
+        self.coeff_vec = self.coeff_vec.real
 
     @cached_property
     def to_instructions(self) -> Dict[int, Dict[str, List[int]]]:
@@ -678,6 +681,127 @@ class AnsatzOp(PauliwordOp):
                 circuit_from_step(angles[step], *qiskit_gate_indices)
         
         return qc
+
+class ObservableOp(PauliwordOp):
+    """ Based on PauliwordOp and introduces functionality for evaluating expectation values
+    """
+    def __init__(self,
+        operator:   Union[List[str], Dict[str, float], np.array],
+        coeff_vec: Union[List[complex], np.array] = None
+        ) -> None:
+        """
+        """
+        coeff_vec = np.array(coeff_vec, dtype=complex)
+        assert(np.all(coeff_vec.imag==0)), 'Coefficients must be real, ensuring the operator is Hermitian'
+        super().__init__(operator, coeff_vec)
+        self.coeff_vec = self.coeff_vec.real
+
+    def Z_basis_expectation(self, basis_state: np.array) -> float:
+        """ Provided a single Pauli-Z basis state, computes the expectation value of the operator
+        """
+        assert(set(basis_state).issubset({0,1})), f'Basis state must consist of binary elements, not {set(basis_state)}'
+        assert(len(basis_state)==self.n_qubits), f'Number of qubits {len(basis_state)} in the basis state incompatible with {self.n_qubits}'
+        mask_diagonal = np.where(np.all(self.X_block==0, axis=1))
+        measurement_signs = (-1)**np.einsum('ij->i', self.Z_block[mask_diagonal] & basis_state)
+        return np.sum(measurement_signs * self.coeff_vec[mask_diagonal]).real
+
+    def _ansatz_expectation_exact(self, ansatz_op, basis_state, trotter_number):
+        """ Exact expectation value - expensive! Trotterizes the ansatz operator and applies the terms as
+        Pauli rotations to the observable operator, resulting in an exponential increase in the number of terms
+        """
+        pauli_rotations = [symplectic_to_string(row) for row in ansatz_op.symp_matrix]*trotter_number
+        angles = -2*np.tile(ansatz_op.coeff_vec, trotter_number)/trotter_number
+
+        trotterized_observable = self.recursive_rotate_by_Pword(zip(pauli_rotations[::-1], angles[::-1]))
+        trotterized_observable = ObservableOp(trotterized_observable.symp_matrix, trotterized_observable.coeff_vec)
+
+        return trotterized_observable.Z_basis_expectation(basis_state)
+
+    def _ansatz_expectation_estimate(self, ansatz_op, basis_state, trotter_number):
+        """
+        """
+        raise NotImplementedError('Expectation value estimation from quantum circuit not implemented')
+
+    def ansatz_expectation(self, 
+            ansatz_op: "AnsatzOp", 
+            basis_state: np.array, 
+            trotter_number: int = 1, 
+            exact: bool = True
+        ) -> float:
+        """ 
+        """
+        if exact:
+            return self._ansatz_expectation_exact(ansatz_op, basis_state, trotter_number)
+        else:
+            return self._ansatz_expectation_estimate(ansatz_op, basis_state, trotter_number)
+
+    def parameter_shift_at_index(self,
+        param_index: int,
+        ansatz_op: AnsatzOp, 
+        ref_state: np.array
+        ):
+        """ return the first-order derivative at x w.r.t. to the observable operator
+        """
+        assert(param_index<ansatz_op.n_terms), 'Indexing outside ansatz parameters'
+        
+        anz_upper_param = ansatz_op.copy()
+        anz_lower_param = ansatz_op.copy()
+        anz_upper_param.coeff_vec[param_index] += np.pi/4
+        anz_lower_param.coeff_vec[param_index] -= np.pi/4 
+        
+        shift_upper = self.ansatz_expectation(anz_upper_param, basis_state=ref_state)
+        shift_lower = self.ansatz_expectation(anz_lower_param, basis_state=ref_state)
+
+        return shift_upper-shift_lower
+
+    def gradient(self,
+        ansatz_op: AnsatzOp,
+        ref_state: np.array
+        ) -> np.array:
+        """
+        """
+        return np.array(
+            [self.parameter_shift_at_index(i, ansatz_op, ref_state) 
+                for i in range(ansatz_op.n_terms)]
+        )
+
+    def VQE(self,
+        ansatz_op:  AnsatzOp,
+        ref_state:  np.array,
+        optimizer:  str     = 'SLSQP', 
+        maxiter:    int     = 10, 
+        opt_tol:    float   = None
+        ):
+        """
+        """
+        interim_values = {'values':[], 'params':[], 'gradients':[], 'count':0}
+
+        init_params = ansatz_op.coeff_vec
+
+        def fun(x):
+            interim_values['count']+=1
+            ansatz_op.coeff_vec = x
+            energy = self.ansatz_expectation(ansatz_op, ref_state)
+            interim_values['params'].append((interim_values['count'], x))
+            interim_values['values'].append((interim_values['count'], energy))
+            return energy
+
+        def jac(x):
+            ansatz_op.coeff_vec = x
+            grad = self.gradient(ansatz_op, ref_state)
+            interim_values['gradients'].append((interim_values['count'], grad))
+            return grad
+
+        vqe_result = minimize(
+            fun=fun, 
+            jac=jac,
+            x0=init_params,
+            method=optimizer,
+            tol=opt_tol,
+            options={'maxiter':maxiter}
+        )
+
+        return vqe_result, interim_values
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
