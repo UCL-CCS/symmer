@@ -604,9 +604,8 @@ class AnsatzOp(PauliwordOp):
         ) -> None:
         """
         """
-        coeff_vec = np.array(coeff_vec, dtype=complex)
-        assert(np.all(coeff_vec.imag==0)), 'Coefficients must have zero imaginary component'
         super().__init__(operator, coeff_vec)
+        assert(np.all(self.coeff_vec.imag==0)), 'Coefficients must have zero imaginary component'
         self.coeff_vec = self.coeff_vec.real
 
     @cached_property
@@ -691,9 +690,8 @@ class ObservableOp(PauliwordOp):
         ) -> None:
         """
         """
-        coeff_vec = np.array(coeff_vec, dtype=complex)
-        assert(np.all(coeff_vec.imag==0)), 'Coefficients must be real, ensuring the operator is Hermitian'
         super().__init__(operator, coeff_vec)
+        assert(np.all(self.coeff_vec.imag==0)), 'Coefficients must be real, ensuring the operator is Hermitian'
         self.coeff_vec = self.coeff_vec.real
 
     def Z_basis_expectation(self, basis_state: np.array) -> float:
@@ -768,11 +766,14 @@ class ObservableOp(PauliwordOp):
     def VQE(self,
         ansatz_op:  AnsatzOp,
         ref_state:  np.array,
-        optimizer:  str     = 'SLSQP', 
-        maxiter:    int     = 10, 
-        opt_tol:    float   = None
+        optimizer:  str   = 'SLSQP',
+        maxiter:    int   = 10, 
+        opt_tol:    float = None
         ):
-        """
+        """ 
+        Rcommended optimizers:
+            - SLSQP  (gradient-descent, does not evaluate Jacobian at each iterate like BFGS or CG so is faster)
+            - COBYLA (gradient-free)
         """
         interim_values = {'values':[], 'params':[], 'gradients':[], 'count':0}
 
