@@ -22,6 +22,7 @@ from openfermion import (
     #get_fermion_operator
 )
 from qiskit.circuit import QuantumCircuit, ParameterVector
+from qiskit.opflow import CircuitStateFn
 
 
 def symplectic_to_string(symp_vec) -> str:
@@ -703,7 +704,11 @@ class ObservableOp(PauliwordOp):
         measurement_signs = (-1)**np.einsum('ij->i', self.Z_block[mask_diagonal] & basis_state)
         return np.sum(measurement_signs * self.coeff_vec[mask_diagonal]).real
 
-    def _ansatz_expectation_exact(self, ansatz_op, basis_state, trotter_number):
+    def _ansatz_expectation_trotter_rotations(self, 
+            ansatz_op: AnsatzOp, 
+            basis_state: np.array, 
+            trotter_number: int
+        ):
         """ Exact expectation value - expensive! Trotterizes the ansatz operator and applies the terms as
         Pauli rotations to the observable operator, resulting in an exponential increase in the number of terms
         """
@@ -715,23 +720,44 @@ class ObservableOp(PauliwordOp):
 
         return trotterized_observable.Z_basis_expectation(basis_state)
 
-    def _ansatz_expectation_estimate(self, ansatz_op, basis_state, trotter_number):
+    def _ansatz_expectation_statevector(self, 
+            ansatz_op: AnsatzOp, 
+            basis_state: np.array, 
+            trotter_number: int
+        ) -> float:
+        """ Exact expectation value - expensive! Converts the ansatz operator to a sparse vector | psi >
+        and return the quantity < psi | Observable | psi >
+        """
+        ansatz_qc = ansatz_op.to_QuantumCircuit(ref_state=basis_state, trotter_number=trotter_number)
+        psi = CircuitStateFn(ansatz_qc).to_spmatrix()
+        
+        return (psi @ self.to_sparse_matrix @ psi.T)[0,0].real
+
+    def _ansatz_expectation_estimate(self, 
+            ansatz_op: AnsatzOp, 
+            basis_state: np.array, 
+            trotter_number: int
+        ) -> float:
         """
         """
         raise NotImplementedError('Expectation value estimation from quantum circuit not implemented')
 
     def ansatz_expectation(self, 
-            ansatz_op: "AnsatzOp", 
+            ansatz_op: AnsatzOp, 
             basis_state: np.array, 
             trotter_number: int = 1, 
-            exact: bool = True
+            evaluation_method: str = 'statevector'
         ) -> float:
         """ 
         """
-        if exact:
-            return self._ansatz_expectation_exact(ansatz_op, basis_state, trotter_number)
-        else:
+        if evaluation_method == 'statevector':
+            return self._ansatz_expectation_statevector(ansatz_op, basis_state, trotter_number)
+        elif evaluation_method == 'trotter_rotations':
+            return self._ansatz_expectation_trotter_rotations(ansatz_op, basis_state, trotter_number)
+        elif evaluation_method == 'sampled':
             return self._ansatz_expectation_estimate(ansatz_op, basis_state, trotter_number)
+        else:
+            raise ValueError('Invalid evaluation method, must be one of statevector, trotter_rotations or sampled')
 
     def parameter_shift_at_index(self,
         param_index: int,
