@@ -3,6 +3,20 @@ from symred.symplectic_form import PauliwordOp, ObservableOp, AnsatzOp
 import numpy as np
 from typing import List, Dict, Tuple, Union
 from itertools import combinations
+import operator as op
+from functools import reduce
+import json
+
+from symred.utils import exact_gs_energy
+
+def ncr(n, r):
+    r = min(r, n-r)
+    numer = reduce(op.mul, range(n, n-r, -1), 1)
+    denom = reduce(op.mul, range(1, r+1), 1)
+    return numer // denom
+
+def to_dictionary_real_coeffs(op_dict: PauliwordOp):
+    return {term:coeff.real+coeff.imag for term,coeff in op_dict.to_dictionary.items()}
 
 class ADAPT_CS_VQE(CS_VQE):
     """
@@ -145,7 +159,8 @@ class ADAPT_CS_VQE(CS_VQE):
     def _greedy_search(self, 
             n_sim_qubits: int, 
             pool: set, 
-            depth: int, 
+            depth: int,
+            adaptive_from:int,
             threshold:float,
             maxiter:int,
             maxterms:int,
@@ -157,6 +172,9 @@ class ADAPT_CS_VQE(CS_VQE):
         """
         if n_sim_qubits<depth:
             depth = n_sim_qubits
+        n_combinations = ncr(len(pool), depth)
+        current_n_qubits = self.operator.n_qubits-len(pool)+depth
+
         if n_sim_qubits == 0:
             # once the number of simulation qubits is exhausted, return the stabilizer pool
             # these are the stabilizers the heuristic has chosen to enforce
@@ -171,19 +189,24 @@ class ADAPT_CS_VQE(CS_VQE):
 
             subspace_energies = []
             # search over combinations from the stabilizer index pool of length d (the depth)
-            for relax_indices in combinations(pool, r=depth):
+            for count, relax_indices in enumerate(combinations(pool, r=depth)):
                 relax_indices = list(relax_indices)
                 stab_indices = list(pool.difference(relax_indices))
                 if print_info:
-                    print(f'Testing stabilizer indices {stab_indices}')
+                    print(f'Testing contextual subspace {count+1} of {n_combinations} with stabilizer indices {set(stab_indices)}')
                 # perform the stabilizer subsapce projection and compute energy via ADAPT-VQE
-                energy, ansatz = self.ADAPT_VQE(
-                    stabilizer_indices=stab_indices,
-                    threshold=threshold,
-                    maxiter=maxiter,
-                    maxterms=maxterms,
-                    print_info=print_info
-                )
+                if current_n_qubits >= adaptive_from:
+                    energy, ansatz = self.ADAPT_VQE(
+                        stabilizer_indices=stab_indices,
+                        threshold=threshold,
+                        maxiter=maxiter,
+                        maxterms=maxterms,
+                        print_info=print_info
+                    )
+                else:
+                    energy = exact_gs_energy(self.contextual_subspace_projection(stab_indices).to_sparse_matrix)[0]
+                    ansatz = None
+
                 subspace_energies.append([relax_indices, energy, ansatz])
                 if print_info:
                     print()
@@ -193,15 +216,43 @@ class ADAPT_CS_VQE(CS_VQE):
                 key=lambda x:x[1]
             )[0]
             new_pool = pool.difference(best_relax_indices)
+            
+            # store the interim data (note complex numbers are not JSON serializable)
+            if best_ansatz is None:
+                ansatz = 'n/a'
+            else:
+                ansatz = to_dictionary_real_coeffs(best_ansatz)
+            interim_data = {'stab_indices': list(new_pool), 
+                            'vqe_energy': best_energy.real, 
+                            'ansatz': ansatz}
+            if current_n_qubits == depth:
+                greedy_search_data = {
+                    'greedy_search':{current_n_qubits:interim_data},
+                    'ref_state':[int(i) for i in self.ref_state],
+                    'ansatz_pool':to_dictionary_real_coeffs(self.ansatz_pool),
+                    'observable':to_dictionary_real_coeffs(self.operator),
+                    'cs_vqe_model':{
+                        'generators':to_dictionary_real_coeffs(self.symmetry_generators),
+                        'clique_op': to_dictionary_real_coeffs(self.clique_operator),
+                        'nc_energy': self.noncontextual_energy}
+                    }
+            else:
+                with open('data/greedy_search_data.json', 'r') as infile:
+                    greedy_search_data = json.load(infile)
+                    greedy_search_data['greedy_search'][current_n_qubits] = interim_data                
+            with open('data/greedy_search_data.json', 'w') as outfile:
+                json.dump(greedy_search_data, outfile)
 
+            # print status message
             if print_info:
-                message = f'{self.operator.n_qubits-len(pool)+depth}-qubit CS-VQE energy is {best_energy: .8f} for stabilizer indices {new_pool}'
+                message = f'{current_n_qubits}-qubit CS-VQE energy is {best_energy: .8f} for stabilizer indices {new_pool}'
                 print(message);print()
-
+                
             # perform an N-d qubit search over the reduced pool 
             return self._greedy_search(n_sim_qubits = n_sim_qubits-depth,
                             pool=new_pool, 
                             depth=depth,
+                            adaptive_from=adaptive_from,
                             threshold=threshold,
                             maxiter=maxiter,
                             maxterms=maxterms,
@@ -210,7 +261,8 @@ class ADAPT_CS_VQE(CS_VQE):
 
     def adaptive_greedy_search(self, 
             n_sim_qubits, 
-            depth=1, 
+            depth=1,
+            adaptive_from:int=0,
             threshold=0.01,
             maxiter=10,
             maxterms=10,
@@ -232,6 +284,7 @@ class ADAPT_CS_VQE(CS_VQE):
             n_sim_qubits=n_sim_qubits, 
             pool=all_indices, 
             depth=depth,
+            adaptive_from=adaptive_from,
             threshold=threshold,
             maxiter=maxiter,
             maxterms=maxterms,
