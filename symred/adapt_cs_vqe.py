@@ -260,8 +260,9 @@ class ADAPT_CS_VQE(CS_VQE):
                             best_ansatz = (best_energy, best_ansatz))
 
     def adaptive_greedy_search(self, 
-            n_sim_qubits, 
+            n_sim_qubits,
             depth=1,
+            search_pool = None,
             adaptive_from:int=0,
             threshold=0.01,
             maxiter=10,
@@ -278,11 +279,12 @@ class ADAPT_CS_VQE(CS_VQE):
             dashes = '-'*len(message)
             print(dashes);print(message);print(dashes);print()
         
-        # take the full stabilizer pool
-        all_indices = set(range(self.operator.n_qubits))
+        if search_pool is None:
+            # take the full stabilizer index pool
+            search_pool = set(range(self.operator.n_qubits))
         return self._greedy_search(
             n_sim_qubits=n_sim_qubits, 
-            pool=all_indices, 
+            pool=search_pool, 
             depth=depth,
             adaptive_from=adaptive_from,
             threshold=threshold,
