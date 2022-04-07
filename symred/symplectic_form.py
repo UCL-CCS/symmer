@@ -372,7 +372,8 @@ class PauliwordOp:
         P_final = reduce(lambda x,y: x+y, P_updated_list)
 
         if isinstance(mult_obj, QuantumState):
-            return QuantumState(P_final.X_block, P_final.coeff_vec)
+            coeff_vector = P_final.coeff_vec*((-1j)**P_final.Y_count)
+            return QuantumState(P_final.X_block, coeff_vector)
         else:
             return P_final
 
