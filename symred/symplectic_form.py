@@ -3,6 +3,8 @@ import numpy as np
 from copy import deepcopy
 from typing import Dict, List, Tuple, Union
 from functools import reduce
+
+from sympy import Q
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
 import warnings
@@ -348,13 +350,18 @@ class PauliwordOp:
         return self+op_copy
 
     def __mul__(self, 
-            Pword: "PauliwordOp"
+            mult_obj: Union["PauliwordOp", "QuantumState"]
         ) -> "PauliwordOp":
         """ Right-multiplication of this PauliwordOp by another PauliwordOp.
         The phaseless multiplication is achieved via binary summation of the
         symplectic matrix in _multiply_single_Pword_phaseless whilst the phase
         compensation is introduced in _multiply_single_Pword.
         """
+        if isinstance(mult_obj, QuantumState):
+            assert(mult_obj.vec_type == 'ket'), 'cannot multiply a bra from the left'
+            Pword = mult_obj.state_op
+        else:
+            Pword = mult_obj
         assert (self.n_qubits == Pword.n_qubits), 'Pauliwords defined for different number of qubits'
         P_updated_list =[]
         for Pvec_single,coeff_single in zip(Pword.symp_matrix,Pword.coeff_vec):
@@ -363,7 +370,11 @@ class PauliwordOp:
             P_updated_list.append(P_new)
 
         P_final = reduce(lambda x,y: x+y, P_updated_list)
-        return P_final
+
+        if isinstance(mult_obj, QuantumState):
+            return QuantumState(P_final.X_block, P_final.coeff_vec)
+        else:
+            return P_final
 
     def __getitem__(self, key: Union[slice, int]) -> "PauliwordOp":
         """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
@@ -1028,3 +1039,79 @@ class QubitHamiltonian(PauliwordOp):
         order = np.argsort(eig_values)
         self.eig_vals = eig_values[order]
         self.eig_vecs = eig_vectors[:, order].T
+
+class QuantumState:
+    def __init__(self, 
+            state_matrix, 
+            coeff_vector,
+            vec_type = 'ket'
+        ) -> None:
+        self.n_terms, self.n_qubits = state_matrix.shape
+        self.state_matrix = state_matrix
+        self.coeff_vector = coeff_vector
+        self.vec_type = vec_type
+        # the quantum state is manipulated via the state_op PauliwordOp
+        symp_matrix = np.hstack([state_matrix, 1-state_matrix])
+        self.state_op = PauliwordOp(symp_matrix, self.coeff_vector)
+        
+    def __str__(self) -> str:
+        """ 
+        Defines the print behaviour of QuantumState - 
+        returns the operator in an easily readable format
+
+        Returns:
+            out_string (str): human-readable QuantumState string
+        """
+        out_string = ''
+        for basis_vec, coeff in zip(self.state_matrix, self.coeff_vector):
+            basis_string = ''.join([str(i) for i in basis_vec])
+            if self.vec_type == 'ket':
+                out_string += (f'{coeff: .10f} |{basis_string}> +\n')
+            elif self.vec_type == 'bra':
+                out_string += (f'{coeff: .10f} <{basis_string}| +\n')
+            else:
+                raise ValueError('Invalid vec_type, must be bra or ket')
+        return out_string[:-3]
+    
+    def __add__(self, 
+            Qstate: "QuantumState"
+        ) -> "QuantumState":
+        """ Add to this PauliwordOp another PauliwordOp by stacking the
+        respective symplectic matrices and cleaning any resulting duplicates
+        """
+        new_state = self.state_op + Qstate.state_op
+        return QuantumState(new_state.X_block, new_state.coeff_vec)
+    
+    def __sub__(self, 
+            Qstate: "QuantumState"
+        ) -> "QuantumState":
+        """ Add to this PauliwordOp another PauliwordOp by stacking the
+        respective symplectic matrices and cleaning any resulting duplicates
+        """
+        new_state_op = self.state_op - Qstate.state_op
+        return QuantumState(new_state_op.X_block, new_state_op.coeff_vec)
+    
+    def __mult__(self,
+        mult_obj: Union["QuantumState", PauliwordOp]
+        ):
+        assert(self.vec_type=='bra'), 'Cannot multiply a ket from the right'
+        
+        if isinstance(mult_obj, "QuantumState"):
+            assert(self.vec_type=='ket'), 'Cannot multiply a bra with another bra'
+            #TODO use ObservableOp, which has a Z_expectation method
+        elif isinstance(mult_obj, PauliwordOp):
+            new_state_op = self.state_op * mult_obj
+            return QuantumState(new_state_op.X_block, new_state_op.coeff_vec)    
+            
+    @cached_property
+    def conjugate(self) -> "QuantumState":
+        if self.vec_type == 'ket':
+            new_type = 'bra'
+        else:
+            new_type = 'ket'
+        conj_state = QuantumState(
+            state_matrix = self.state_matrix, 
+            coeff_vector = self.coeff_vector.conjugate(),
+            vec_type     = new_type
+        )
+        return conj_state
