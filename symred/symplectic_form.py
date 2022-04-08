@@ -5,8 +5,10 @@ from typing import Dict, List, Tuple, Union
 from functools import reduce
 from itertools import product
 from sympy import Q
+from psutil import net_if_stats
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
+from scipy.optimize import minimize
 import warnings
 warnings.simplefilter('always', UserWarning)
 # specialized imports
@@ -20,6 +22,8 @@ from openfermion import (
     get_majorana_operator, 
     #get_fermion_operator
 )
+from qiskit.circuit import QuantumCircuit, ParameterVector
+from qiskit.opflow import CircuitStateFn
 
 
 def symplectic_to_string(symp_vec) -> str:
@@ -616,6 +620,240 @@ class PauliwordOp:
             return True
         else:
             return False
+
+class AnsatzOp(PauliwordOp):
+    """ Based on PauliwordOp and introduces functionality for converting operators to quantum circuits
+    """
+    def __init__(self,
+            operator:   Union[List[str], Dict[str, float], np.array],
+            coeff_vec: Union[List[complex], np.array] = None
+        ) -> None:
+        """
+        """
+        super().__init__(operator, coeff_vec)
+        assert(np.all(self.coeff_vec.imag==0)), 'Coefficients must have zero imaginary component'
+        self.coeff_vec = self.coeff_vec.real
+
+    @cached_property
+    def to_instructions(self) -> Dict[int, Dict[str, List[int]]]:
+        """ Stores a dictionary of gate instructions at each step, where each value
+        is a dictionary indicating the indices on which to apply each H,S,CNOT and RZ gate
+        """
+        circuit_instructions = {}
+        for step, (X,Z) in enumerate(zip(self.X_block, self.Z_block)):
+            # locations for H and S gates to transform into Pauli Z basis
+            H_indices = np.where(X)[0][::-1]
+            S_indices = np.where(X & Z)[0][::-1]
+            # CNOT cascade indices
+            CNOT_indices = np.where(X | Z)[0][::-1]
+            circuit_instructions[step] = {'H_indices':H_indices, 
+                                        'S_indices':S_indices, 
+                                        'CNOT_indices':CNOT_indices,
+                                        'RZ_index':CNOT_indices[-1]}
+        return circuit_instructions
+
+    def to_QuantumCircuit(self, 
+        ref_state: np.array = None, 
+        trotter_number: int = 1, 
+        bind_params: bool   = True
+        ) -> str:
+        """
+        Convert the operator to a QASM circuit string for input 
+        into quantum computing packages such as Qiskit and Cirq
+        """
+        def qiskit_ordering(indices):
+            """ we index from left to right - in Qiskit this ordering is reversed
+            """
+            return self.n_qubits - 1 - indices
+
+        qc = QuantumCircuit(self.n_qubits)
+        for i in qiskit_ordering(np.where(ref_state==1)[0]):
+            qc.x(i)
+
+        def CNOT_cascade(cascade_indices, reverse=False):
+            index_pairs = list(zip(cascade_indices[:-1], cascade_indices[1:]))
+            if reverse:
+                index_pairs = index_pairs[::-1]
+            for source, target in index_pairs:
+                qc.cx(source, target)
+
+        def circuit_from_step(angle, H_indices, S_indices, CNOT_indices, RZ_index):
+            # to Pauli X basis
+            for i in S_indices:
+                qc.sdg(i)
+            # to Pauli Z basis
+            for i in H_indices:
+                qc.h(i)
+            # compute parity
+            CNOT_cascade(CNOT_indices)
+            qc.rz(-2*angle, RZ_index)
+            CNOT_cascade(CNOT_indices, reverse=True)
+            for i in H_indices:
+                qc.h(i)
+            for i in S_indices:
+                qc.s(i)
+
+        if bind_params:
+            angles = self.coeff_vec.real/trotter_number
+        else:
+            angles = np.array(ParameterVector('P', self.n_terms))/trotter_number
+
+        assert(len(angles)==len(self.to_instructions)), 'Number of parameters does not match the circuit instructions'
+        for trot_step in range(trotter_number):
+            for step, gate_indices in self.to_instructions.items():
+                qiskit_gate_indices = [qiskit_ordering(indices) for indices in gate_indices.values()]
+                qc.barrier()
+                circuit_from_step(angles[step], *qiskit_gate_indices)
+        
+        return qc
+
+class ObservableOp(PauliwordOp):
+    """ Based on PauliwordOp and introduces functionality for evaluating expectation values
+    """
+    def __init__(self,
+        operator:   Union[List[str], Dict[str, float], np.array],
+        coeff_vec: Union[List[complex], np.array] = None
+        ) -> None:
+        """
+        """
+        super().__init__(operator, coeff_vec)
+        assert(np.all(self.coeff_vec.imag==0)), 'Coefficients must be real, ensuring the operator is Hermitian'
+        self.coeff_vec = self.coeff_vec.real
+
+    def Z_basis_expectation(self, basis_state: np.array) -> float:
+        """ Provided a single Pauli-Z basis state, computes the expectation value of the operator
+        """
+        assert(set(basis_state).issubset({0,1})), f'Basis state must consist of binary elements, not {set(basis_state)}'
+        assert(len(basis_state)==self.n_qubits), f'Number of qubits {len(basis_state)} in the basis state incompatible with {self.n_qubits}'
+        mask_diagonal = np.where(np.all(self.X_block==0, axis=1))
+        measurement_signs = (-1)**np.einsum('ij->i', self.Z_block[mask_diagonal] & basis_state)
+        return np.sum(measurement_signs * self.coeff_vec[mask_diagonal]).real
+
+    def _ansatz_expectation_trotter_rotations(self, 
+            ansatz_op: AnsatzOp, 
+            basis_state: np.array, 
+            trotter_number: int
+        ):
+        """ Exact expectation value - expensive! Trotterizes the ansatz operator and applies the terms as
+        Pauli rotations to the observable operator, resulting in an exponential increase in the number of terms
+        """
+        pauli_rotations = [symplectic_to_string(row) for row in ansatz_op.symp_matrix]*trotter_number
+        angles = -2*np.tile(ansatz_op.coeff_vec, trotter_number)/trotter_number
+
+        trotterized_observable = self.recursive_rotate_by_Pword(zip(pauli_rotations[::-1], angles[::-1]))
+        trotterized_observable = ObservableOp(trotterized_observable.symp_matrix, trotterized_observable.coeff_vec)
+
+        return trotterized_observable.Z_basis_expectation(basis_state)
+
+    def _ansatz_expectation_statevector(self, 
+            ansatz_op: AnsatzOp, 
+            basis_state: np.array, 
+            trotter_number: int
+        ) -> float:
+        """ Exact expectation value - expensive! Converts the ansatz operator to a sparse vector | psi >
+        and return the quantity < psi | Observable | psi >
+        """
+        ansatz_qc = ansatz_op.to_QuantumCircuit(ref_state=basis_state, trotter_number=trotter_number)
+        psi = CircuitStateFn(ansatz_qc).to_spmatrix()
+        
+        return (psi @ self.to_sparse_matrix @ psi.T)[0,0].real
+
+    def _ansatz_expectation_estimate(self, 
+            ansatz_op: AnsatzOp, 
+            basis_state: np.array, 
+            trotter_number: int
+        ) -> float:
+        """
+        """
+        raise NotImplementedError('Expectation value estimation from quantum circuit not implemented')
+
+    def ansatz_expectation(self, 
+            ansatz_op: AnsatzOp, 
+            basis_state: np.array, 
+            trotter_number: int = 1, 
+            evaluation_method: str = 'statevector'
+        ) -> float:
+        """ 
+        """
+        if evaluation_method == 'statevector':
+            return self._ansatz_expectation_statevector(ansatz_op, basis_state, trotter_number)
+        elif evaluation_method == 'trotter_rotations':
+            return self._ansatz_expectation_trotter_rotations(ansatz_op, basis_state, trotter_number)
+        elif evaluation_method == 'sampled':
+            return self._ansatz_expectation_estimate(ansatz_op, basis_state, trotter_number)
+        else:
+            raise ValueError('Invalid evaluation method, must be one of statevector, trotter_rotations or sampled')
+
+    def parameter_shift_at_index(self,
+        param_index: int,
+        ansatz_op: AnsatzOp, 
+        ref_state: np.array
+        ):
+        """ return the first-order derivative at x w.r.t. to the observable operator
+        """
+        assert(param_index<ansatz_op.n_terms), 'Indexing outside ansatz parameters'
+        
+        anz_upper_param = ansatz_op.copy()
+        anz_lower_param = ansatz_op.copy()
+        anz_upper_param.coeff_vec[param_index] += np.pi/4
+        anz_lower_param.coeff_vec[param_index] -= np.pi/4 
+        
+        shift_upper = self.ansatz_expectation(anz_upper_param, basis_state=ref_state)
+        shift_lower = self.ansatz_expectation(anz_lower_param, basis_state=ref_state)
+
+        return shift_upper-shift_lower
+
+    def gradient(self,
+        ansatz_op: AnsatzOp,
+        ref_state: np.array
+        ) -> np.array:
+        """
+        """
+        return np.array(
+            [self.parameter_shift_at_index(i, ansatz_op, ref_state) 
+                for i in range(ansatz_op.n_terms)]
+        )
+
+    def VQE(self,
+        ansatz_op:  AnsatzOp,
+        ref_state:  np.array,
+        optimizer:  str   = 'SLSQP',
+        maxiter:    int   = 10, 
+        opt_tol:    float = None
+        ):
+        """ 
+        Rcommended optimizers:
+            - SLSQP  (gradient-descent, does not evaluate Jacobian at each iterate like BFGS or CG so is faster)
+            - COBYLA (gradient-free)
+        """
+        interim_values = {'values':[], 'params':[], 'gradients':[], 'count':0}
+
+        init_params = ansatz_op.coeff_vec
+
+        def fun(x):
+            interim_values['count']+=1
+            ansatz_op.coeff_vec = x
+            energy = self.ansatz_expectation(ansatz_op, ref_state)
+            interim_values['params'].append((interim_values['count'], x))
+            interim_values['values'].append((interim_values['count'], energy))
+            return energy
+
+        def jac(x):
+            ansatz_op.coeff_vec = x
+            grad = self.gradient(ansatz_op, ref_state)
+            interim_values['gradients'].append((interim_values['count'], grad))
+            return grad
+
+        vqe_result = minimize(
+            fun=fun, 
+            jac=jac,
+            x0=init_params,
+            method=optimizer,
+            tol=opt_tol,
+            options={'maxiter':maxiter}
+        )
+
+        return vqe_result, interim_values
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
