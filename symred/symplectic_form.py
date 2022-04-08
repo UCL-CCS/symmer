@@ -1448,3 +1448,24 @@ class QuantumState:
             vec_type     = new_type
         )
         return conj_state
+
+def array_to_QuantumState(statevector, threshold=1e-15):
+    """ Given a vector of 2^N elements over N qubits, convert to a QuantumState object.
+    
+    Returns:
+        Qstate (QuantumState): a QuantumState object representing the input vector
+        
+    **example
+        statevector = array([0.57735027,0,0,0,0,0.81649658,0,0])
+        print(array_to_QuantumState(statevector)) 
+        >>  0.5773502692 |000> + 
+            0.8164965809 |101>
+    """
+    N = np.log2(statevector.shape[0])
+    assert(N-int(N) == 0), 'the statevector dimension is not a power of 2'
+    N = int(N)
+    non_zero = np.where(abs(statevector)>=threshold)[0]
+    state_matrix = np.array([[int(i) for i in list(np.binary_repr(index,N))] for index in non_zero])
+    coeff_vector = statevector[non_zero]
+    Qstate = QuantumState(state_matrix, coeff_vector)
+    return Qstate
