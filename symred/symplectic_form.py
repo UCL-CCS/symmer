@@ -10,7 +10,7 @@ from scipy.sparse import csr_matrix
 import warnings
 warnings.simplefilter('always', UserWarning)
 # specialized imports
-from symred.utils import gf2_gaus_elim
+from symred.utils import gf2_gaus_elim, norm
 from openfermion import (
     QubitOperator, 
     MajoranaOperator, 
@@ -1044,16 +1044,26 @@ class QubitHamiltonian(PauliwordOp):
 class QuantumState:
     def __init__(self, 
             state_matrix, 
-            coeff_vector,
+            coeff_vector = None,
             vec_type = 'ket'
         ) -> None:
         self.n_terms, self.n_qubits = state_matrix.shape
         self.state_matrix = state_matrix
-        self.coeff_vector = coeff_vector
+        if coeff_vector is None:
+            # if no coefficients specified produces a uniform superposition
+            coeff_vector = np.ones(self.n_terms)
+        # normalise the coefficient vector
+        self.coeff_vector = coeff_vector/norm(coeff_vector)
         self.vec_type = vec_type
         # the quantum state is manipulated via the state_op PauliwordOp
         symp_matrix = np.hstack([state_matrix, 1-state_matrix])
         self.state_op = PauliwordOp(symp_matrix, self.coeff_vector)
+
+    def copy(self) -> "QuantumState":
+        """ 
+        Create a carbon copy of the class instance
+        """
+        return deepcopy(self)
         
     def __str__(self) -> str:
         """ 
@@ -1095,6 +1105,8 @@ class QuantumState:
     def __mult__(self,
         mult_obj: Union["QuantumState", PauliwordOp]
         ):
+        """
+        """
         assert(self.vec_type=='bra'), 'Cannot multiply a ket from the right'
         
         if isinstance(mult_obj, "QuantumState"):
@@ -1106,6 +1118,10 @@ class QuantumState:
             
     @cached_property
     def conjugate(self) -> "QuantumState":
+        """
+        Returns:
+            conj_state (QuantumState): The Hermitian conjugated state i.e. bra -> ket, ket -> bra
+        """
         if self.vec_type == 'ket':
             new_type = 'bra'
         else:
