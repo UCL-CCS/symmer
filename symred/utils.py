@@ -2,6 +2,13 @@ import numpy as np
 import scipy as sp
 from typing import Tuple
 
+def norm(vector: np.array) -> complex:
+    """
+    Returns:
+        norm of input vector
+    """
+    return np.sqrt(np.dot(vector, vector.conjugate()))
+
 def gf2_gaus_elim(gf2_matrix: np.array) -> np.array:
     """
     Function that performs Gaussian elimination over GF2(2)

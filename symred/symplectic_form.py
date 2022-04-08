@@ -3,7 +3,8 @@ import numpy as np
 from copy import deepcopy
 from typing import Dict, List, Tuple, Union
 from functools import reduce
-
+from itertools import product
+from sympy import Q
 from psutil import net_if_stats
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
@@ -11,7 +12,7 @@ from scipy.optimize import minimize
 import warnings
 warnings.simplefilter('always', UserWarning)
 # specialized imports
-from symred.utils import gf2_gaus_elim
+from symred.utils import gf2_gaus_elim, norm
 from openfermion import (
     QubitOperator, 
     MajoranaOperator, 
@@ -353,13 +354,18 @@ class PauliwordOp:
         return self+op_copy
 
     def __mul__(self, 
-            Pword: "PauliwordOp"
+            mul_obj: Union["PauliwordOp", "QuantumState"]
         ) -> "PauliwordOp":
         """ Right-multiplication of this PauliwordOp by another PauliwordOp.
         The phaseless multiplication is achieved via binary summation of the
         symplectic matrix in _multiply_single_Pword_phaseless whilst the phase
         compensation is introduced in _multiply_single_Pword.
         """
+        if isinstance(mul_obj, QuantumState):
+            assert(mul_obj.vec_type == 'ket'), 'cannot multiply a bra from the left'
+            Pword = mul_obj.state_op
+        else:
+            Pword = mul_obj
         assert (self.n_qubits == Pword.n_qubits), 'Pauliwords defined for different number of qubits'
         P_updated_list =[]
         for Pvec_single,coeff_single in zip(Pword.symp_matrix,Pword.coeff_vec):
@@ -368,7 +374,14 @@ class PauliwordOp:
             P_updated_list.append(P_new)
 
         P_final = reduce(lambda x,y: x+y, P_updated_list)
-        return P_final
+
+        if isinstance(mul_obj, QuantumState):
+            coeff_vector = P_final.coeff_vec*(1j**P_final.Y_count)
+            # need to run a separate cleanup since identities are all mapped to Z 
+            # i.e. ZZZZ==IIII in QuantumState
+            return QuantumState(P_final.X_block, coeff_vector).cleanup()
+        else:
+            return P_final
 
     def __getitem__(self, key: Union[slice, int]) -> "PauliwordOp":
         """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
@@ -530,6 +543,18 @@ class PauliwordOp:
             Pword_temp = PauliwordOp(symp_rotation, [1]) # enforcing coefficient to be 1, see above
             op_copy = op_copy._rotate_by_single_Pword(Pword_temp, angle).cleanup()
         return op_copy
+
+    @cached_property
+    def conjugate(self) -> "PauliwordOp":
+        """
+        Returns:
+            Pword_conj (PauliwordOp): The Hermitian conjugated operator
+        """
+        Pword_conj = PauliwordOp(
+            operator  = self.symp_matrix, 
+            coeff_vec = self.coeff_vec.conjugate()
+        )
+        return Pword_conj
 
     @cached_property
     def PauliwordOp_to_OF(self) -> List[QubitOperator]:
@@ -1267,3 +1292,159 @@ class QubitHamiltonian(PauliwordOp):
         order = np.argsort(eig_values)
         self.eig_vals = eig_values[order]
         self.eig_vecs = eig_vectors[:, order].T
+
+class QuantumState:
+    """ Class to represent quantum states.
+    
+    This is achieved by identifying the state with a 
+    state_op (PauliwordOp), namely |0> --> Z, |1> --> X. 
+    
+    For example, the 2-qubit Bell state is mapped as follows: 
+        1/sqrt(2) (|00> + |11>) --> 1/sqrt(2) (ZZ + XX)
+    Observe the state is recovered by applying the state_op to the 
+    zero vector |00>, which will be the X_block of state_op.
+    
+    This ensures correct phases when multiplying the quantum state by a PauliwordOp.
+    """
+    def __init__(self, 
+            state_matrix: Union[List[List[int]], np.array], 
+            coeff_vector: Union[List[complex], np.array] = None,
+            vec_type: str = 'ket'
+        ) -> None:
+        """ The state is not normalized by default, since this would result
+        in incorrect behaviour when perfoming non-unitary multiplications,
+        e.g. for evaluating expectation values of Hamiltonians. However, if
+        one wishes to normalize the state, it is stored as a cached propoerty
+        as QuantumState.normalize.
+        """
+        if isinstance(state_matrix, list):
+            state_matrix = np.array(state_matrix)
+        if isinstance(coeff_vector, list):
+            coeff_vector = np.array(coeff_vector)
+        assert(set(state_matrix.flatten()).issubset({0,1})) # must be binary, does not support N-ary qubits
+        self.n_terms, self.n_qubits = state_matrix.shape
+        self.state_matrix = state_matrix
+        if coeff_vector is None:
+            # if no coefficients specified produces a uniform superposition
+            self.coeff_vector = np.ones(self.n_terms)/np.sqrt(self.n_terms)
+        else:
+            self.coeff_vector = coeff_vector
+        self.vec_type = vec_type
+        # the quantum state is manipulated via the state_op PauliwordOp
+        symp_matrix = np.hstack([state_matrix, 1-state_matrix])
+        self.state_op = PauliwordOp(symp_matrix, self.coeff_vector)
+
+    def copy(self) -> "QuantumState":
+        """ 
+        Create a carbon copy of the class instance
+        """
+        return deepcopy(self)
+
+    def __str__(self) -> str:
+        """ 
+        Defines the print behaviour of QuantumState - differs depending on vec_type
+
+        Returns:
+            out_string (str): human-readable QuantumState string
+        """
+        out_string = ''
+        for basis_vec, coeff in zip(self.state_matrix, self.coeff_vector):
+            basis_string = ''.join([str(i) for i in basis_vec])
+            if self.vec_type == 'ket':
+                out_string += (f'{coeff: .10f} |{basis_string}> +\n')
+            elif self.vec_type == 'bra':
+                out_string += (f'{coeff: .10f} <{basis_string}| +\n')
+            else:
+                raise ValueError('Invalid vec_type, must be bra or ket')
+        return out_string[:-3]
+    
+    def __add__(self, 
+            Qstate: "QuantumState"
+        ) -> "QuantumState":
+        """ Add to this QuantumState another QuantumState by summing 
+        the respective state_op (PauliwordOp representing the state)
+        """
+        new_state = self.state_op + Qstate.state_op
+        return QuantumState(new_state.X_block, new_state.coeff_vec)
+    
+    def __sub__(self, 
+            Qstate: "QuantumState"
+        ) -> "QuantumState":
+        """ Subtract from this QuantumState another QuantumState by subtracting 
+        the respective state_op (PauliwordOp representing the state)
+        """
+        new_state_op = self.state_op - Qstate.state_op
+        return QuantumState(new_state_op.X_block, new_state_op.coeff_vec)
+    
+    def __mul__(self,
+        mul_obj: Union["QuantumState", PauliwordOp]
+        ) -> Union["QuantumState", complex]:
+        """
+        Right multiplication of a bra QuantumState by either a ket QuantumState or PauliwordOp
+        
+        Returns:
+            - inner_product (complex): when mul_obj is a ket state
+            - new_bra_state (QuantumState): when mul_obj is a PauliwordOp
+        """
+        assert(self.n_qubits == mul_obj.n_qubits), 'Multiplication object defined for different number of qubits'
+        assert(self.vec_type=='bra'), 'Cannot multiply a ket from the right'
+        
+        if isinstance(mul_obj, QuantumState):
+            assert(mul_obj.vec_type=='ket'), 'Cannot multiply a bra with another bra'
+            inner_product=0
+            for (bra_string, bra_coeff),(ket_string, ket_coeff) in product(
+                    zip(self.state_matrix, self.coeff_vector), 
+                    zip(mul_obj.state_matrix, mul_obj.coeff_vector)
+                ):
+                if np.all(bra_string == ket_string):
+                    inner_product += (bra_coeff*ket_coeff)
+            return inner_product
+
+        elif isinstance(mul_obj, PauliwordOp):
+            new_state_op = self.state_op * mul_obj
+            new_state_op.coeff_vec*=((-1j)**new_state_op.Y_count)
+            new_bra_state = QuantumState(
+                new_state_op.X_block, 
+                new_state_op.coeff_vec, 
+                vec_type='bra'
+            )
+            return new_bra_state.cleanup()
+
+        else:
+            raise ValueError('Trying to multiply QuantumState by unrecognised object - must be another Quantum state or PauliwordOp')   
+
+    def cleanup(self) -> "QuantumState":
+        """ Combines duplicate basis states, summing their coefficients
+        """
+        clean_state_op = self.state_op.cleanup()
+        return QuantumState(
+            clean_state_op.X_block, 
+            clean_state_op.coeff_vec, 
+            vec_type=self.vec_type
+        )
+
+    @cached_property
+    def normalize(self):
+        """
+        Returns:
+            self (QuantumState)
+        """
+        coeff_vector = self.coeff_vector/norm(self.coeff_vector)
+        return QuantumState(self.state_matrix, coeff_vector)
+        
+    @cached_property
+    def conjugate(self) -> "QuantumState":
+        """
+        Returns:
+            conj_state (QuantumState): The Hermitian conjugated state i.e. bra -> ket, ket -> bra
+        """
+        if self.vec_type == 'ket':
+            new_type = 'bra'
+        else:
+            new_type = 'ket'
+        conj_state = QuantumState(
+            state_matrix = self.state_matrix, 
+            coeff_vector = self.coeff_vector.conjugate(),
+            vec_type     = new_type
+        )
+        return conj_state
