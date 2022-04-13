@@ -21,6 +21,10 @@ def to_dictionary_real_coeffs(op_dict: PauliwordOp):
 class ADAPT_CS_VQE(CS_VQE):
     """
     """
+    evaluation_method = 'statevector'
+    n_shots = 2**10
+    n_realizations = 1
+
     def __init__(self, 
         operator: PauliwordOp,
         ansatz_pool: PauliwordOp,
@@ -55,7 +59,7 @@ class ADAPT_CS_VQE(CS_VQE):
             threshold:   float = 0.01,
             maxiter:     int   = 10,
             maxterms:    int   = 10,
-            param_shift: bool  = True,
+            param_shift: bool  = False,
             print_info:  bool  = False
         ) -> Tuple[float, PauliwordOp, np.array]:
         """ Implementation of qubit-ADAPT-VQE from https://doi.org/10.1103/PRXQuantum.2.020310
@@ -82,6 +86,9 @@ class ADAPT_CS_VQE(CS_VQE):
         # perform noncontextual projection over the ansatz pool
         observable, ansatz_pool = self.project_problem(stabilizer_indices)
         observable = ObservableOp(observable.symp_matrix, observable.coeff_vec)
+        observable.evaluation_method = self.evaluation_method
+        observable.n_shots = self.n_shots
+        observable.n_realizations = self.n_realizations
         # break up ansatz pool terms into list so ordering isn't scrambled
         ansatz_pool = [ansatz_pool[i] for i in range(ansatz_pool.n_terms)]
         ref_state = self.ref_state[self.free_qubit_indices]
@@ -109,6 +116,9 @@ class ADAPT_CS_VQE(CS_VQE):
                     new_ansatz_term.coeff_vec = np.ones(1)
                     obs_commutator = observable.commutator(new_ansatz_term)
                     obs_commutator = ObservableOp(obs_commutator.symp_matrix, obs_commutator.coeff_vec.imag)
+                    obs_commutator.evaluation_method = self.evaluation_method
+                    obs_commutator.n_shots = self.n_shots
+                    obs_commutator.n_realizations = self.n_realizations
                     grad = obs_commutator.ansatz_expectation(trial_ansatz, ref_state)     
                 else:
                     # or parameter shift rule:    

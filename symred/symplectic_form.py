@@ -14,6 +14,7 @@ import networkx as nx
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import time
 warnings.simplefilter('always', UserWarning)
 
 # specialized imports
@@ -777,6 +778,23 @@ class AnsatzOp(PauliwordOp):
         assert(np.all(self.coeff_vec.imag==0)), 'Coefficients must have zero imaginary component'
         self.coeff_vec = self.coeff_vec.real
 
+    def exponentiate(self):
+        """
+        Returns:
+            exp_T (PauliwordOp): exponentiated form of the ansatz operator
+        """
+        exp_bin = []
+        for term, angle in zip(self.symp_matrix, self.coeff_vec):
+            exp_bin.append(
+                PauliwordOp(
+                    np.vstack([np.zeros_like(term), term]), 
+                    [np.cos(angle), 1j*np.sin(angle)]
+                )
+            )
+        exp_T = reduce(lambda x,y:x*y, exp_bin)
+
+        return exp_T
+
     @cached_property
     def to_instructions(self) -> Dict[int, Dict[str, List[int]]]:
         """ Stores a dictionary of gate instructions at each step, where each value
@@ -909,15 +927,20 @@ class ObservableOp(PauliwordOp):
 
     def _ansatz_expectation_statevector(self, 
             ansatz_op: AnsatzOp, 
-            ref_state: np.array
+            ref_state: np.array,
+            sparse = False
         ) -> float:
         """ Exact expectation value - expensive! Converts the ansatz operator to a sparse vector | psi >
         and return the quantity < psi | Observable | psi >
         """
-        ansatz_qc = ansatz_op.to_QuantumCircuit(ref_state=ref_state, trotter_number=self.trotter_number)
-        psi = CircuitStateFn(ansatz_qc).to_spmatrix()
-        
-        return (psi @ self.to_sparse_matrix @ psi.T)[0,0].real
+        if sparse:
+            # sparse multiplication does not scale nicely with number of qubits
+            ansatz_qc = ansatz_op.to_QuantumCircuit(ref_state=ref_state, trotter_number=self.trotter_number)
+            psi = CircuitStateFn(ansatz_qc).to_spmatrix()
+            return (psi @ self.to_sparse_matrix @ psi.T)[0,0].real
+        else:
+            psi = ansatz_op.exponentiate() * QuantumState([ref_state])
+            return (psi.conjugate * self * psi).real
 
     @cached_property
     def QWC_decomposition(self):
@@ -944,6 +967,7 @@ class ObservableOp(PauliwordOp):
         Returns:
             expectation (float): the expectation value of the ObseravleOp w.r.t. the given ansatz and reference state
         """
+        #start = time.time()
         QWC_group_data = {}
         for group_index, group_operator in self.QWC_decomposition.items():
             # find the qubit positions containing X's or Y's in the QWC group
@@ -955,7 +979,7 @@ class ObservableOp(PauliwordOp):
                 ref_state = ref_state,
                 trotter_number=self.trotter_number,
                 basis_change_indices=basis_change_indices, 
-                ZX_reduction=True
+                ZX_reduction=False
             )
             group_qc.measure_all()
             QWC_group_data[group_index] = {
@@ -963,10 +987,15 @@ class ObservableOp(PauliwordOp):
                 "circuit":group_qc,
                 "measured_state":None
             }
-
+        #stop = time.time()
+        #print('QWC group data', stop - start)
+        #start = time.time()
         # send all the QWC group circuits off to be executed via the backend
         QWC_group_circuits = [group['circuit'] for group in QWC_group_data.values()]
         job = execute(QWC_group_circuits, self.backend, shots=self.n_shots)
+        #stop = time.time()
+        #print('Obtain measurements', stop - start)
+        #start = time.time()
         expectation = 0
 
         for i in range(len(QWC_group_circuits)):
@@ -983,6 +1012,8 @@ class ObservableOp(PauliwordOp):
             Z_symp_matrix = observable.X_block | observable.Z_block
             for b_state, b_state_coeff in zip(state.state_matrix, state.coeff_vector):
                 expectation += np.sum((-1)**np.count_nonzero(Z_symp_matrix & b_state, axis=1)*observable.coeff_vec*b_state_coeff)
+        #stop = time.time()
+        #print('Evaluate expectation value', stop - start)
 
         return expectation.real
 
@@ -1665,6 +1696,20 @@ class QuantumState:
             vec_type     = new_type
         )
         return conj_state
+
+    @cached_property
+    def to_sparse_matrix(self):
+        """
+        Returns:
+            sparse_Qstate (csr_matrix): sparse matrix representation of the statevector
+        """
+        nonzero_indices = [int(''.join([str(i) for i in row]),2) for row in self.state_matrix]
+        sparse_Qstate = csr_matrix(
+            (self.coeff_vector, (nonzero_indices, np.zeros_like(nonzero_indices))), 
+            shape = (2**self.n_qubits, 1), 
+            dtype=np.complex128
+        )
+        return sparse_Qstate
 
 def array_to_QuantumState(statevector, threshold=1e-15):
     """ Given a vector of 2^N elements over N qubits, convert to a QuantumState object.
