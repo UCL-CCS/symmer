@@ -1,6 +1,8 @@
 import numpy as np
 import scipy as sp
 from typing import Tuple
+from qiskit import QuantumCircuit
+import pyzx as zx
 
 def norm(vector: np.array) -> complex:
     """
@@ -8,6 +10,24 @@ def norm(vector: np.array) -> complex:
         norm of input vector
     """
     return np.sqrt(np.dot(vector, vector.conjugate()))
+
+def ZX_calculus_reduction(qc: QuantumCircuit) -> QuantumCircuit:
+    """ Simplify the circuit via ZX calculus using PyZX... 
+    Only works on parametrized circuits!
+
+    Returns:
+        simplified_qc (QuantumCircuit): the reduced circuit via ZX calculus
+    """
+    # to perform ZX-calculus optimization
+    qc_qasm = qc.qasm()
+    qc_pyzx = zx.Circuit.from_qasm(qc_qasm)
+    g = qc_pyzx.to_graph()
+    zx.full_reduce(g) # simplifies the Graph in-place
+    g.normalize()
+    c_opt = zx.extract_circuit(g.copy())
+    simplified_qc = QuantumCircuit.from_qasm_str(c_opt.to_qasm())
+
+    return simplified_qc
 
 def gf2_gaus_elim(gf2_matrix: np.array) -> np.array:
     """

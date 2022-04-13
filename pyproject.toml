@@ -15,6 +15,7 @@ pydocstyle = "^6.1.1"
 isort = "^5.10.1"
 black = "^22.1.0"
 flake8 = "^4.0.1"
+pyzx = "^0.7.0"
 
 [tool.poetry.dev-dependencies]
 
