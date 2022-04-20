@@ -267,17 +267,12 @@ def Draw_molecule(
     Returns:
         view (py3dmol.view object). Run view.show() method to print molecule.
     """
+    view = py3Dmol.view(width=width, height=height)
+    view.addModel(xyz_string, "xyz")
     if style == "sphere":
-        view = py3Dmol.view(
-            data=xyz_string,
-            style={"sphere": {"radius": 0.2}},
-            width=width,
-            height=height,
-        )
+        view.setStyle({'sphere': {"radius": 0.2}})
     elif style == "stick":
-        view = py3Dmol.view(
-            data=xyz_string, style={"stick": {}}, width=width, height=height
-        )
+        view.setStyle({'stick': {}})
     else:
         raise ValueError(f"unknown py3dmol style: {style}")
 
