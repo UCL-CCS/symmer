@@ -33,6 +33,8 @@ class build_molecule_for_projection(CS_VQE):
     """
     def __init__(self,
             calculated_molecule: PyscfMolecularData,
+            taper = False,
+            build_cs_vqe_model = False,
             basis_weighting = 'ham_coeff'
         )-> None:
         """
@@ -54,18 +56,20 @@ class build_molecule_for_projection(CS_VQE):
         print(f'Number of qubits in full problem: {self.n_qubits}')
         print(f'The Hartree-Fock state is |{hf_string}>')
         
-        # reference energies
-        self.hf_energy  = calculated_molecule.hf_energy
-        self.mp_energy  = calculated_molecule.mp2_energy
-        self.cisd_energy= calculated_molecule.cisd_energy
-        self.ccsd_energy= calculated_molecule.ccsd_energy
-        self.fci_energy = calculated_molecule.fci_energy
-        print(f'HF   energy = {self.hf_energy: .8f}') #Hartree-Fock
-        print(f'MP2  energy = {self.mp_energy: .8f}') #Møller–Plesset
-        print(f'CISD energy = {self.cisd_energy: .8f}')
-        print(f'CCSD energy = {self.ccsd_energy: .8f}')
-        if self.fci_energy is not None:
-            print(f'FCI energy  = {self.fci_energy:.8f}')
+        self.calculated_energy = {
+            'HF': calculated_molecule.hf_energy,
+            'MP2':calculated_molecule.mp2_energy,
+            'CISD':calculated_molecule.cisd_energy,
+            'CCSD':calculated_molecule.ccsd_energy,
+            'FCI':calculated_molecule.fci_energy
+        }
+        for method, energy in self.calculated_energy.items():
+            if energy is not None:
+                print(f'{method} energy = {energy: .8f}')
+        self.target_energy_method, self.target_energy = sorted(
+            [(method,energy) for method,energy in self.calculated_energy.items() if energy is not None], 
+            key=lambda x:x[1]
+        )[0]
         print(dashes)
         
         # Hamiltonian
@@ -81,58 +85,60 @@ class build_molecule_for_projection(CS_VQE):
         ccsd_single_amps = calculated_molecule.ccsd_single_amps
         ccsd_double_amps = calculated_molecule.ccsd_double_amps
         packed_amps = uccsd_singlet_get_packed_amplitudes(ccsd_single_amps,  ccsd_double_amps, self.n_qubits, self.n_electrons)
-        ucc_singlet = uccsd_singlet_generator(packed_amps, self.n_qubits, self.n_electrons)
-        ucc_jw = jordan_wigner(ucc_singlet)
+        self.ucc_singlet = uccsd_singlet_generator(packed_amps, self.n_qubits, self.n_electrons)
+        ucc_jw = jordan_wigner(self.ucc_singlet)
         self.ucc_dict = QubitOperator_to_dict(ucc_jw, self.n_qubits)
         self.ucc = PauliwordOp(self.ucc_dict)
 
-        # taper Hamiltonians + ansatz
-        taper_hamiltonian = QubitTapering(self.ham)
-        self.ham_tap = taper_hamiltonian.taper_it(ref_state=self.hf_state)
-        self.sor_tap = taper_hamiltonian.taper_it(aux_operator=self.ham_sor, ref_state=self.hf_state)
-        self.ucc_tap = taper_hamiltonian.taper_it(aux_operator=self.ucc, ref_state=self.hf_state)
-        self.n_taper = taper_hamiltonian.n_taper
-        self.tapered_qubits   = taper_hamiltonian.stab_qubit_indices
-        self.untapered_qubits = taper_hamiltonian.free_qubit_indices
-        self.hf_tapered = taper_hamiltonian.tapered_ref_state
-        hf_tap_str = ''.join([str(i) for i in self.hf_tapered])
-        
-        print("Tapering information:")
-        print(dashes)
-        print(f'We are able to taper {self.n_taper} qubits from the Hamiltonian')
-        print('The symmetry basis/sector is:') 
-        print(taper_hamiltonian.symmetry_generators)
-        print(f'The tapered Hartree-Fock state is |{hf_tap_str}>')
-        print(dashes)
+        if taper:
+            # taper Hamiltonians + ansatz
+            taper_hamiltonian = QubitTapering(self.ham)
+            self.ham_tap = taper_hamiltonian.taper_it(ref_state=self.hf_state)
+            self.sor_tap = taper_hamiltonian.taper_it(aux_operator=self.ham_sor, ref_state=self.hf_state)
+            self.ucc_tap = taper_hamiltonian.taper_it(aux_operator=self.ucc, ref_state=self.hf_state)
+            self.n_taper = taper_hamiltonian.n_taper
+            self.tapered_qubits   = taper_hamiltonian.stab_qubit_indices
+            self.untapered_qubits = taper_hamiltonian.free_qubit_indices
+            self.hf_tapered = taper_hamiltonian.tapered_ref_state
+            hf_tap_str = ''.join([str(i) for i in self.hf_tapered])
+            
+            print("Tapering information:")
+            print(dashes)
+            print(f'We are able to taper {self.n_taper} qubits from the Hamiltonian')
+            print('The symmetry basis/sector is:') 
+            print(taper_hamiltonian.symmetry_generators)
+            print(f'The tapered Hartree-Fock state is |{hf_tap_str}>')
+            print(dashes)
 
-        # build CS-VQE model
-        if basis_weighting == 'ham_coeff':
-            weighting_operator = None
-        elif basis_weighting == 'SOR':
-            weighting_operator = self.sor_tap
-        elif basis_weighting == 'num_commuting':
-            weighting_operator = self.ham_tap.copy()
-            weighting_operator.coeff_vec = np.ones(weighting_operator.n_terms)
-        elif basis_weighting == 'UCCSD':
-            weighting_operator = self.ucc_tap.copy()
-            weighting_operator.coeff_vec = np.sin(weighting_operator.coeff_vec.imag)
-        else:
-            raise ValueError(f'Invalid basis_weighting {basis_weighting}:\n'+
-                                'Must be one of ham_coeff, SOR or num_commuting.')
+            if build_cs_vqe_model:
+                # build CS-VQE model
+                if basis_weighting == 'ham_coeff':
+                    weighting_operator = None
+                elif basis_weighting == 'SOR':
+                    weighting_operator = self.sor_tap
+                elif basis_weighting == 'num_commuting':
+                    weighting_operator = self.ham_tap.copy()
+                    weighting_operator.coeff_vec = np.ones(weighting_operator.n_terms)
+                elif basis_weighting == 'UCCSD':
+                    weighting_operator = self.ucc_tap.copy()
+                    weighting_operator.coeff_vec = np.sin(weighting_operator.coeff_vec.imag)
+                else:
+                    raise ValueError(f'Invalid basis_weighting {basis_weighting}:\n'+
+                                        'Must be one of ham_coeff, SOR or num_commuting.')
 
-        super().__init__(operator=self.ham_tap,
-                        ref_state=self.hf_tapered,
-                        target_sqp='Z',
-                        basis_weighting_operator=weighting_operator)
+                super().__init__(operator=self.ham_tap,
+                                ref_state=self.hf_tapered,
+                                target_sqp='Z',
+                                basis_weighting_operator=weighting_operator)
 
-        print("CS-VQE information:")
-        print(dashes)
-        print("Noncontextual GS energy:", self.noncontextual_energy)#, ' // matches original?', match_original)
-        print("Symmetry generators:    ") 
-        print(self.symmetry_generators)
-        print("Clique representatives: ")
-        print(self.clique_operator)
-        print(dashes)
+                print("CS-VQE information:")
+                print(dashes)
+                print("Noncontextual GS energy:", self.noncontextual_energy)#, ' // matches original?', match_original)
+                print("Symmetry generators:    ") 
+                print(self.symmetry_generators)
+                print("Clique representatives: ")
+                print(self.clique_operator)
+                print(dashes)
 
     def update_basis(self, basis):
         """ for testing purposes
@@ -206,7 +212,7 @@ class build_molecule_for_projection(CS_VQE):
                 # perform the stabilizer subsapce projection and compute error
                 # to be replaced with actual VQE simulation instead of direct diagonalization
                 projected = self.contextual_subspace_projection(stab_indices)
-                error = abs(exact_gs_energy(projected.to_sparse_matrix)[0]-self.fci_energy)
+                error = abs(exact_gs_energy(projected.to_sparse_matrix)[0]-self.target_energy)
                 cs_vqe_errors.append([relax_indices, error])
             # choose the best error and remove the corresponding stabilizer indices from the pool
             best_relax_indices, best_error = sorted(cs_vqe_errors, key=lambda x:x[1])[0]

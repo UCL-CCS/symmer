@@ -661,3 +661,4 @@ tmp*
 
 notebooks/molecule_geometries/molecule_data.json
 notebooks/data
+notebooks/sandbox.ipynb
