@@ -2,7 +2,7 @@ import numpy as np
 import scipy as sp
 from typing import Tuple
 from qiskit import QuantumCircuit
-import pyzx as zx
+#import pyzx as zx
 
 def norm(vector: np.array) -> complex:
     """

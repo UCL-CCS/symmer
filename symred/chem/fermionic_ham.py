@@ -10,7 +10,7 @@ from openfermion.ops.representations import get_active_space_integrals
 from pyscf import ao2mo, gto, scf, mp, ci, cc, fci
 from pyscf.lib import StreamObject
 from openfermion.chem.pubchem import geometry_from_pubchem
-import py3Dmol
+#import py3Dmol
 from pyscf.tools import cubegen
 
 class FermionicHamilt:
@@ -246,10 +246,10 @@ class PySCFDriver:
         if self.run_fci:
 
             # check how large calc will be and raise error if too big.
-            n_deterimants = math.comb(2*self.pyscf_hf.mol.nao,
-                                      self.pyscf_hf.mol.nelectron)
-            if n_deterimants > 2**16:
-                raise NotImplementedError(f'FCI calc too expensive. Number of determinants = {n_deterimants} ')
+            #n_deterimants = math.comb(2*self.pyscf_hf.mol.nao,
+            #                          self.pyscf_hf.mol.nelectron)
+            #if n_deterimants > 2**16:
+            #    raise NotImplementedError(f'FCI calc too expensive. Number of determinants = {n_deterimants} ')
 
             self.pyscf_fci = fci.FCI(self.pyscf_hf.mol, self.pyscf_hf.mo_coeff)
             self.pyscf_fci.verbose = 0
@@ -258,7 +258,7 @@ class PySCFDriver:
 
 def Draw_molecule(
     xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
-) -> py3Dmol.view:
+) -> None:
     """Draw molecule from xyz string.
 
     Note if molecule has unrealistic bonds, then style should be sphere. Otherwise stick style can be used
@@ -275,7 +275,7 @@ def Draw_molecule(
     Returns:
         view (py3dmol.view object). Run view.show() method to print molecule.
     """
-    view = py3Dmol.view(width=width, height=height)
+    view = None# py3Dmol.view(width=width, height=height)
     view.addModel(xyz_string, "xyz")
     if style == "sphere":
         view.setStyle({'sphere': {"radius": 0.2}})
@@ -327,7 +327,7 @@ def Draw_cube_orbital(
         File_name = f"temp_MO_orbital_index{index}.cube"
         cubegen.orbital(PySCF_mol_obj, File_name, C_matrix[:, index])
 
-        view = py3Dmol.view(width=width, height=height)
+        view = None# py3Dmol.view(width=width, height=height)
         view.addModel(xyz_string, "xyz")
         if style == "sphere":
             view.setStyle({"sphere": {"radius": 0.2}})

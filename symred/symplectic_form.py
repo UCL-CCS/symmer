@@ -29,8 +29,13 @@ from openfermion import (
     #get_fermion_operator
 )
 from qiskit.circuit import QuantumCircuit, ParameterVector
-from qiskit.opflow import CircuitStateFn
+#from qiskit.opflow import CircuitStateFn
 from qiskit import BasicAer, execute
+
+# QLM imports
+from qat.core import Observable, Term
+from qat.lang.AQASM import *
+from qat.qpus import LinAlg
 
 
 def symplectic_to_string(symp_vec) -> str:
@@ -925,11 +930,14 @@ class AnsatzOp(PauliwordOp):
 
             return qc
         
-        qc_qiskit = self.to_QuantumCircuit(ref_state, trotter_number, bind_params = False)
+        qc_qiskit = self.to_QuantumCircuit(ref_state=ref_state, trotter_number=trotter_number, bind_params=False)
         qc_qlm = build_qlm_circuit(*qlm_circuit(qc_qiskit))
-        bind_param = dict(zip(qc_qlm.get_variables(), self.coeff_vec))
         
-        return qc_qlm.bind_variables(bind_param)
+        if bind_params:
+            bind_param = dict(zip(qc_qlm.get_variables(), self.coeff_vec))
+            return qc_qlm.bind_variables(bind_param)
+        else:
+            return qc_qlm
 
         
 
@@ -952,6 +960,15 @@ class ObservableOp(PauliwordOp):
         super().__init__(operator, coeff_vec)
         assert(np.all(self.coeff_vec.imag==0)), 'Coefficients must be real, ensuring the operator is Hermitian'
         self.coeff_vec = self.coeff_vec.real
+        
+    @cached_property
+    def to_qlm(self) -> Observable:
+        """ Convert the observable to Atos' QLM representation
+        """
+        pauli_terms = [Term(coeff, op, list(range(self.n_qubits))) for op, coeff in self.to_dictionary.items()]
+        obs = Observable(self.n_qubits,pauli_terms=pauli_terms)
+        
+        return obs
 
     def Z_basis_expectation(self, ref_state: np.array) -> float:
         """ Provided a single Pauli-Z basis state, computes the expectation value of the operator
@@ -1068,6 +1085,18 @@ class ObservableOp(PauliwordOp):
         #print('Evaluate expectation value', stop - start)
 
         return expectation.real
+    
+    def _ansatz_expectation_qlm(self,
+            ansatz_op: AnsatzOp, 
+            ref_state: np.array
+        ) -> float:
+        """
+        """
+        # Create a job
+        qc_qlm = ansatz_op.to_qlm_circuit(ref_state=ref_state, trotter_number=self.trotter_number)
+        job = qc_qlm.to_job(observable=self.to_qlm, nbshots=self.n_shots)
+        result = LinAlg().submit(job)
+        return result.value
 
     def ansatz_expectation(self, 
             ansatz_op: AnsatzOp, 
@@ -1081,6 +1110,8 @@ class ObservableOp(PauliwordOp):
             return self._ansatz_expectation_trotter_rotations(ansatz_op, ref_state)
         elif self.evaluation_method == 'sampled':
             return np.mean([self._ansatz_expectation_sampled(ansatz_op, ref_state) for i in range(self.n_realizations)])
+        elif self.evaluation_method == 'qlm':
+            return np.mean([self._ansatz_expectation_qlm(ansatz_op, ref_state) for i in range(self.n_realizations)])
         else:
             raise ValueError('Invalid evaluation method, must be one of statevector, trotter_rotations or sampled')
 
