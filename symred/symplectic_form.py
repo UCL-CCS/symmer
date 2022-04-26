@@ -681,6 +681,58 @@ class AnsatzOp(PauliwordOp):
                 circuit_from_step(angles[step], *qiskit_gate_indices)
         
         return qc
+    
+    def to_qlm_circuit(self,
+        ref_state: np.array = None, 
+        trotter_number: int = 1, 
+        bind_params: bool   = True
+        ):
+        def qlm_circuit(qc_qiskit):
+            """Method for generating gate intructions to build CS-VQE circuit on Atos' QLM
+            """
+            n_qbits = qc_qiskit.num_qubits
+            instructions=[]
+            param_num=0
+            for gate, q_pos, blank in qc_qiskit.data:
+                var = gate.params
+                if gate.name != 'barrier':
+                    if var != []:
+                        var = [param_num%qc_qiskit.num_parameters]
+                        param_num += 1
+                    instructions.append((gate.name.upper(), var, [q.index for q in q_pos]))
+
+            qc_qlm_dict = { 'num_qubits':  n_qbits,
+                            'num_params':  qc_qiskit.num_parameters,
+                            'instructions':instructions}
+
+            return n_qbits, qc_qiskit.num_parameters, instructions
+
+        def build_qlm_circuit(num_sim_q, num_params, instructions):
+            gate_dict = {'X':X,'H':H,'S':S,'SDG':S.dag(),'RZ':RZ,'CX':CNOT}
+            prog = Program()
+            qbits_reg = prog.qalloc(num_sim_q)
+            params = [prog.new_var(float, "\\P{}".format(i)) for i in range(num_params)]
+
+            for gate, var_num, q_pos in instructions:
+                q_pos = [num_sim_q-p-1 for p in q_pos] #qubit ordering is reversed compared with Qiskit
+                if gate == 'RZ':
+                    prog.apply(RZ(params[var_num[0]]), qbits_reg[q_pos[0]])
+                elif gate == 'CX':
+                    prog.apply(CNOT, qbits_reg[q_pos[0]], qbits_reg[q_pos[1]])
+                else:
+                    prog.apply(gate_dict[gate], qbits_reg[q_pos[0]])
+
+            qc = prog.to_circ()
+
+            return qc
+        
+        qc_qiskit = self.to_QuantumCircuit(ref_state, trotter_number, bind_params = False)
+        qc_qlm = build_qlm_circuit(*qlm_circuit(qc_qiskit))
+        bind_param = dict(zip(qc_qlm.get_variables(), self.coeff_vec))
+        
+        return qc_qlm.bind_variables(bind_param)
+
+        
 
 class ObservableOp(PauliwordOp):
     """ Based on PauliwordOp and introduces functionality for evaluating expectation values

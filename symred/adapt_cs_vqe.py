@@ -160,7 +160,7 @@ class ADAPT_CS_VQE(CS_VQE):
         if n_sim_qubits == 0:
             # once the number of simulation qubits is exhausted, return the stabilizer pool
             # these are the stabilizers the heuristic has chosen to enforce
-            return list(pool), *best_ansatz
+            return (list(pool), *best_ansatz)
         else:
             num_qubits = self.operator.n_qubits - len(pool) + depth
 
