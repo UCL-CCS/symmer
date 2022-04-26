@@ -3,15 +3,22 @@ import numpy as np
 from copy import deepcopy
 from typing import Dict, List, Tuple, Union
 from functools import reduce
-
+from itertools import product
+from sympy import Q
 from psutil import net_if_stats
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
 from scipy.optimize import minimize
 import warnings
+import networkx as nx
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import time
 warnings.simplefilter('always', UserWarning)
+
 # specialized imports
-from symred.utils import gf2_gaus_elim
+from symred.utils import gf2_gaus_elim, norm, ZX_calculus_reduction
 from openfermion import (
     QubitOperator, 
     MajoranaOperator, 
@@ -22,6 +29,8 @@ from openfermion import (
     #get_fermion_operator
 )
 from qiskit.circuit import QuantumCircuit, ParameterVector
+from qiskit.opflow import CircuitStateFn
+from qiskit import BasicAer, execute
 
 
 def symplectic_to_string(symp_vec) -> str:
@@ -352,13 +361,18 @@ class PauliwordOp:
         return self+op_copy
 
     def __mul__(self, 
-            Pword: "PauliwordOp"
+            mul_obj: Union["PauliwordOp", "QuantumState"]
         ) -> "PauliwordOp":
         """ Right-multiplication of this PauliwordOp by another PauliwordOp.
         The phaseless multiplication is achieved via binary summation of the
         symplectic matrix in _multiply_single_Pword_phaseless whilst the phase
         compensation is introduced in _multiply_single_Pword.
         """
+        if isinstance(mul_obj, QuantumState):
+            assert(mul_obj.vec_type == 'ket'), 'cannot multiply a bra from the left'
+            Pword = mul_obj.state_op
+        else:
+            Pword = mul_obj
         assert (self.n_qubits == Pword.n_qubits), 'Pauliwords defined for different number of qubits'
         P_updated_list =[]
         for Pvec_single,coeff_single in zip(Pword.symp_matrix,Pword.coeff_vec):
@@ -367,7 +381,14 @@ class PauliwordOp:
             P_updated_list.append(P_new)
 
         P_final = reduce(lambda x,y: x+y, P_updated_list)
-        return P_final
+
+        if isinstance(mul_obj, QuantumState):
+            coeff_vector = P_final.coeff_vec*(1j**P_final.Y_count)
+            # need to run a separate cleanup since identities are all mapped to Z 
+            # i.e. ZZZZ==IIII in QuantumState
+            return QuantumState(P_final.X_block, coeff_vector).cleanup()
+        else:
+            return P_final
 
     def __getitem__(self, key: Union[slice, int]) -> "PauliwordOp":
         """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
@@ -531,6 +552,18 @@ class PauliwordOp:
         return op_copy
 
     @cached_property
+    def conjugate(self) -> "PauliwordOp":
+        """
+        Returns:
+            Pword_conj (PauliwordOp): The Hermitian conjugated operator
+        """
+        Pword_conj = PauliwordOp(
+            operator  = self.symp_matrix, 
+            coeff_vec = self.coeff_vec.conjugate()
+        )
+        return Pword_conj
+
+    @cached_property
     def PauliwordOp_to_OF(self) -> List[QubitOperator]:
         """ TODO Interface with converter.py (replace with to_dictionary method)
         """
@@ -595,6 +628,143 @@ class PauliwordOp:
         else:
             return False
 
+class ObservableGraph(PauliwordOp):
+    # TODO
+    def __init__(self,
+            operator:   Union[List[str], Dict[str, float], np.array],
+            coeff_list: Union[List[complex], np.array] = None):
+        super().__init__(operator, coeff_list)
+
+    def build_graph(self, edge_relation='C', weighted=None):
+
+        if edge_relation =='AC':
+            # commuting edges
+            adjacency_mat = np.bitwise_not(self.adjacency_matrix)
+
+            # removes self adjacency for graph
+            np.fill_diagonal(adjacency_mat, 0)
+
+        elif edge_relation =='C':
+            # anticommuting edges
+            adjacency_mat = self.adjacency_matrix
+            np.fill_diagonal(adjacency_mat, 0)
+
+        elif edge_relation =='QWC':
+            adjacency_mat = np.zeros((self.n_terms, self.n_terms))
+            for i in range(self.n_terms):
+                for j in range(i+1, self.n_terms):
+                    Pword_i = self.symp_matrix[i]
+                    Pword_j = self.symp_matrix[j]
+
+                    self_I = np.bitwise_or(Pword_i[:self.n_qubits], Pword_i[self.n_qubits:]).astype(bool)
+                    Pword_I = np.bitwise_or(Pword_j[:self.n_qubits], Pword_j[self.n_qubits:]).astype(bool)
+
+                    # Get the positions where neither self nor Pword have I acting on them
+                    unique_non_I_locations = np.bitwise_and(self_I, Pword_I)
+
+                    # check non I operators are the same!
+                    same_Xs = np.bitwise_not(
+                        np.bitwise_xor(Pword_i[:self.n_qubits][unique_non_I_locations],
+                                       Pword_j[:self.n_qubits][unique_non_I_locations]).astype(
+                            bool))
+                    same_Zs = np.bitwise_not(
+                        np.bitwise_xor(Pword_i[self.n_qubits:][unique_non_I_locations],
+                                       Pword_j[self.n_qubits:][unique_non_I_locations]).astype(
+                            bool))
+
+                    if np.all(same_Xs) and np.all(same_Zs):
+                        adjacency_mat[i,j] = adjacency_mat[j,i] = 1
+                    else:
+                        continue
+        else:
+            raise ValueError(f'unknown edge relation: {edge_relation}')
+
+        graph = nx.from_numpy_matrix(adjacency_mat)
+
+        return graph
+
+    def clique_cover(self, clique_relation, colouring_strategy, colour_interchange=False,
+                     plot_graph=False, with_node_label=False, node_sizes=True):
+
+        if clique_relation == 'AC':
+            graph = self.build_graph(edge_relation='C')
+        elif clique_relation == 'C':
+            graph = self.build_graph(edge_relation='AC')
+        elif clique_relation == 'QWC':
+            graph = self.build_graph(edge_relation='QWC')
+            graph = nx.complement(graph)
+        else:
+            raise ValueError(f'unknown clique relation: {clique_relation}')
+
+        # keys give symplectic row index and value gives colour of clique
+        greedy_colouring_output_dic = nx.greedy_color(graph,
+                                                      strategy=colouring_strategy,
+                                                      interchange=colour_interchange)
+
+        unique_colours = set(greedy_colouring_output_dic.values())
+
+        clique_dict = {}
+        for Clique_ind in unique_colours:
+            clique_Pword_symp = []
+            clique_coeff_symp = []
+            for sym_row_ind, clique_id in greedy_colouring_output_dic.items():
+                if clique_id == Clique_ind:
+                    clique_Pword_symp.append(self.symp_matrix[sym_row_ind,:])
+                    clique_coeff_symp.append(self.coeff_vec[sym_row_ind])
+
+            clique = PauliwordOp(np.array(clique_Pword_symp, dtype=int),
+                                 clique_coeff_symp)
+
+            clique_dict[Clique_ind] = clique
+
+        if plot_graph:
+            possilbe_colours = cm.rainbow(np.linspace(0, 1, len(unique_colours)))
+            colour_list = [possilbe_colours[greedy_colouring_output_dic[node_id]] for node_id in graph.nodes()]
+            # print(colour_list)
+            # print([symplectic_to_string(self.symp_matrix[row_ind]) for row_ind in graph.nodes])
+            self.draw_graph(graph, with_node_label=with_node_label, node_sizes=node_sizes, node_colours=colour_list)
+
+        return clique_dict
+
+    def draw_graph(self, graph_input, with_node_label=False, node_sizes=True, node_colours=None):
+
+        if node_sizes:
+            node_sizes = 200 * np.abs(np.round(self.coeff_vec)) + 1
+            options = {
+                'node_size': node_sizes,
+                'node_color': 'r' if node_colours is None else node_colours
+                     }
+        else:
+            options = {
+                'node_color': 'r' if node_colours is None else node_colours
+                     }
+
+        plt.figure()
+        pos = nx.circular_layout(graph_input)
+        # # pos = nx.spring_layout(graph_input)
+        # pos = nx.nx_pydot.graphviz_layout(graph_input)
+
+        nx.draw_networkx_nodes(graph_input,
+                               pos,
+                               nodelist=list(graph_input.nodes),
+                               **options)
+        nx.draw_networkx_edges(graph_input, pos,
+                               width=1.0,
+                               # alpha=0.5,
+                               nodelist=list(graph_input.nodes),
+                               )
+
+        if with_node_label:
+            labels = {row_ind: symplectic_to_string(self.symp_matrix[row_ind]) for row_ind in graph_input.nodes}
+            nx.draw_networkx_labels(graph_input,
+                                    pos,
+                                    labels,
+                                    font_size=18)
+
+        # plt.savefig('G_raw', dpi=300, transparent=True, )  # edgecolor='black', facecolor='white')
+        plt.show()
+        return None
+
 class AnsatzOp(PauliwordOp):
     """ Based on PauliwordOp and introduces functionality for converting operators to quantum circuits
     """
@@ -604,10 +774,26 @@ class AnsatzOp(PauliwordOp):
         ) -> None:
         """
         """
-        coeff_vec = np.array(coeff_vec, dtype=complex)
-        assert(np.all(coeff_vec.imag==0)), 'Coefficients must have zero imaginary component'
         super().__init__(operator, coeff_vec)
+        assert(np.all(self.coeff_vec.imag==0)), 'Coefficients must have zero imaginary component'
         self.coeff_vec = self.coeff_vec.real
+
+    def exponentiate(self):
+        """
+        Returns:
+            exp_T (PauliwordOp): exponentiated form of the ansatz operator
+        """
+        exp_bin = []
+        for term, angle in zip(self.symp_matrix, self.coeff_vec):
+            exp_bin.append(
+                PauliwordOp(
+                    np.vstack([np.zeros_like(term), term]), 
+                    [np.cos(angle), 1j*np.sin(angle)]
+                )
+            )
+        exp_T = reduce(lambda x,y:x*y, exp_bin)
+
+        return exp_T
 
     @cached_property
     def to_instructions(self) -> Dict[int, Dict[str, List[int]]]:
@@ -628,13 +814,17 @@ class AnsatzOp(PauliwordOp):
         return circuit_instructions
 
     def to_QuantumCircuit(self, 
-        ref_state: np.array = None, 
+        ref_state: np.array = None,
+        basis_change_indices: Dict[str, List[int]] = {'X_indices':[],'Y_indices':[]},
         trotter_number: int = 1, 
-        bind_params: bool   = True
+        bind_params: bool = True,
+        ZX_reduction = False
         ) -> str:
         """
         Convert the operator to a QASM circuit string for input 
         into quantum computing packages such as Qiskit and Cirq
+
+        basis_change_indices in form [X_indices, Y_indices]
         """
         def qiskit_ordering(indices):
             """ we index from left to right - in Qiskit this ordering is reversed
@@ -679,7 +869,16 @@ class AnsatzOp(PauliwordOp):
                 qiskit_gate_indices = [qiskit_ordering(indices) for indices in gate_indices.values()]
                 qc.barrier()
                 circuit_from_step(angles[step], *qiskit_gate_indices)
-        
+
+        qc.barrier()
+        for i in basis_change_indices['Y_indices']:
+            qc.s(qiskit_ordering(i))
+        for i in basis_change_indices['X_indices']:
+            qc.h(qiskit_ordering(i))
+
+        if ZX_reduction:
+            qc = ZX_calculus_reduction(qc)
+
         return qc
     
     def to_qlm_circuit(self,
@@ -737,55 +936,153 @@ class AnsatzOp(PauliwordOp):
 class ObservableOp(PauliwordOp):
     """ Based on PauliwordOp and introduces functionality for evaluating expectation values
     """
+    # here we define the expectation evaluation parameters and can be updated by the user
+    evaluation_method = 'statevector' # one of statevector, trotter_rotations or sampled
+    trotter_number = 1 # the number of repetition in the QuantumCircuit
+    n_shots = 2**10 # number of samples taken from each QWC group circuit
+    n_realizations = 1 # number of expectation evaluations in average for sampled method
+    backend = BasicAer.get_backend('qasm_simulator')
+
     def __init__(self,
         operator:   Union[List[str], Dict[str, float], np.array],
         coeff_vec: Union[List[complex], np.array] = None
         ) -> None:
         """
         """
-        coeff_vec = np.array(coeff_vec, dtype=complex)
-        assert(np.all(coeff_vec.imag==0)), 'Coefficients must be real, ensuring the operator is Hermitian'
         super().__init__(operator, coeff_vec)
+        assert(np.all(self.coeff_vec.imag==0)), 'Coefficients must be real, ensuring the operator is Hermitian'
         self.coeff_vec = self.coeff_vec.real
 
-    def Z_basis_expectation(self, basis_state: np.array) -> float:
+    def Z_basis_expectation(self, ref_state: np.array) -> float:
         """ Provided a single Pauli-Z basis state, computes the expectation value of the operator
         """
-        assert(set(basis_state).issubset({0,1})), f'Basis state must consist of binary elements, not {set(basis_state)}'
-        assert(len(basis_state)==self.n_qubits), f'Number of qubits {len(basis_state)} in the basis state incompatible with {self.n_qubits}'
+        assert(set(ref_state).issubset({0,1})), f'Basis state must consist of binary elements, not {set(ref_state)}'
+        assert(len(ref_state)==self.n_qubits), f'Number of qubits {len(ref_state)} in the basis state incompatible with {self.n_qubits}'
         mask_diagonal = np.where(np.all(self.X_block==0, axis=1))
-        measurement_signs = (-1)**np.einsum('ij->i', self.Z_block[mask_diagonal] & basis_state)
+        measurement_signs = (-1)**np.einsum('ij->i', self.Z_block[mask_diagonal] & ref_state)
         return np.sum(measurement_signs * self.coeff_vec[mask_diagonal]).real
 
-    def _ansatz_expectation_exact(self, ansatz_op, basis_state, trotter_number):
+    def _ansatz_expectation_trotter_rotations(self, 
+            ansatz_op: AnsatzOp, 
+            ref_state: np.array
+        ):
         """ Exact expectation value - expensive! Trotterizes the ansatz operator and applies the terms as
         Pauli rotations to the observable operator, resulting in an exponential increase in the number of terms
         """
-        pauli_rotations = [symplectic_to_string(row) for row in ansatz_op.symp_matrix]*trotter_number
-        angles = -2*np.tile(ansatz_op.coeff_vec, trotter_number)/trotter_number
+        pauli_rotations = [symplectic_to_string(row) for row in ansatz_op.symp_matrix]*self.trotter_number
+        angles = -2*np.tile(ansatz_op.coeff_vec, self.trotter_number)/self.trotter_number
 
         trotterized_observable = self.recursive_rotate_by_Pword(zip(pauli_rotations[::-1], angles[::-1]))
         trotterized_observable = ObservableOp(trotterized_observable.symp_matrix, trotterized_observable.coeff_vec)
 
-        return trotterized_observable.Z_basis_expectation(basis_state)
+        return trotterized_observable.Z_basis_expectation(ref_state)
 
-    def _ansatz_expectation_estimate(self, ansatz_op, basis_state, trotter_number):
+    def _ansatz_expectation_statevector(self, 
+            ansatz_op: AnsatzOp, 
+            ref_state: np.array,
+            sparse = False
+        ) -> float:
+        """ Exact expectation value - expensive! Converts the ansatz operator to a sparse vector | psi >
+        and return the quantity < psi | Observable | psi >
+        """
+        if sparse:
+            # sparse multiplication does not scale nicely with number of qubits
+            ansatz_qc = ansatz_op.to_QuantumCircuit(ref_state=ref_state, trotter_number=self.trotter_number)
+            psi = CircuitStateFn(ansatz_qc).to_spmatrix()
+            return (psi @ self.to_sparse_matrix @ psi.T)[0,0].real
+        else:
+            psi = ansatz_op.exponentiate() * QuantumState([ref_state])
+            return (psi.conjugate * self * psi).real
+
+    @cached_property
+    def QWC_decomposition(self):
         """
         """
-        raise NotImplementedError('Expectation value estimation from quantum circuit not implemented')
+        HamGraph = ObservableGraph(self.symp_matrix, self.coeff_vec)
+        QWC_operators = HamGraph.clique_cover(clique_relation='QWC', colouring_strategy='largest_first')
+        # check the QWC groups sum to the original observable operator
+        reconstructed = reduce(lambda x,y:x+y, QWC_operators.values())
+        assert(np.all(self.symp_matrix == reconstructed.symp_matrix) and 
+            np.all(self.coeff_vec == reconstructed.coeff_vec)), 'Summing QWC group operators does not yield the original Hamiltonian'
+        
+        return QWC_operators
+
+    def _ansatz_expectation_sampled(self, 
+            ansatz_op: AnsatzOp, 
+            ref_state: np.array
+        ) -> float:
+        """ Evaluates epectation values by quantum circuit sampling. Decomposes the ObservableOp into
+        qubitwise commuting (QWC) components that may be measured simultaneously by transforming onto 
+        the Pauli Z basis. This allows one to reconstruct the ansatz operator in a tomography-esque
+        fashion and determine the expectation value w.r.t. the observable operator.
+
+        Returns:
+            expectation (float): the expectation value of the ObseravleOp w.r.t. the given ansatz and reference state
+        """
+        #start = time.time()
+        QWC_group_data = {}
+        for group_index, group_operator in self.QWC_decomposition.items():
+            # find the qubit positions containing X's or Y's in the QWC group
+            X_indices = np.where(np.einsum('ij->j', group_operator.X_block)!=0)[0]
+            Y_indices = np.where(np.einsum('ij->j', group_operator.X_block & group_operator.Z_block)!=0)[0]
+            basis_change_indices={'X_indices':X_indices, 'Y_indices':Y_indices}
+            # we make a change of basis from Pauli X/Y --> Z, allowing us to take measurements in the Z basis
+            group_qc = ansatz_op.to_QuantumCircuit(
+                ref_state = ref_state,
+                trotter_number=self.trotter_number,
+                basis_change_indices=basis_change_indices, 
+                ZX_reduction=False
+            )
+            group_qc.measure_all()
+            QWC_group_data[group_index] = {
+                "operator":PauliwordOp(group_operator.symp_matrix, group_operator.coeff_vec),
+                "circuit":group_qc,
+                "measured_state":None
+            }
+        #stop = time.time()
+        #print('QWC group data', stop - start)
+        #start = time.time()
+        # send all the QWC group circuits off to be executed via the backend
+        QWC_group_circuits = [group['circuit'] for group in QWC_group_data.values()]
+        job = execute(QWC_group_circuits, self.backend, shots=self.n_shots)
+        #stop = time.time()
+        #print('Obtain measurements', stop - start)
+        #start = time.time()
+        expectation = 0
+
+        for i in range(len(QWC_group_circuits)):
+            # reconstruct ansatz state from measurement outcomes (tomography-esque)
+            states_hex, frequency = zip(*job.result().data(i)['counts'].items())
+            state_matrix = [
+                [int(i) for i in np.binary_repr(int(state, 16), self.n_qubits)]
+                for state in states_hex
+            ]
+            state = QuantumState(state_matrix, np.array(frequency)/self.n_shots)
+            QWC_group_data[i]['measured_state'] = state
+            observable = QWC_group_data[i]['operator']
+            # modify the Z block in line with the change of basis
+            Z_symp_matrix = observable.X_block | observable.Z_block
+            for b_state, b_state_coeff in zip(state.state_matrix, state.coeff_vector):
+                expectation += np.sum((-1)**np.count_nonzero(Z_symp_matrix & b_state, axis=1)*observable.coeff_vec*b_state_coeff)
+        #stop = time.time()
+        #print('Evaluate expectation value', stop - start)
+
+        return expectation.real
 
     def ansatz_expectation(self, 
-            ansatz_op: "AnsatzOp", 
-            basis_state: np.array, 
-            trotter_number: int = 1, 
-            exact: bool = True
+            ansatz_op: AnsatzOp, 
+            ref_state: np.array, 
         ) -> float:
         """ 
         """
-        if exact:
-            return self._ansatz_expectation_exact(ansatz_op, basis_state, trotter_number)
+        if self.evaluation_method == 'statevector':
+            return self._ansatz_expectation_statevector(ansatz_op, ref_state)
+        elif self.evaluation_method == 'trotter_rotations':
+            return self._ansatz_expectation_trotter_rotations(ansatz_op, ref_state)
+        elif self.evaluation_method == 'sampled':
+            return np.mean([self._ansatz_expectation_sampled(ansatz_op, ref_state) for i in range(self.n_realizations)])
         else:
-            return self._ansatz_expectation_estimate(ansatz_op, basis_state, trotter_number)
+            raise ValueError('Invalid evaluation method, must be one of statevector, trotter_rotations or sampled')
 
     def parameter_shift_at_index(self,
         param_index: int,
@@ -801,8 +1098,8 @@ class ObservableOp(PauliwordOp):
         anz_upper_param.coeff_vec[param_index] += np.pi/4
         anz_lower_param.coeff_vec[param_index] -= np.pi/4 
         
-        shift_upper = self.ansatz_expectation(anz_upper_param, basis_state=ref_state)
-        shift_lower = self.ansatz_expectation(anz_lower_param, basis_state=ref_state)
+        shift_upper = self.ansatz_expectation(anz_upper_param, ref_state=ref_state)
+        shift_lower = self.ansatz_expectation(anz_lower_param, ref_state=ref_state)
 
         return shift_upper-shift_lower
 
@@ -820,11 +1117,14 @@ class ObservableOp(PauliwordOp):
     def VQE(self,
         ansatz_op:  AnsatzOp,
         ref_state:  np.array,
-        optimizer:  str     = 'SLSQP', 
-        maxiter:    int     = 10, 
-        opt_tol:    float   = None
+        optimizer:  str   = 'SLSQP',
+        maxiter:    int   = 10, 
+        opt_tol:    float = None
         ):
-        """
+        """ 
+        Rcommended optimizers:
+            - SLSQP  (gradient-descent, does not evaluate Jacobian at each iterate like BFGS or CG so is faster)
+            - COBYLA (gradient-free)
         """
         interim_values = {'values':[], 'params':[], 'gradients':[], 'count':0}
 
@@ -1292,3 +1592,194 @@ class QubitHamiltonian(PauliwordOp):
         order = np.argsort(eig_values)
         self.eig_vals = eig_values[order]
         self.eig_vecs = eig_vectors[:, order].T
+
+class QuantumState:
+    """ Class to represent quantum states.
+    
+    This is achieved by identifying the state with a 
+    state_op (PauliwordOp), namely |0> --> Z, |1> --> X. 
+    
+    For example, the 2-qubit Bell state is mapped as follows: 
+        1/sqrt(2) (|00> + |11>) --> 1/sqrt(2) (ZZ + XX)
+    Observe the state is recovered by applying the state_op to the 
+    zero vector |00>, which will be the X_block of state_op.
+    
+    This ensures correct phases when multiplying the quantum state by a PauliwordOp.
+    """
+    def __init__(self, 
+            state_matrix: Union[List[List[int]], np.array], 
+            coeff_vector: Union[List[complex], np.array] = None,
+            vec_type: str = 'ket'
+        ) -> None:
+        """ The state is not normalized by default, since this would result
+        in incorrect behaviour when perfoming non-unitary multiplications,
+        e.g. for evaluating expectation values of Hamiltonians. However, if
+        one wishes to normalize the state, it is stored as a cached propoerty
+        as QuantumState.normalize.
+        """
+        if isinstance(state_matrix, list):
+            state_matrix = np.array(state_matrix)
+        if isinstance(coeff_vector, list):
+            coeff_vector = np.array(coeff_vector)
+        assert(set(state_matrix.flatten()).issubset({0,1})) # must be binary, does not support N-ary qubits
+        self.n_terms, self.n_qubits = state_matrix.shape
+        self.state_matrix = state_matrix
+        if coeff_vector is None:
+            # if no coefficients specified produces a uniform superposition
+            self.coeff_vector = np.ones(self.n_terms)/np.sqrt(self.n_terms)
+        else:
+            self.coeff_vector = coeff_vector
+        self.vec_type = vec_type
+        # the quantum state is manipulated via the state_op PauliwordOp
+        symp_matrix = np.hstack([state_matrix, 1-state_matrix])
+        self.state_op = PauliwordOp(symp_matrix, self.coeff_vector)
+
+    def copy(self) -> "QuantumState":
+        """ 
+        Create a carbon copy of the class instance
+        """
+        return deepcopy(self)
+
+    def __str__(self) -> str:
+        """ 
+        Defines the print behaviour of QuantumState - differs depending on vec_type
+
+        Returns:
+            out_string (str): human-readable QuantumState string
+        """
+        out_string = ''
+        for basis_vec, coeff in zip(self.state_matrix, self.coeff_vector):
+            basis_string = ''.join([str(i) for i in basis_vec])
+            if self.vec_type == 'ket':
+                out_string += (f'{coeff: .10f} |{basis_string}> +\n')
+            elif self.vec_type == 'bra':
+                out_string += (f'{coeff: .10f} <{basis_string}| +\n')
+            else:
+                raise ValueError('Invalid vec_type, must be bra or ket')
+        return out_string[:-3]
+    
+    def __add__(self, 
+            Qstate: "QuantumState"
+        ) -> "QuantumState":
+        """ Add to this QuantumState another QuantumState by summing 
+        the respective state_op (PauliwordOp representing the state)
+        """
+        new_state = self.state_op + Qstate.state_op
+        return QuantumState(new_state.X_block, new_state.coeff_vec)
+    
+    def __sub__(self, 
+            Qstate: "QuantumState"
+        ) -> "QuantumState":
+        """ Subtract from this QuantumState another QuantumState by subtracting 
+        the respective state_op (PauliwordOp representing the state)
+        """
+        new_state_op = self.state_op - Qstate.state_op
+        return QuantumState(new_state_op.X_block, new_state_op.coeff_vec)
+    
+    def __mul__(self,
+        mul_obj: Union["QuantumState", PauliwordOp]
+        ) -> Union["QuantumState", complex]:
+        """
+        Right multiplication of a bra QuantumState by either a ket QuantumState or PauliwordOp
+        
+        Returns:
+            - inner_product (complex): when mul_obj is a ket state
+            - new_bra_state (QuantumState): when mul_obj is a PauliwordOp
+        """
+        assert(self.n_qubits == mul_obj.n_qubits), 'Multiplication object defined for different number of qubits'
+        assert(self.vec_type=='bra'), 'Cannot multiply a ket from the right'
+        
+        if isinstance(mul_obj, QuantumState):
+            assert(mul_obj.vec_type=='ket'), 'Cannot multiply a bra with another bra'
+            inner_product=0
+            for (bra_string, bra_coeff),(ket_string, ket_coeff) in product(
+                    zip(self.state_matrix, self.coeff_vector), 
+                    zip(mul_obj.state_matrix, mul_obj.coeff_vector)
+                ):
+                if np.all(bra_string == ket_string):
+                    inner_product += (bra_coeff*ket_coeff)
+            return inner_product
+
+        elif isinstance(mul_obj, PauliwordOp):
+            new_state_op = self.state_op * mul_obj
+            new_state_op.coeff_vec*=((-1j)**new_state_op.Y_count)
+            new_bra_state = QuantumState(
+                new_state_op.X_block, 
+                new_state_op.coeff_vec, 
+                vec_type='bra'
+            )
+            return new_bra_state.cleanup()
+
+        else:
+            raise ValueError('Trying to multiply QuantumState by unrecognised object - must be another Quantum state or PauliwordOp')   
+
+    def cleanup(self) -> "QuantumState":
+        """ Combines duplicate basis states, summing their coefficients
+        """
+        clean_state_op = self.state_op.cleanup()
+        return QuantumState(
+            clean_state_op.X_block, 
+            clean_state_op.coeff_vec, 
+            vec_type=self.vec_type
+        )
+
+    @cached_property
+    def normalize(self):
+        """
+        Returns:
+            self (QuantumState)
+        """
+        coeff_vector = self.coeff_vector/norm(self.coeff_vector)
+        return QuantumState(self.state_matrix, coeff_vector)
+        
+    @cached_property
+    def conjugate(self) -> "QuantumState":
+        """
+        Returns:
+            conj_state (QuantumState): The Hermitian conjugated state i.e. bra -> ket, ket -> bra
+        """
+        if self.vec_type == 'ket':
+            new_type = 'bra'
+        else:
+            new_type = 'ket'
+        conj_state = QuantumState(
+            state_matrix = self.state_matrix, 
+            coeff_vector = self.coeff_vector.conjugate(),
+            vec_type     = new_type
+        )
+        return conj_state
+
+    @cached_property
+    def to_sparse_matrix(self):
+        """
+        Returns:
+            sparse_Qstate (csr_matrix): sparse matrix representation of the statevector
+        """
+        nonzero_indices = [int(''.join([str(i) for i in row]),2) for row in self.state_matrix]
+        sparse_Qstate = csr_matrix(
+            (self.coeff_vector, (nonzero_indices, np.zeros_like(nonzero_indices))), 
+            shape = (2**self.n_qubits, 1), 
+            dtype=np.complex128
+        )
+        return sparse_Qstate
+
+def array_to_QuantumState(statevector, threshold=1e-15):
+    """ Given a vector of 2^N elements over N qubits, convert to a QuantumState object.
+    
+    Returns:
+        Qstate (QuantumState): a QuantumState object representing the input vector
+        
+    **example
+        statevector = array([0.57735027,0,0,0,0,0.81649658,0,0])
+        print(array_to_QuantumState(statevector)) 
+        >>  0.5773502692 |000> + 
+            0.8164965809 |101>
+    """
+    N = np.log2(statevector.shape[0])
+    assert(N-int(N) == 0), 'the statevector dimension is not a power of 2'
+    N = int(N)
+    non_zero = np.where(abs(statevector)>=threshold)[0]
+    state_matrix = np.array([[int(i) for i in list(np.binary_repr(index,N))] for index in non_zero])
+    coeff_vector = statevector[non_zero]
+    Qstate = QuantumState(state_matrix, coeff_vector)
+    return Qstate

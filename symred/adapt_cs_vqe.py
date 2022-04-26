@@ -3,10 +3,28 @@ from symred.symplectic_form import PauliwordOp, ObservableOp, AnsatzOp
 import numpy as np
 from typing import List, Dict, Tuple, Union
 from itertools import combinations
+import operator as op
+from functools import reduce
+import json
+
+from symred.utils import exact_gs_energy
+
+def ncr(n, r):
+    r = min(r, n-r)
+    numer = reduce(op.mul, range(n, n-r, -1), 1)
+    denom = reduce(op.mul, range(1, r+1), 1)
+    return numer // denom
+
+def to_dictionary_real_coeffs(op_dict: PauliwordOp):
+    return {term:coeff.real+coeff.imag for term,coeff in op_dict.to_dictionary.items()}
 
 class ADAPT_CS_VQE(CS_VQE):
     """
     """
+    evaluation_method = 'statevector'
+    n_shots = 2**10
+    n_realizations = 1
+
     def __init__(self, 
         operator: PauliwordOp,
         ansatz_pool: PauliwordOp,
@@ -41,7 +59,7 @@ class ADAPT_CS_VQE(CS_VQE):
             threshold:   float = 0.01,
             maxiter:     int   = 10,
             maxterms:    int   = 10,
-            param_shift: bool  = True,
+            param_shift: bool  = False,
             print_info:  bool  = False
         ) -> Tuple[float, PauliwordOp, np.array]:
         """ Implementation of qubit-ADAPT-VQE from https://doi.org/10.1103/PRXQuantum.2.020310
@@ -68,6 +86,9 @@ class ADAPT_CS_VQE(CS_VQE):
         # perform noncontextual projection over the ansatz pool
         observable, ansatz_pool = self.project_problem(stabilizer_indices)
         observable = ObservableOp(observable.symp_matrix, observable.coeff_vec)
+        observable.evaluation_method = self.evaluation_method
+        observable.n_shots = self.n_shots
+        observable.n_realizations = self.n_realizations
         # break up ansatz pool terms into list so ordering isn't scrambled
         ansatz_pool = [ansatz_pool[i] for i in range(ansatz_pool.n_terms)]
         ref_state = self.ref_state[self.free_qubit_indices]
@@ -95,6 +116,9 @@ class ADAPT_CS_VQE(CS_VQE):
                     new_ansatz_term.coeff_vec = np.ones(1)
                     obs_commutator = observable.commutator(new_ansatz_term)
                     obs_commutator = ObservableOp(obs_commutator.symp_matrix, obs_commutator.coeff_vec.imag)
+                    obs_commutator.evaluation_method = self.evaluation_method
+                    obs_commutator.n_shots = self.n_shots
+                    obs_commutator.n_realizations = self.n_realizations
                     grad = obs_commutator.ansatz_expectation(trial_ansatz, ref_state)     
                 else:
                     # or parameter shift rule:    
@@ -145,7 +169,8 @@ class ADAPT_CS_VQE(CS_VQE):
     def _greedy_search(self, 
             n_sim_qubits: int, 
             pool: set, 
-            depth: int, 
+            depth: int,
+            adaptive_from:int,
             threshold:float,
             maxiter:int,
             maxterms:int,
@@ -157,6 +182,9 @@ class ADAPT_CS_VQE(CS_VQE):
         """
         if n_sim_qubits<depth:
             depth = n_sim_qubits
+        n_combinations = ncr(len(pool), depth)
+        current_n_qubits = self.operator.n_qubits-len(pool)+depth
+
         if n_sim_qubits == 0:
             # once the number of simulation qubits is exhausted, return the stabilizer pool
             # these are the stabilizers the heuristic has chosen to enforce
@@ -171,19 +199,24 @@ class ADAPT_CS_VQE(CS_VQE):
 
             subspace_energies = []
             # search over combinations from the stabilizer index pool of length d (the depth)
-            for relax_indices in combinations(pool, r=depth):
+            for count, relax_indices in enumerate(combinations(pool, r=depth)):
                 relax_indices = list(relax_indices)
                 stab_indices = list(pool.difference(relax_indices))
                 if print_info:
-                    print(f'Testing stabilizer indices {stab_indices}')
+                    print(f'Testing contextual subspace {count+1} of {n_combinations} with stabilizer indices {set(stab_indices)}')
                 # perform the stabilizer subsapce projection and compute energy via ADAPT-VQE
-                energy, ansatz = self.ADAPT_VQE(
-                    stabilizer_indices=stab_indices,
-                    threshold=threshold,
-                    maxiter=maxiter,
-                    maxterms=maxterms,
-                    print_info=print_info
-                )
+                if current_n_qubits >= adaptive_from:
+                    energy, ansatz = self.ADAPT_VQE(
+                        stabilizer_indices=stab_indices,
+                        threshold=threshold,
+                        maxiter=maxiter,
+                        maxterms=maxterms,
+                        print_info=print_info
+                    )
+                else:
+                    energy = exact_gs_energy(self.contextual_subspace_projection(stab_indices).to_sparse_matrix)[0]
+                    ansatz = None
+
                 subspace_energies.append([relax_indices, energy, ansatz])
                 if print_info:
                     print()
@@ -193,15 +226,43 @@ class ADAPT_CS_VQE(CS_VQE):
                 key=lambda x:x[1]
             )[0]
             new_pool = pool.difference(best_relax_indices)
+            
+            # store the interim data (note complex numbers are not JSON serializable)
+            if best_ansatz is None:
+                ansatz = 'n/a'
+            else:
+                ansatz = to_dictionary_real_coeffs(best_ansatz)
+            interim_data = {'stab_indices': list(new_pool), 
+                            'vqe_energy': best_energy.real, 
+                            'ansatz': ansatz}
+            if current_n_qubits == depth:
+                greedy_search_data = {
+                    'greedy_search':{current_n_qubits:interim_data},
+                    'ref_state':[int(i) for i in self.ref_state],
+                    'ansatz_pool':to_dictionary_real_coeffs(self.ansatz_pool),
+                    'observable':to_dictionary_real_coeffs(self.operator),
+                    'cs_vqe_model':{
+                        'generators':to_dictionary_real_coeffs(self.symmetry_generators),
+                        'clique_op': to_dictionary_real_coeffs(self.clique_operator),
+                        'nc_energy': self.noncontextual_energy}
+                    }
+            else:
+                with open('data/greedy_search_data.json', 'r') as infile:
+                    greedy_search_data = json.load(infile)
+                    greedy_search_data['greedy_search'][current_n_qubits] = interim_data                
+            with open('data/greedy_search_data.json', 'w') as outfile:
+                json.dump(greedy_search_data, outfile)
 
+            # print status message
             if print_info:
-                message = f'{self.operator.n_qubits-len(pool)+depth}-qubit CS-VQE energy is {best_energy: .8f} for stabilizer indices {new_pool}'
+                message = f'{current_n_qubits}-qubit CS-VQE energy is {best_energy: .8f} for stabilizer indices {new_pool}'
                 print(message);print()
-
+                
             # perform an N-d qubit search over the reduced pool 
             return self._greedy_search(n_sim_qubits = n_sim_qubits-depth,
                             pool=new_pool, 
                             depth=depth,
+                            adaptive_from=adaptive_from,
                             threshold=threshold,
                             maxiter=maxiter,
                             maxterms=maxterms,
@@ -209,8 +270,10 @@ class ADAPT_CS_VQE(CS_VQE):
                             best_ansatz = (best_energy, best_ansatz))
 
     def adaptive_greedy_search(self, 
-            n_sim_qubits, 
-            depth=1, 
+            n_sim_qubits,
+            depth=1,
+            search_pool = None,
+            adaptive_from:int=0,
             threshold=0.01,
             maxiter=10,
             maxterms=10,
@@ -226,12 +289,14 @@ class ADAPT_CS_VQE(CS_VQE):
             dashes = '-'*len(message)
             print(dashes);print(message);print(dashes);print()
         
-        # take the full stabilizer pool
-        all_indices = set(range(self.operator.n_qubits))
+        if search_pool is None:
+            # take the full stabilizer index pool
+            search_pool = set(range(self.operator.n_qubits))
         return self._greedy_search(
             n_sim_qubits=n_sim_qubits, 
-            pool=all_indices, 
+            pool=search_pool, 
             depth=depth,
+            adaptive_from=adaptive_from,
             threshold=threshold,
             maxiter=maxiter,
             maxterms=maxterms,
