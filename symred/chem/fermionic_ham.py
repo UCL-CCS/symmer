@@ -239,12 +239,11 @@ class PySCFDriver:
         if self.run_ccsd:
             self.pyscf_ccsd = cc.CCSD(self.pyscf_hf)
             self.pyscf_ccsd.verbose = self.pyscf_print_level
-            # self.pyscf_ccsd.diis = False
+            self.pyscf_ccsd.diis = False
             self.pyscf_ccsd.run()
 
         # Run FCI.
         if self.run_fci:
-
             # check how large calc will be and raise error if too big.
             n_deterimants = math.comb(2*self.pyscf_hf.mol.nao,
                                       self.pyscf_hf.mol.nelectron)
