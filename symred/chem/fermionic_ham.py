@@ -247,7 +247,7 @@ class PySCFDriver:
             # check how large calc will be and raise error if too big.
             n_deterimants = math.comb(2*self.pyscf_hf.mol.nao,
                                       self.pyscf_hf.mol.nelectron)
-            if n_deterimants > 2**16:
+            if n_deterimants > 2**25:
                 raise NotImplementedError(f'FCI calc too expensive. Number of determinants = {n_deterimants} ')
 
             self.pyscf_fci = fci.FCI(self.pyscf_hf.mol, self.pyscf_hf.mo_coeff)
