@@ -13,6 +13,7 @@ from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
 from pyscf.tools import cubegen
 from pyscf.cc.addons import spatial2spin
+import warnings
 
 class FermionicHamilt:
     """Class to build Fermionic molecular hamiltonians.
@@ -228,6 +229,7 @@ class PySCFDriver:
         savefile: Optional[Path] = None,
         unit: Optional[str] = "angstrom",
         max_hf_cycles: int = 50,
+        spin: Optional[int] = 0,
 
         run_mp2: Optional[bool] = False,
         run_cisd: Optional[bool] = False,
@@ -249,6 +251,7 @@ class PySCFDriver:
         self.run_cisd = run_cisd
         self.run_ccsd = run_ccsd
         self.run_fci = run_fci
+        self.spin = spin
 
     def _build_mol(self) -> gto.mole:
         """Function to build PySCF molecule.
@@ -259,7 +262,11 @@ class PySCFDriver:
         if os.path.exists(self.geometry):
             # geometry is an xyz file
             full_mol = gto.Mole(
-                atom=self.geometry, basis=self.basis, charge=self.charge, unit=self.unit
+                atom=self.geometry,
+                basis=self.basis,
+                charge=self.charge,
+                unit=self.unit,
+                spin=self.spin
             ).build()
         else:
             # geometry is raw xyz string
@@ -268,6 +275,7 @@ class PySCFDriver:
                 basis=self.basis,
                 charge=self.charge,
                 unit=self.unit,
+                spin=self.spin,
             ).build()
         return full_mol
 
@@ -288,6 +296,9 @@ class PySCFDriver:
         global_hf.verbose = self.pyscf_print_level
         global_hf.max_cycle = self.max_hf_cycles
         global_hf.kernel()
+        if global_hf.converged is False:
+            warnings.warn("Hartree-Fock calc not converged")
+
         return global_hf
 
 
@@ -297,18 +308,26 @@ class PySCFDriver:
             self.pyscf_mp2 = mp.MP2(self.pyscf_hf)
             self.pyscf_mp2.verbose = self.pyscf_print_level
             self.pyscf_mp2.run()
+            if self.pyscf_mp2.converged is False:
+                warnings.warn("MP2 calc not converged")
 
         if self.run_cisd:
             self.pyscf_cisd = ci.CISD(self.pyscf_hf)
             self.pyscf_cisd.verbose = self.pyscf_print_level
             self.pyscf_cisd.run()
+            if self.pyscf_cisd.converged is False:
+                warnings.warn("CISD calc not converged")
 
 
         if self.run_ccsd:
             self.pyscf_ccsd = cc.CCSD(self.pyscf_hf)
             self.pyscf_ccsd.verbose = self.pyscf_print_level
-            self.pyscf_ccsd.diis = False
+            # self.pyscf_ccsd.diis = False
+            self.pyscf_ccsd.max_cycle = self.max_hf_cycles
+
             self.pyscf_ccsd.run()
+            if self.pyscf_ccsd.converged is False:
+                warnings.warn("CCSD calc not converged")
 
         # Run FCI.
         if self.run_fci:
@@ -321,6 +340,8 @@ class PySCFDriver:
             self.pyscf_fci = fci.FCI(self.pyscf_hf.mol, self.pyscf_hf.mo_coeff)
             self.pyscf_fci.verbose = 0
             self.pyscf_fci.kernel()
+            if self.pyscf_fci.converged is False:
+                warnings.warn("FCI calc not converged")
 
 
 def Draw_molecule(
