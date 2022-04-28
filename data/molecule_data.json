@@ -755,7 +755,7 @@
             1
         ]
     },
-    "NH2+_STO-3G_SINGLET": {
+    "NH2-_STO-3G_SINGLET": {
         "atoms": [
             "N",
             "H",
@@ -779,7 +779,7 @@
             ]
         ],
         "multiplicity": 1,
-        "charge": 1,
+        "charge": -1,
         "basis": "sto-3g",
         "sym_sector": [
             1,
@@ -787,6 +787,32 @@
             1,
             1
         ]
+    },
+    "BH3_STO-3G_SINGLET": {
+        "atoms": [
+            "B",
+            "H",
+            "H",
+            "H"
+        ],
+        "coords": [
+            [
+                0.0000000,	0.0000000,	0.0000000
+            ],
+            [
+                0.0000000,	1.1735660,	0.0000000
+            ],
+            [
+                1.0163380,	-0.5867830,	0.0000000
+            ],
+            [
+                -1.0163380,	-0.5867830,	0.0000000
+            ]
+        ],
+        "multiplicity": 1,
+        "charge": 1,
+        "basis": "sto-3g",
+        "sym_sector": "None"
     },
     "BH2+_STO-3G_SINGLET": {
         "atoms": [
