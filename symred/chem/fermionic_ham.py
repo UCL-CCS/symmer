@@ -4,7 +4,7 @@ import os
 import numpy as np
 import math
 from cached_property import cached_property
-from openfermion import InteractionOperator, get_sparse_operator
+from openfermion import InteractionOperator, get_sparse_operator, FermionOperator
 from openfermion.chem.molecular_data import spinorb_from_spatial
 from openfermion.ops.representations import get_active_space_integrals
 from pyscf import ao2mo, gto, scf, mp, ci, cc, fci
@@ -12,6 +12,7 @@ from pyscf.lib import StreamObject
 from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
 from pyscf.tools import cubegen
+from pyscf.cc.addons import spatial2spin
 
 class FermionicHamilt:
     """Class to build Fermionic molecular hamiltonians.
@@ -131,6 +132,73 @@ def xyz_from_pubchem(molecule_name):
 
     return xyz_file
 
+class FermioniCC:
+    """ Class for calculating Coupled-Cluster amplitudes 
+    and building the corrsponding Fermionic operators
+    """
+    def __init__(
+        self,
+        cc_obj: StreamObject,
+        ) -> None:
+        """
+        """
+        self.cc_obj = cc_obj
+        self.fermionic_cc_operator=None
+
+        self.n_electrons = self.cc_obj.mol.nelectron
+        self.n_qubits    = 2*self.cc_obj.mol.nao
+
+    @property
+    def _single_amplitudes(self) -> FermionOperator:
+        """ Calculate CC amplitudes for single excitations
+        """
+        t1 = spatial2spin(self.cc_obj.t1)
+        no, nv = t1.shape
+        nmo = no + nv
+        ccsd_single_amps = np.zeros((nmo, nmo))
+        ccsd_single_amps[no:,:no] = t1.T
+
+        single_amplitudes_list = []
+        for i, j in zip(*ccsd_single_amps.nonzero()):
+            single_amplitudes_list.append([[i, j], ccsd_single_amps[i, j]])
+
+        generator_t1 = FermionOperator()
+        for (i, j), t_ij in single_amplitudes_list:
+            i, j = int(i), int(j)
+            generator_t1 += FermionOperator(((i, 1), (j, 0)), t_ij)
+
+        return generator_t1
+
+    @property
+    def _double_amplitudes(self) -> FermionOperator:
+        """ Calculate CC amplitudes for double excitations
+        """
+        t2 = spatial2spin(self.cc_obj.t2)
+        no, nv = t2.shape[1:3]
+        nmo = no + nv
+        double_amps = np.zeros((nmo, nmo, nmo, nmo))
+        double_amps[no:,:no,no:,:no] = .5 * t2.transpose(2,0,3,1)
+
+        double_amplitudes_list=[]
+        double_amplitudes = double_amps
+        for i, j, k, l in zip(*double_amplitudes.nonzero()):
+            if not np.isclose(double_amplitudes[i, j, k, l], 0):
+                double_amplitudes_list.append([[i, j, k, l],
+                                            double_amplitudes[i, j, k, l]])
+            
+        generator_t2 = FermionOperator()
+        for (i, j, k, l), t_ijkl in double_amplitudes_list:
+            i, j, k, l = int(i), int(j), int(k), int(l)
+            generator_t2 += FermionOperator(((i, 1), (j, 0), (k, 1), (l, 0)), t_ijkl)
+
+        return generator_t2
+
+    def build_operator(self) -> None:
+        """ builds the CCSD operator
+        """
+        T1 = self._single_amplitudes
+        T2 = self._double_amplitudes
+        self.fermionic_cc_operator = T1 + 0.5 * T2
 
 class PySCFDriver:
     """Function run PySCF chemistry calc.
