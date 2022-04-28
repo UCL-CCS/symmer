@@ -953,8 +953,9 @@ class ObservableOp(PauliwordOp):
         QWC_operators = HamGraph.clique_cover(clique_relation='QWC', colouring_strategy='largest_first')
         # check the QWC groups sum to the original observable operator
         reconstructed = reduce(lambda x,y:x+y, QWC_operators.values())
-        assert(np.all(self.symp_matrix == reconstructed.symp_matrix) and 
-            np.all(self.coeff_vec == reconstructed.coeff_vec)), 'Summing QWC group operators does not yield the original Hamiltonian'
+        assert(
+            np.all((self-reconstructed).coeff_vec == 0)
+        ), 'Summing QWC group operators does not yield the original Hamiltonian'
         
         return QWC_operators
 
@@ -1664,10 +1665,10 @@ class QuantumState:
         else:
             raise ValueError('Trying to multiply QuantumState by unrecognised object - must be another Quantum state or PauliwordOp')   
 
-    def cleanup(self) -> "QuantumState":
+    def cleanup(self, zero_threshold=1e-15) -> "QuantumState":
         """ Combines duplicate basis states, summing their coefficients
         """
-        clean_state_op = self.state_op.cleanup()
+        clean_state_op = self.state_op.cleanup_zeros(zero_threshold=zero_threshold)
         return QuantumState(
             clean_state_op.X_block, 
             clean_state_op.coeff_vec, 

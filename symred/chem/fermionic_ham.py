@@ -257,13 +257,13 @@ class PySCFDriver:
             self.pyscf_ccsd.verbose = self.pyscf_print_level
             # self.pyscf_ccsd.diis = False
             self.pyscf_ccsd.max_cycle = self.max_hf_cycles
+
             self.pyscf_ccsd.run()
             if self.pyscf_ccsd.converged is False:
                 warnings.warn("CCSD calc not converged")
 
         # Run FCI.
         if self.run_fci:
-
             # check how large calc will be and raise error if too big.
             n_deterimants = math.comb(2*self.pyscf_hf.mol.nao,
                                       self.pyscf_hf.mol.nelectron)
