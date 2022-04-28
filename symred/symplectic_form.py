@@ -99,6 +99,9 @@ def symplectic_to_sparse_matrix(symp_vec, coeff) -> csr_matrix:
     Returns (2**n x 2**n) matrix of paulioperator kronector product together
      defined from symplectic vector defined as (X | Z)
 
+    This follows because tensor products of Pauli operators are one-sparse: they each have only
+    one nonzero entry in each row and column
+
     Args:
         symp_vec (array): symplectic Pauliword array
 
