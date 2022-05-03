@@ -9,6 +9,7 @@ from psutil import net_if_stats
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
 from scipy.optimize import minimize
+import scipy as sp
 import warnings
 import networkx as nx
 from tqdm import tqdm
@@ -63,6 +64,7 @@ def symplectic_to_string(symp_vec) -> str:
 
     return Pword_string
 
+
 def string_to_symplectic(pauli_str, n_qubits):
     """
     """
@@ -81,6 +83,7 @@ def string_to_symplectic(pauli_str, n_qubits):
     symp_vec[n_qubits:] += Y_loc
 
     return symp_vec
+
 
 def count1_in_int_bitstring(i):
     """
@@ -631,6 +634,7 @@ class PauliwordOp:
         else:
             return False
 
+
 class ObservableGraph(PauliwordOp):
     # TODO
     def __init__(self,
@@ -768,6 +772,7 @@ class ObservableGraph(PauliwordOp):
         plt.show()
         return None
 
+
 class AnsatzOp(PauliwordOp):
     """ Based on PauliwordOp and introduces functionality for converting operators to quantum circuits
     """
@@ -883,6 +888,7 @@ class AnsatzOp(PauliwordOp):
             qc = ZX_calculus_reduction(qc)
 
         return qc
+
 
 class ObservableOp(PauliwordOp):
     """ Based on PauliwordOp and introduces functionality for evaluating expectation values
@@ -1106,6 +1112,7 @@ class ObservableOp(PauliwordOp):
         )
 
         return vqe_result, interim_values
+
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must

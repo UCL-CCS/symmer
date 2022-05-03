@@ -527,5 +527,3 @@ class CheatS_VQE(S3_projection):
                     )
                 )
 
-
-
