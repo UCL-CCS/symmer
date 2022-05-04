@@ -121,7 +121,7 @@ def symplectic_to_sparse_matrix(symp_vec, coeff) -> csr_matrix:
     global_phase = (-1j) ** Y_number
 
     # reverse order to match bitstring int valu of each bit in binary: [..., 32, 16, 8, 4, 2, 1]
-    binary_int_array = 1 << np.arange(n_qubits-1, -1, -1)
+    binary_int_array = 1 << np.arange(n_qubits-1, -1, -1, dtype=object)
 
     x_int = X_block @ binary_int_array
     z_int = Z_block @ binary_int_array

@@ -1,9 +1,9 @@
-from symred.symplectic_form import PauliwordOp, symplectic_to_string
+from symred.symplectic_form import PauliwordOp
 import numpy as np
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Union
+
 
 class AntiCommutingOp(PauliwordOp):
-
 
     def __init__(self,
                  AC_operator: Union[List[str], Dict[str, float], np.array],
@@ -12,12 +12,15 @@ class AntiCommutingOp(PauliwordOp):
 
         # check all operators anticommute
         anti_comm_check = self.adjacency_matrix.astype(int) - np.eye(self.adjacency_matrix.shape[0])
-        assert(np.einsum('ij->', anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
+        assert (np.einsum('ij->', anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
 
         # normalization factor
         self.gamma_l = np.linalg.norm(self.coeff_vec)
         # normalize coefficients
-        self.coeff_vec = self.coeff_vec/self.gamma_l
+        self.coeff_vec = self.coeff_vec / self.gamma_l
+
+        self.X_sk_rotations = None
+        self.LCU = None
 
     def lexicographical_sort(self):
         """
@@ -27,153 +30,114 @@ class AntiCommutingOp(PauliwordOp):
 
         """
         # convert sym form to list of ints
-        int_list = self.symp_matrix @ (1 << np.arange(self.symp_matrix.shape[1])[::-1])
+        int_list = self.symp_matrix @ (1 << np.arange(self.symp_matrix.shape[1], dtype=object)[::-1])
         lex_ordered_indices = np.argsort(int_list)
         return lex_ordered_indices
 
-
-    def get_lowest_dense_index(self):
+    def get_least_dense_term_index(self):
 
         # np.logical_or(X_block, Z_block)
-        pos_terms_occur = np.logical_or(self.symp_matrix[:, :self.n_qubits],self.symp_matrix[:, self.n_qubits:])
+        pos_terms_occur = np.logical_or(self.symp_matrix[:, :self.n_qubits], self.symp_matrix[:, self.n_qubits:])
 
         int_list = pos_terms_occur @ (1 << np.arange(pos_terms_occur.shape[1])[::-1])
         s_index = np.argmin(int_list)
         return s_index
 
+    def gen_seq_rotations(self, re_order=True) -> "PauliwordOp":
 
-    def gen_sequence_of_rotations(self, s_index=None):
-        """
+        PauliOp = self.copy()
+        if re_order:
+            re_order_inds = PauliOp.lexicographical_sort()
+            PauliOp.symp_matrix = PauliOp.symp_matrix[re_order_inds]
+            PauliOp.coeff_vec = PauliOp.coeff_vec[re_order_inds]
 
-        Args:
-            s_index:
+        # make list of rotations empty!
+        self.X_sk_rotations = []
 
-        Returns:
+        # recursively perform UP
+        reduced_op = self._recursive_unitary_partitioning(PauliOp)
 
-        """
-        X_sk_theta_sk_list=[]
-        if self.n_terms == 1:
-            return None
+        assert (reduced_op.n_terms == 1), 'not reducing to a single term'
+        return reduced_op
 
-        if s_index is None:
-            s_index = self.get_lowest_dense_index()
+    def _recursive_unitary_partitioning(self, AC_op: PauliwordOp, zero_threshold=1e-15)  -> "PauliwordOp":
 
-        # take β_s P_s then remove from symp mat and coeff vec
-        P_s = PauliwordOp(self.symp_matrix[s_index], [1])
-        β_s = self.coeff_vec[s_index]
-        symp_matrix_no_Ps =  np.delete(self.symp_matrix, s_index, axis=0)
-        coeff_vec_no_βs =  np.delete(self.coeff_vec, s_index, axis=0)
-
-        theta_sk = np.arctan(coeff_vec_no_βs[0] / β_s)
-        if β_s.real < 0:
-            theta_sk = theta_sk + np.pi
-
-        assert(np.isclose((coeff_vec_no_βs[0] * np.cos(theta_sk) - β_s * np.sin(theta_sk)), 0)), 'term not zeroing out'
-
-        # X_sk = 1j * Ps @ Pk
-        X_sk = P_s * PauliwordOp(symp_matrix_no_Ps[0], [1j])
-
-        if X_sk.coeff_vec[0].real<0:
-            X_sk_theta_sk_list.append((X_sk.multiply_by_constant(-1), -1*theta_sk))
-        else:
-            X_sk_theta_sk_list.append((X_sk, theta_sk))
-
-        # β_s_new = np.sqrt(coeff_vec_no_βs[0] ** 2 + β_s ** 2)
-        β_s_new = np.linalg.norm([coeff_vec_no_βs[0],  β_s])
-        for ind, Pk in enumerate(symp_matrix_no_Ps[1:]):
-            β_k = coeff_vec_no_βs[1:][ind]
-
-            # X_sk = 1j * Ps @ Pk
-            theta_sk = np.arctan(β_k / β_s_new)
-            assert (np.isclose((β_k * np.cos(theta_sk) - β_s_new * np.sin(theta_sk)), 0)), 'term not zeroing out'
-
-            # X_sk = 1j * Ps @ Pk
-            X_sk = P_s * PauliwordOp(Pk, [1j])
-
-            if X_sk.coeff_vec[0].real < 0:
-                X_sk_theta_sk_list.append((X_sk.multiply_by_constant(-1), -1 * theta_sk))
-            else:
-                X_sk_theta_sk_list.append((X_sk, theta_sk))
-
-            β_s_new = np.linalg.norm([β_k, β_s])
-
-        return X_sk_theta_sk_list
-
-    def rotate_by_single_Rsk(self,
-                                op_to_rotate: "PauliwordOp",
-                                X_sk: "PauliwordOp",
-                                theta_sk: float = None
-                                ) -> "PauliwordOp":
-        """
-        def
-        """
-
-        commute_vec = op_to_rotate.commutes_termwise(X_sk).flatten()
-
-        commute_symp = op_to_rotate.symp_matrix[commute_vec]
-        commute_coeff = op_to_rotate.coeff_vec[commute_vec]
-        # ~commute_vec == not commutes, this indexes the anticommuting terms
-        anticommute_symp = op_to_rotate.symp_matrix[~commute_vec]
-        anticommute_coeff = op_to_rotate.coeff_vec[~commute_vec]
-
-        commute_self = PauliwordOp(commute_symp, commute_coeff)
-        anticom_self = PauliwordOp(anticommute_symp, anticommute_coeff)
-
-        anticom_part = (anticom_self.multiply_by_constant(np.cos(theta_sk)) +
-                        (anticom_self * X_sk).multiply_by_constant(-1j * np.sin(theta_sk)))
-
-        return commute_self + anticom_part
-
-    def Apply_SeqRot(self, list_rotations):
-        AC_op_rotated = PauliwordOp(self.symp_matrix, self.coeff_vec)
-        for X_sk, theta_sk in list_rotations:
-            # R_sk = PauliwordOp(['I'*X_sk.n_qubits],[1]).multiply_by_constant(np.cos(theta_sk/2)) + X_sk.multiply_by_constant(np.cos(theta_sk/2))
-            # R_sk_dag = R_sk.conjugate
-            # AC_op_rotated = R_sk * AC_op_rotated * R_sk_dag
-            # AC_op_rotated.cleanup_zeros()
-            # if X_sk.co
-            AC_op_rotated = AC_op_rotated._rotate_by_single_Pword(X_sk, theta_sk).cleanup_zeros()
-            print(AC_op_rotated)
-        return AC_op_rotated
-
-
-def unitary_partitioning_rotations(AC_op: PauliwordOp) -> List[Tuple[str, float]]:
-    """ Perform unitary partitioning as per https://doi.org/10.1103/PhysRevA.101.062322 (Section A)
-    Note unitary paritioning only works when the terms are mutually anticommuting
-    """
-    # check the terms are mutually anticommuting to avoid an infinite loop:
-    assert (
-        np.all(
-            np.array(AC_op.adjacency_matrix, dtype=int)
-            == np.eye(AC_op.n_terms, AC_op.n_terms)
-        )
-    ), 'Operator terms are not mutually anticommuting'
-
-    rotations = []
-
-    def _recursive_unitary_partitioning(AC_op: PauliwordOp) -> None:
-        """ Always retains the first term of the operator, deletes the second
-        term at each level of recursion and reads out the necessary rotations
-        """
         if AC_op.n_terms == 1:
-            return None
+            return AC_op
         else:
             op_for_rotation = AC_op.copy()
-            A0, A1 = op_for_rotation[0], op_for_rotation[1]
-            angle = np.arctan(A1.coeff_vec / A0.coeff_vec)
-            # set coefficients to 1 since we only want to track sign flip from here
-            A0.coeff_vec, A1.coeff_vec = [1], [1]
-            pauli_rot = (A0 * A1).multiply_by_constant(-1j)
-            angle *= pauli_rot.coeff_vec
-            # perform the rotation, thus deleting a single term from the input operator
-            AC_op_rotated = op_for_rotation._rotate_by_single_Pword(pauli_rot, angle).cleanup_zeros()
+            # take β_s P_s
+            P_s = PauliwordOp(op_for_rotation.symp_matrix[0], [1])
+            β_s = op_for_rotation.coeff_vec[0]
 
-            # append the rotation to list
-            rotations.append((symplectic_to_string(pauli_rot.symp_matrix[0]), angle.real[0]))
+            β_k = op_for_rotation.coeff_vec[1]
 
-            return _recursive_unitary_partitioning(AC_op_rotated)
+            theta_sk = np.arctan(β_k / β_s)
+            if β_s.real < 0:
+                theta_sk = theta_sk + np.pi
+            #             assert(np.isclose((β_k*np.cos(theta_sk) - β_s*np.sin(theta_sk)), 0)), 'term not zeroing out'
 
-    _recursive_unitary_partitioning(AC_op)
+            # -X_sk = -1j * Ps @ Pk
+            jP_k = PauliwordOp(op_for_rotation.symp_matrix[1], [-1j])
+            X_sk = P_s * jP_k
+            if X_sk.coeff_vec[0].real < 0:
+                X_sk.coeff_vec[0] *= -1
+                theta_sk *= -1
 
-    return rotations
+            self.X_sk_rotations.append((X_sk, theta_sk))
+            AC_op_rotated = op_for_rotation._rotate_by_single_Pword(X_sk, theta_sk)
 
+            # remove zeros (WITHOUT RE-ORDERING... don't use cleanup of PauliwordOp)
+            mask_nonzero = np.where(abs(AC_op_rotated.coeff_vec) > zero_threshold)
+            AC_op_rotated = PauliwordOp(AC_op_rotated.symp_matrix[mask_nonzero],
+                                        AC_op_rotated.coeff_vec[mask_nonzero])
+            del mask_nonzero
+
+            return self._recursive_unitary_partitioning(AC_op_rotated)
+
+    def gen_LCU(self, s_index=None, check_reduction=True) -> "PauliwordOp":
+
+        PauliOp = self.copy()
+
+        # make list of rotations empty!
+        self.LCU = []
+
+        if s_index is None:
+            s_index = self.get_least_dense_term_index()
+        P_s = PauliwordOp(self.symp_matrix[s_index], [1])
+        β_s = self.coeff_vec[s_index]
+
+        #  ∑ β_k 𝑃_k  ... note this doesn't contain 𝛽_s 𝑃_s
+        symp_matrix_no_Ps = np.delete(PauliOp.symp_matrix, s_index, axis=0)
+        coeff_vec_no_βs = np.delete(PauliOp.coeff_vec, s_index, axis=0)
+
+        # Ω_𝑙 ∑ 𝛿_k 𝑃_k  ... renormalized!
+        omega_l = np.linalg.norm(coeff_vec_no_βs)
+        coeff_vec_no_βs = coeff_vec_no_βs / omega_l
+
+        phi_n_1 = np.arccos(β_s)
+        # require sin(𝜙_{𝑛−1}) to be positive...
+        if (phi_n_1 > np.pi):
+            phi_n_1 = 2 * np.pi - phi_n_1
+
+        alpha = phi_n_1
+
+        I_term = 'I' * P_s.n_qubits
+        R_LCU = PauliwordOp({I_term: np.cos(alpha / 2)})
+
+        sin_term = -np.sin(alpha / 2)
+
+        for dk, Pk in zip(coeff_vec_no_βs, symp_matrix_no_Ps):
+            PkPs = PauliwordOp(Pk, [dk]) * P_s
+            R_LCU += PkPs.multiply_by_constant(sin_term)
+
+        if check_reduction is True:
+            #         reduced_op = (R_LCU * PauliOp * R_LCU.conjugate).cleanup_zeros()
+            #         assert(reduced_op.n_terms==1), 'not reducing to a single term'
+            R_AC_set = (R_LCU * PauliOp).cleanup_zeros()
+            R_AC_set_R_dagg = (R_AC_set * R_LCU.conjugate).cleanup_zeros()
+            assert (R_AC_set_R_dagg.n_terms == 1), 'not reducing to a single term'
+            del R_AC_set
+            del R_AC_set_R_dagg
+
+        return R_LCU
