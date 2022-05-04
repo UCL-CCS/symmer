@@ -308,8 +308,8 @@ class PySCFDriver:
             self.pyscf_mp2 = mp.MP2(self.pyscf_hf)
             self.pyscf_mp2.verbose = self.pyscf_print_level
             self.pyscf_mp2.run()
-            if self.pyscf_mp2.converged is False:
-                warnings.warn("MP2 calc not converged")
+            #if self.pyscf_mp2.converged is False:
+            #    warnings.warn("MP2 calc not converged")
 
         if self.run_cisd:
             self.pyscf_cisd = ci.CISD(self.pyscf_hf)
