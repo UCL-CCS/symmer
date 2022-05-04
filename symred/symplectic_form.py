@@ -311,23 +311,19 @@ class PauliwordOp:
         """ Remove duplicated rows of symplectic matrix terms, whilst summing
         the corresponding coefficients of the deleted rows in coeff
         """
-        # convert sym form to list of ints
-        int_list = self.symp_matrix @ (1 << np.arange(self.symp_matrix.shape[1])[::-1])
-        re_order_indices = np.argsort(int_list)
-        sorted_int_list = int_list[re_order_indices]
+        # order lexicographically
+        term_ordering = np.lexsort(self.symp_matrix.T)
+        sorted_terms = self.symp_matrix[term_ordering]
+        sorted_coeff = self.coeff_vec[term_ordering]
+        # unique terms are those with non-zero entries in the adjacent row difference array
+        diff_adjacent = np.diff(sorted_terms, axis=0)
+        mask_unique_terms = np.array([True]+np.any(diff_adjacent, axis=1).tolist()) #faster than np.append!
+        reduced_symp_matrix = sorted_terms[mask_unique_terms]
+        # mask the term indices such that those which are skipped are summed under np.reduceat
+        summing_indices = np.arange(self.n_terms)[mask_unique_terms]
+        reduced_coeff_vec = np.add.reduceat(sorted_coeff, summing_indices, axis=0)
 
-        sorted_symp_matrix = self.symp_matrix[re_order_indices]
-        sorted_coeff_vec = self.coeff_vec[re_order_indices]
-
-        # determine the first indices of each element in the sorted list (and ignore duplicates)
-        elements, indices = np.unique(sorted_int_list, return_counts=True)
-        row_summing = np.append([0], np.cumsum(indices))[:-1]  # [0, index1, index2,...]
-
-        # reduced_symplectic_matrix = np.add.reduceat(sorted_symp_matrix, row_summing, axis=0)
-        reduced_symplectic_matrix = sorted_symp_matrix[row_summing]
-        reduced_coeff_vec = np.add.reduceat(sorted_coeff_vec, row_summing, axis=0)
-
-        return PauliwordOp(reduced_symplectic_matrix, reduced_coeff_vec)
+        return PauliwordOp(reduced_symp_matrix, reduced_coeff_vec)
 
     def cleanup_zeros(self, zero_threshold=1e-15):
         """ 
@@ -1228,7 +1224,6 @@ class StabilizerOp(PauliwordOp):
         determine the corresponding sector by measuring the stabilizers
 
         TODO: currently only measures in Z basis
-            only supports single basis vector reference - should accept a linear combination
         """
         ref_state = np.array(ref_state)
         self.coeff_vec = (-1)**np.count_nonzero(self.Z_block & ref_state, axis=1)
