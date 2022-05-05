@@ -2,7 +2,7 @@ from typing import Optional, List #,List, Tuple, Union
 from pathlib import Path
 import os
 import numpy as np
-import math
+from scipy.special import comb
 from cached_property import cached_property
 from openfermion import InteractionOperator, get_sparse_operator, FermionOperator
 from openfermion.chem.molecular_data import spinorb_from_spatial
@@ -332,7 +332,7 @@ class PySCFDriver:
         # Run FCI.
         if self.run_fci:
             # check how large calc will be and raise error if too big.
-            n_deterimants = math.comb(2*self.pyscf_hf.mol.nao,
+            n_deterimants = comb(2*self.pyscf_hf.mol.nao,
                                       self.pyscf_hf.mol.nelectron)
             if n_deterimants > 2**25:
                 raise NotImplementedError(f'FCI calc too expensive. Number of determinants = {n_deterimants} ')
