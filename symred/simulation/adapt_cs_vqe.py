@@ -40,16 +40,35 @@ class ADAPT_CS_VQE(CS_VQE):
                         ref_state = ref_state,
                         target_sqp='Z')
 
+    def get_stabilizers(self,
+            stabilizer_indices: List[int]
+        ) -> Tuple[bool, PauliwordOp]:
+        if 0 in stabilizer_indices:
+            clique_flag = True
+            stabilizer_indices.pop(stabilizer_indices.index(0))
+        else:
+            clique_flag = False
+        shift_indices = [i-1 for i in stabilizer_indices]
+        stabilizers = reduce(
+            lambda x,y:x+y,
+            [self.symmetry_generators[i] for i in shift_indices]
+        )
+        return clique_flag, stabilizers
+
     def project_problem(self, 
             stabilizer_indices: List[int]
         ) -> Tuple[PauliwordOp, PauliwordOp]:
         """
         """
-        proj_operator = self.contextual_subspace_projection(
-            stabilizer_indices=stabilizer_indices
+        clique_flag, stabilizers = self.get_stabilizers(stabilizer_indices)
+
+        proj_operator = self.project_onto_subspace(
+            stabilizers=stabilizers,
+            enforce_clique_operator=clique_flag
         )
-        proj_anz_pool = self.contextual_subspace_projection(
-            stabilizer_indices = stabilizer_indices,
+        proj_anz_pool = self.project_onto_subspace(
+            stabilizers=stabilizers,
+            enforce_clique_operator=clique_flag,
             aux_operator = self.ansatz_pool
         )
         return proj_operator, proj_anz_pool
@@ -214,7 +233,12 @@ class ADAPT_CS_VQE(CS_VQE):
                         print_info=print_info
                     )
                 else:
-                    energy = exact_gs_energy(self.contextual_subspace_projection(stab_indices).to_sparse_matrix)[0]
+                    clique_flag, stabilizers = self.get_stabilizers(stab_indices)
+                    energy = exact_gs_energy(
+                        self.project_onto_subspace(
+                            stabilizers, enforce_clique_operator=clique_flag
+                            ).to_sparse_matrix
+                        )[0]
                     ansatz = None
 
                 subspace_energies.append([relax_indices, energy, ansatz])
