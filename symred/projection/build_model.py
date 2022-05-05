@@ -8,25 +8,10 @@ from openfermion.circuits import ( uccsd_singlet_get_packed_amplitudes,
                                    uccsd_convert_amplitude_format)
 from openfermionpyscf import PyscfMolecularData
 from itertools import combinations
-from symred.S3_projection import QubitTapering, CS_VQE
-from symred.symplectic_form import PauliwordOp, StabilizerOp
+from symred.projection import QubitTapering, CS_VQE
+from symred.symplectic.symplectic_form import PauliwordOp, StabilizerOp
 from symred.utils import greedy_dfs, exact_gs_energy
-
-# comment out due to incompatible versions of Cirq and OpenFermion in Orquestra
-def QubitOperator_to_dict(op, num_qubits):
-    assert(type(op) == of.QubitOperator)
-    op_dict = {}
-    term_dict = op.terms
-    terms = list(term_dict.keys())
-
-    for t in terms:    
-        letters = ['I' for i in range(num_qubits)]
-        for i in t:
-            letters[i[0]] = i[1]
-        p_string = ''.join(letters)        
-        op_dict[p_string] = term_dict[t]
-         
-    return op_dict
+from symred.utils import QubitOperator_to_dict
 
 class build_molecule_for_projection(CS_VQE):
     """ Class for assessing various generator removal ordering heuristics

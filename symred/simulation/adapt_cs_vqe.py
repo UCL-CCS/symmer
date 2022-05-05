@@ -1,5 +1,5 @@
-from symred.S3_projection import CS_VQE
-from symred.symplectic_form import PauliwordOp, ObservableOp, AnsatzOp
+from symred.projection import CS_VQE
+from symred.symplectic import PauliwordOp, ObservableOp, AnsatzOp
 import numpy as np
 from typing import List, Dict, Tuple, Union
 from itertools import combinations
