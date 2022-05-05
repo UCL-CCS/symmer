@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Dict, List, Union
-from functools import reduce, cached_property
+from functools import reduce
+from cached_property import cached_property
 from scipy.optimize import minimize
 import networkx as nx
 import matplotlib.pyplot as plt

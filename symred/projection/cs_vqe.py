@@ -1,5 +1,5 @@
 from typing import Tuple, List
-from functools import cached_property
+from cached_property import cached_property
 import warnings
 import numpy as np
 from scipy.optimize import shgo, differential_evolution

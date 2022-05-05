@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Dict, List, Tuple, Union
-from functools import reduce, cached_property
+from functools import reduce
+from cached_property import cached_property
 from symred.utils import gf2_gaus_elim
 from symred.symplectic import PauliwordOp, symplectic_to_string
 

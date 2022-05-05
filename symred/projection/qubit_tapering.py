@@ -4,7 +4,7 @@ from symred.symplectic import PauliwordOp, StabilizerOp
 from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
 import numpy as np
 from typing import Tuple, List, Dict, Union
-from functools import cached_property
+from cached_property import cached_property
 
 class QubitTapering(S3_projection):
     """ Class for performing qubit tapering as per https://arxiv.org/abs/1701.08213.

@@ -1,7 +1,8 @@
 import numpy as np
 from copy import deepcopy
 from typing import Dict, List, Tuple, Union
-from functools import reduce, cached_property
+from functools import reduce
+from cached_property import cached_property
 from itertools import product
 from scipy.sparse import csr_matrix
 import warnings
