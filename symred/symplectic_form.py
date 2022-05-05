@@ -1253,14 +1253,19 @@ class StabilizerOp(PauliwordOp):
         )
 
 
-def convert_openF_fermionic_op_to_maj_op(fermionic_op):
+def convert_openF_fermionic_op_to_maj_op(fermionic_op: FermionOperator) -> "MajoranaOp":
     """
+    Function wraps inbuilt functions in OpenFermion and returns symred form.
+
     Convserion as:
         a_{p} = 0.5*(γ_{2p} + iγ_{2p+1})
         a†_{p} = 0.5*(γ_{2p} - iγ_{2p+1})
      note goes from N to 2N sites!
 
-    # uses inbuilt functions in OpenFermion and maps to symplectic form
+    Args:
+        fermionic_op (FermionOperator): openfermion FermionOperator
+    Returns:
+        op_out (MajoranaOp): majorana form of input fermionic_op
 
     """
     if not isinstance(fermionic_op, FermionOperator):
@@ -1386,18 +1391,29 @@ class MajoranaOp:
             out_string += (f'{ceoff} {maj_string} +\n')
         return out_string[:-3]
 
-    def commutes(self, M_OP):
+    def commutator(self, M_OP: "MajoranaOp") -> "MajoranaOp":
+        """ Computes the commutator [A, B] = AB - BA
+        """
+        return (self * M_OP - M_OP * self).cleanup()
 
-        termwise_commutes = self.commutes_termwise(M_OP)
-        unique_terms = np.unique(termwise_commutes.flatten())  # equiv of set operation
+    def anticommutator(self, M_OP: "MajoranaOp") -> "MajoranaOp":
+        """ Computes the anticommutator {A, B} = AB + BA
+        """
+        return (self * M_OP + M_OP * self).cleanup()
 
-        return np.all(unique_terms == 0)
+    def commutes(self,
+            M_OP: "MajoranaOp"
+        ) -> bool:
+        """ Checks if every term of self commutes with every term of Pword
+        """
+        return self.commutator(M_OP).n_terms == 0
 
-    def commutes_termwise(self, M_OP):
-        # 1 means terms anticommute!
-        # 0 means terms commute!
-        # { γA, γB } = [1 + (−1)|A||B|+|A∩B|]γAγB
-        # https://arxiv.org/pdf/2101.09349.pdf (eq 9)
+
+    def commutes_termwise(self, M_OP: "MajoranaOp") -> np.array:
+        """ Computes commutation relations between self and another MajoranaOp
+
+        see https://arxiv.org/pdf/2101.09349.pdf (eq 9)
+        """
         if self.n_sites != M_OP.n_sites:
             sites = min(self.n_sites, M_OP.n_sites)
         else:
@@ -1405,11 +1421,11 @@ class MajoranaOp:
 
         suppA = np.einsum('ij->i', self.symp_matrix)
         suppB = np.einsum('ij->i', M_OP.symp_matrix)
-        AtimeB = np.outer(suppA, suppB)
+        AtimeB = np.outer(suppA, suppB) # need all combinations of suppA times suppB
 
         # only look over common inds
         AandB = np.dot(self.symp_matrix[:, :sites], M_OP.symp_matrix[:, :sites].T)
-        comm_flag = (AtimeB + AandB) % 2
+        comm_flag = (AtimeB + AandB + 1) % 2
 
         return comm_flag
 
@@ -1448,7 +1464,18 @@ class MajoranaOp:
         # cleanup run to remove duplicate rows (Pauliwords)
         return MajoranaOp(P_symp_mat_new, P_new_coeffs).cleanup()
 
-    def cleanup(self) -> "MajoranaOp":
+    def __sub__(self,
+                M_OP: "MajoranaOp"
+                ) -> "MajoranaOp":
+        """ Subtract from this MajoranaOp another MajoranaOp
+        by negating the coefficients and summing
+        """
+        op_copy = M_OP.copy()
+        op_copy.coeff_vec *= -1
+
+        return self + op_copy
+
+    def cleanup(self, zero_threshold=1e-15) -> "MajoranaOp":
         """ Remove duplicated rows of symplectic matrix terms, whilst summing
         the corresponding coefficients of the deleted rows in coeff
         """
@@ -1469,7 +1496,7 @@ class MajoranaOp:
         reduced_coeff_vec = np.add.reduceat(sorted_coeff_vec, row_summing, axis=0)
 
         # return nonzero coeff terms!
-        mask_nonzero = np.where(abs(reduced_coeff_vec) > 1e-15)
+        mask_nonzero = np.where(abs(reduced_coeff_vec) > zero_threshold)
         return MajoranaOp(reduced_symplectic_matrix[mask_nonzero],
                           reduced_coeff_vec[mask_nonzero])
 
@@ -1493,30 +1520,43 @@ class MajoranaOp:
                 temp_mat_self = np.zeros((self.n_terms, M_OP.n_sites))
                 temp_mat_self[:, :self.n_sites] += self.symp_matrix
                 temp_mat_M_OP = M_OP.symp_matrix
+                term_index_list = M_OP.term_index_list
             else:
                 temp_mat_M_OP = np.zeros((M_OP.n_terms, self.n_sites))
                 temp_mat_M_OP[:, :M_OP.n_sites] += M_OP.symp_matrix
                 temp_mat_self = self.symp_matrix
+                term_index_list = self.term_index_list
         else:
             temp_mat_M_OP = M_OP.symp_matrix
             temp_mat_self = self.symp_matrix
+            term_index_list = self.term_index_list
 
         new_vec = np.zeros((self.n_terms * M_OP.n_terms, max(temp_mat_M_OP.shape[1],
                                                              temp_mat_self.shape[1])
-                            ))
+                            ), dtype=int)
+        new_coeff_vec = np.zeros((self.n_terms * M_OP.n_terms), dtype=complex)
+        # new_coeff_vec = np.outer(self.coeff_vec, M_OP.coeff_vec).flatten()
+        # sign_dict = {0: 1, 1: -1}
 
-        new_coeff_vec = np.outer(self.coeff_vec, M_OP.coeff_vec).flatten()
-        sign_dict = {0: 1, 1: -1}
         ind = 0
-        for ind1, vec in enumerate(temp_mat_self):
+        for ind1, vec1 in enumerate(temp_mat_self):
             for ind2, vec2 in enumerate(temp_mat_M_OP):
-                new_vec[ind] = np.logical_xor(vec, vec2).astype(int)
+                new_vec[ind] = np.logical_xor(vec1, vec2).astype(int)
+                _, reordering_sign = bubble_sort_maj(np.array((
+                                                              *(term_index_list[vec1.astype(bool)]),
+                                                              *(term_index_list[vec2.astype(bool)])
+                                                                 )
+                                                             )
+                                                    )
+                new_coeff_vec[ind] = self.coeff_vec[ind1] * M_OP.coeff_vec[ind2] * reordering_sign
+                ind += 1
 
                 # track changes to make operator in normal order
-                #                 reordering_sign = sum(sum(vec[i+1:]) for i, term in enumerate(vec2[:-1]) if term!=0)%2
-                reordering_sign = sum(term * (sum(vec[i + 1:])) for i, term in enumerate(vec2[:-1])) % 2
-                new_coeff_vec[ind] *= sign_dict[reordering_sign]
-                ind += 1
+                # reordering_sign = sum(term * (sum(vec[i + 1:])) for i, term in enumerate(vec2[:-1])) % 2
+                # new_coeff_vec[ind] *= sign_dict[reordering_sign]
+
+                # new_coeff_vec[ind] *= reordering_sign
+                # ind += 1
 
         return MajoranaOp(new_vec, new_coeff_vec).cleanup()
 
