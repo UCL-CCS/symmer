@@ -49,8 +49,7 @@ class S3_projection:
             although the rotation procedure can be a bit unpredictable so take care!
         """
         self.stabilizers = stabilizers
-        self.target_sqp = target_sqp
-    
+        
     def _perform_projection(self, 
             operator: PauliwordOp,
             #sym_sector: Union[List[int], np.array]
