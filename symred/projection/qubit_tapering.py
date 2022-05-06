@@ -28,8 +28,9 @@ class QubitTapering(S3_projection):
         however this is set to X by default (in line with the original tapering paper).
         """
         self.operator = operator
+        self.target_sqp = target_sqp
         self.n_taper = self.symmetry_generators.n_terms
-        super().__init__(self.symmetry_generators, target_sqp=target_sqp)
+        super().__init__(self.symmetry_generators)
         
     @cached_property
     def symmetry_generators(self) -> StabilizerOp:
@@ -39,7 +40,7 @@ class QubitTapering(S3_projection):
         ZX_symp = np.hstack([self.operator.Z_block, self.operator.X_block])
         reduced = gf2_gaus_elim(ZX_symp)
         kernel  = gf2_basis_for_gf2_rref(reduced)
-        stabilizers = StabilizerOp(kernel, np.ones(kernel.shape[0]))
+        stabilizers = StabilizerOp(kernel, np.ones(kernel.shape[0]), target_sqp=self.target_sqp)
 
         # TODO choose mutually commuting subset of symmetry generators, throws error for now
         assert(np.all(stabilizers.adjacency_matrix)), 'Generators are not mutually commuting'

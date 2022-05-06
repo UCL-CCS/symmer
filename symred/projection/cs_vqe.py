@@ -63,11 +63,11 @@ class CS_VQE(S3_projection):
         self.ref_state = ref_state
         self.target_sqp = target_sqp
         self.noncontextual_form = noncontextual_form
+        self.contextual_operator = (operator-self.noncontextual_operator).cleanup_zeros()
         if basis_weighting_operator is not None:
             self.basis_weighting_operator = basis_weighting_operator
         else:
-            self.basis_weighting_operator = operator
-        self.contextual_operator = (operator-self.noncontextual_operator).cleanup_zeros()
+            self.basis_weighting_operator = self.contextual_operator
         # decompose the noncontextual set into a dictionary of its 
         # universally commuting elements and anticommuting cliques
         self.noncontextual_reconstruction = (
@@ -309,7 +309,13 @@ class CS_VQE_LW(S3_projection):
         self.ref_state = ref_state
         self.target_sqp = target_sqp
         if basis_weighting_operator is None:
-            self.basis_weighting_operator = operator
+            mask_diag = np.where(~np.any(self.operator.X_block, axis=1))
+            noncontextual_operator = PauliwordOp(
+                self.operator.symp_matrix[mask_diag],
+                self.operator.coeff_vec[mask_diag]
+            )
+            contextual_operator = (operator-noncontextual_operator).cleanup_zeros()
+            self.basis_weighting_operator = contextual_operator
         else:
             self.basis_weighting_operator = basis_weighting_operator
 
@@ -335,7 +341,7 @@ class CS_VQE_LW(S3_projection):
         basis.update_sector(ref_state=self.ref_state)
         
         # instantiate the parent S3_projection class with the stabilizers we are enforcing
-        super().__init__(basis, target_sqp=self.target_sqp)
+        super().__init__(basis)
         
         return self.perform_projection(
             operator=operator_to_project

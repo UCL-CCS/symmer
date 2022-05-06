@@ -16,7 +16,7 @@ class StabilizerOp(PauliwordOp):
     def __init__(self,
             operator:   Union[List[str], Dict[str, float], np.array],
             coeff_vec: Union[List[complex], np.array] = None,
-            target_sqp: str = 'X'):
+            target_sqp: str = 'Z'):
         """
         """
         super().__init__(operator, coeff_vec)

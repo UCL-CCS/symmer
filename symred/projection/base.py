@@ -34,8 +34,7 @@ class S3_projection:
     rotated_flag = False
 
     def __init__(self,
-                stabilizers: StabilizerOp, 
-                target_sqp: str = 'Z'
+                stabilizers: StabilizerOp
                 ) -> None:
         """
         - stabilizers
