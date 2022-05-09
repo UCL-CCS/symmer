@@ -1,4 +1,4 @@
-from symred.symplectic_form import PauliwordOp
+from symred.symplectic import PauliwordOp
 import numpy as np
 from typing import Dict, List, Union, Tuple
 
