@@ -1423,7 +1423,11 @@ class MajoranaOp:
         Returns:
             Maj_conj (MajoranaOp): The Hermitian conjugated operator
         """
-        Maj_conj = MajoranaOp(self.symp_matrix, self.coeff_vec.conjugate())
+        new_terms = []
+        for sym_vec in self.symp_matrix:
+            current_term = self.term_index_list[sym_vec.astype(bool)]
+            new_terms.append(current_term[::-1]) # reverse order
+        Maj_conj = MajoranaOp(new_terms, self.coeff_vec.conjugate())
         return Maj_conj
 
     def commutes_termwise(self, M_OP: "MajoranaOp") -> np.array:
