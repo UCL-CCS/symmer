@@ -3,6 +3,7 @@ import scipy as sp
 from typing import Tuple
 from qiskit import QuantumCircuit
 import pyzx as zx
+import openfermion as of
 
 def norm(vector: np.array) -> complex:
     """
@@ -460,3 +461,19 @@ def to_indep_set(G_w_in):
         G_w[G_w_keys_orig[j]]=G_w[G_w_keys_orig[j]]+[G_w_keys[j]]
     
     return generators, G_w
+
+# comment out due to incompatible versions of Cirq and OpenFermion in Orquestra
+def QubitOperator_to_dict(op, num_qubits):
+    assert(type(op) == of.QubitOperator)
+    op_dict = {}
+    term_dict = op.terms
+    terms = list(term_dict.keys())
+
+    for t in terms:    
+        letters = ['I' for i in range(num_qubits)]
+        for i in t:
+            letters[i[0]] = i[1]
+        p_string = ''.join(letters)        
+        op_dict[p_string] = term_dict[t]
+         
+    return op_dict

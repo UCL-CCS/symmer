@@ -660,5 +660,9 @@ tmp*
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm+all,jupyternotebooks,visualstudio
 
 notebooks/molecule_geometries/molecule_data.json
-notebooks/data
+notebooks/data/*
+!notebooks/data/score_data.json
+!notebooks/data/molecule_data.json
+notebooks/plots/*
 notebooks/sandbox.ipynb
+
