@@ -1349,21 +1349,30 @@ class MajoranaOp:
         self.term_index_list = np.arange(0, self.n_sites, 1)
         self.n_terms = self.symp_matrix.shape[0]
 
+        # 2i positions
+        self.even_inds = np.arange(0,self.n_sites, 2)
+        # 2i+1 positions
+        self.odd_inds = np.arange(1,self.n_sites, 2)
+
     def initalize_op(self, input_term):
 
         if isinstance(input_term, np.ndarray):
             if (len(input_term)==0)and (len(self.coeff_vec)==1):
-                self.n_sites = 1
-                self.symp_matrix = np.array([[0]], dtype=int)
+                self.n_sites = 2
+                self.symp_matrix = np.array([[0,0]], dtype=int)
             else:
                 self.n_sites = input_term.shape[1]
-                self.symp_matrix = input_term
+                assert(self.n_sites%2==0), 'not even moded'
+                self.symp_matrix = input_term.astype(int)
         else:
             flat_list = set(item for sublist in input_term for item in sublist)
             if flat_list:
-                self.n_sites = max(flat_list) + 1
+                n_sites = max(flat_list) + 1
+                if n_sites%2!=0:
+                    n_sites+=1
+                self.n_sites = n_sites
             else:
-                self.n_sites = 1
+                self.n_sites = 2
             n_terms = len(input_term)
             self.symp_matrix = np.zeros((n_terms, self.n_sites), dtype=int)
             for ind, term in enumerate(input_term):
@@ -1408,6 +1417,14 @@ class MajoranaOp:
         """
         return self.commutator(M_OP).n_terms == 0
 
+    @property
+    def conjugate(self) -> "MajoranaOp":
+        """
+        Returns:
+            Maj_conj (MajoranaOp): The Hermitian conjugated operator
+        """
+        Maj_conj = MajoranaOp(self.symp_matrix, self.coeff_vec.conjugate())
+        return Maj_conj
 
     def commutes_termwise(self, M_OP: "MajoranaOp") -> np.array:
         """ Computes commutation relations between self and another MajoranaOp
@@ -1505,7 +1522,7 @@ class MajoranaOp:
         for majorana_vec, ceoff in zip(self.symp_matrix, self.coeff_vec):
             maj_inds = self.term_index_list[majorana_vec.astype(bool)]
 
-            open_f_op += MajoranaOperator(term=tuple(maj_inds),
+            open_f_op += MajoranaOperator(term=tuple(maj_inds.tolist()),
                                           coefficient=ceoff)
         return open_f_op
 

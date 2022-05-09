@@ -77,10 +77,11 @@ class AntiCommutingOp(PauliwordOp):
         PauliOp = self.copy()
         if s_index is None:
             s_index = self.get_least_dense_term_index()
-            # make s_index be the zeroth index
-            re_order_inds = np.array([s_index, *np.setdiff1d(np.arange(self.n_terms), s_index)])
-            PauliOp.symp_matrix = PauliOp.symp_matrix[re_order_inds]
-            PauliOp.coeff_vec = PauliOp.coeff_vec[re_order_inds]
+
+        # make s_index be the zeroth index
+        re_order_inds = np.array([s_index, *np.setdiff1d(np.arange(self.n_terms), s_index)])
+        PauliOp.symp_matrix = PauliOp.symp_matrix[re_order_inds]
+        PauliOp.coeff_vec = PauliOp.coeff_vec[re_order_inds]
 
         # make list of rotations empty!
         self.X_sk_rotations = []
