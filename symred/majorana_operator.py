@@ -346,6 +346,10 @@ class MajoranaOp:
                                           coefficient=ceoff)
         return open_f_op
 
+
+    def __repr__(self):
+        return str(self)
+
     def __mul__(self,
                 M_OP: "MajoranaOp"
                 ) -> "MajoranaOp":
