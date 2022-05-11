@@ -120,7 +120,7 @@ class PauliwordOp:
     """ 
     A class thats represents an operator defined over the Pauli group in the symplectic representation.
     """
-    sigfig = '.10f'
+    sigfig = '.3f'
     
     def __init__(self, 
             operator:   Union[List[str], Dict[str, float], np.array], 

@@ -1,7 +1,6 @@
 from symred import projection
 from symred.projection import S3_projection
 from symred.symplectic import PauliwordOp, StabilizerOp, find_symmetry_basis
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
 import numpy as np
 from typing import Tuple, List, Dict, Union
 from cached_property import cached_property

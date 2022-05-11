@@ -106,7 +106,7 @@ class S3_projection:
         self.stab_qubit_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1] % operator.n_qubits
         self.free_qubit_indices  = np.setdiff1d(np.arange(operator.n_qubits),self.stab_qubit_indices)
 
-        # insert any supplementary rotations coming from the child class
+        # insert any supplementary rotations coming from the child class to be applied first
         stab_rotations = insert_rotations + self.stabilizers.stabilizer_rotations
 
         # perform the full list of rotations on the input operator...
