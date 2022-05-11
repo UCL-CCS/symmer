@@ -1,9 +1,8 @@
-from symred import projection
+import numpy as np
+from typing import List, Union
+from cached_property import cached_property
 from symred.projection import S3_projection
 from symred.symplectic import PauliwordOp, StabilizerOp, find_symmetry_basis
-import numpy as np
-from typing import Tuple, List, Dict, Union
-from cached_property import cached_property
 
 class QubitTapering(S3_projection):
     """ Class for performing qubit tapering as per https://arxiv.org/abs/1701.08213.

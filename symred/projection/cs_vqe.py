@@ -4,7 +4,7 @@ import warnings
 import numpy as np
 from scipy.optimize import shgo, differential_evolution
 from symred.utils import unit_n_sphere_cartesian_coords, gf2_gaus_elim
-from symred.symplectic import PauliwordOp, StabilizerOp, symplectic_to_string
+from symred.symplectic import PauliwordOp, StabilizerOp
 from symred.projection import S3_projection
 from symred.unitary_partitioning import AntiCommutingOp
 

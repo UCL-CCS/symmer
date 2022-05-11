@@ -1,18 +1,6 @@
-# general imports
 import numpy as np
-from copy import deepcopy
-from typing import Dict, List, Tuple, Union
-from functools import reduce
-from cached_property import cached_property
-# specialized imports
-from symred.symplectic import PauliwordOp, StabilizerOp, symplectic_to_string
-from symred.utils import (
-    gf2_gaus_elim, 
-    gf2_basis_for_gf2_rref,
-    heavy_gaussian_elimination,
-    unit_n_sphere_cartesian_coords,
-    quasi_model
-    )
+from typing import List, Tuple, Union
+from symred.symplectic import PauliwordOp, StabilizerOp
 
 class S3_projection:
     """ Base class for enabling qubit reduction techniques derived from
