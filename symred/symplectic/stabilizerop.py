@@ -5,7 +5,7 @@ from cached_property import cached_property
 from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
 from symred.symplectic import PauliwordOp, ObservableGraph, symplectic_to_string
 
-def find_symmetry_basis(operator):
+def find_symmetry_basis(operator, commuting_override=False):
     """ Find an independent symmetry basis for the input operator,
     i.e. a basis that commutes universally within the operator
     """
@@ -14,7 +14,7 @@ def find_symmetry_basis(operator):
     reduced = gf2_gaus_elim(ZX_symp)
     kernel  = gf2_basis_for_gf2_rref(reduced)
     stabilizers = ObservableGraph(kernel, np.ones(kernel.shape[0]))
-    if np.any(~stabilizers.adjacency_matrix):
+    if not commuting_override and np.any(~stabilizers.adjacency_matrix):
         # if any of the stabilizers are not mutually commuting, take the largest commuting subset
         stabilizers = stabilizers.clique_cover(clique_relation='C', colouring_strategy='largest_first')[0]
 
