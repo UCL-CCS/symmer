@@ -78,6 +78,10 @@ class StabilizerOp(PauliwordOp):
 
     def __repr__(self):
         return str(self)
+    
+    def __add__(self, Pword: "PauliwordOp") -> "PauliwordOp":
+        summed = super().__add__(Pword)
+        return StabilizerOp(summed.symp_matrix, summed.coeff_vec)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 

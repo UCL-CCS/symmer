@@ -67,7 +67,7 @@ class CS_VQE(S3_projection):
         """
         # mask terms of the weighting operator that are preserved under projection over the basis
         mask_preserved = np.where(np.all(self.basis_weighting_operator.commutes_termwise(basis),axis=1))[0]
-        return (
+        return np.square(
             np.linalg.norm(self.basis_weighting_operator.coeff_vec[mask_preserved]) /
             np.linalg.norm(self.basis_weighting_operator.coeff_vec)
             )
@@ -226,9 +226,11 @@ class CS_VQE(S3_projection):
         # only allow stabilizers that commute with the cliques, else behaviour is unpredictable
         valid_stab_indices = np.where(
             ~np.any(~stabilizers.commutes_termwise(self.clique_operator), axis=1))[0]
-        fix_stabilizers = PauliwordOp(
+        # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
+        fix_stabilizers = StabilizerOp(
             stabilizers.symp_matrix[valid_stab_indices],
-            stabilizers.coeff_vec[valid_stab_indices]
+            stabilizers.coeff_vec[valid_stab_indices],
+            target_sqp=self.target_sqp
         )
         # raise a warning if any stabilizers are discarded due to anticommutation with a clique
         if len(valid_stab_indices) < stabilizers.n_terms:
@@ -249,12 +251,6 @@ class CS_VQE(S3_projection):
             fix_stabilizers += self.C0
             insert_rotations = self.SeqRots
             
-        # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
-        fix_stabilizers = StabilizerOp(
-            fix_stabilizers.symp_matrix, 
-            np.array(fix_stabilizers.coeff_vec, dtype=int),
-            target_sqp=self.target_sqp
-        )
         # instantiate the parent S3_projection class with the stabilizers we are enforcing
         super().__init__(fix_stabilizers)
 
@@ -328,7 +324,7 @@ class CS_VQE_LW(S3_projection):
         """
         # mask terms of the weighting operator that are preserved under projection over the basis
         mask_preserved = np.where(np.all(self.basis_weighting_operator.commutes_termwise(basis),axis=1))[0]
-        return (
+        return np.square(
             np.linalg.norm(self.basis_weighting_operator.coeff_vec[mask_preserved]) /
             np.linalg.norm(self.basis_weighting_operator.coeff_vec)
             )
