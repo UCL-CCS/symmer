@@ -46,12 +46,12 @@ class CS_VQE(S3_projection):
         # representative operator C(r) and symmetry generators G with the optimal configuration
         self.solve_noncontextual(ref_state)
         # Determine the unitary partitioning rotations and the single Pauli operator that is rotated onto
-        AC_operator = AntiCommutingOp(
+        self.clique_operator = AntiCommutingOp(
             self.clique_operator.symp_matrix, 
             self.clique_operator.coeff_vec
         )
-        self.SeqRots, self.C0 = AC_operator.gen_seq_rotations(
-            s_index=np.where(~np.any(AC_operator.X_block, axis=1))[0][0], 
+        self.SeqRots, self.C0 = self.clique_operator.gen_seq_rotations(
+            s_index=np.where(~np.any(self.clique_operator.X_block, axis=1))[0][0], 
             check_reduction=True
         )
         
