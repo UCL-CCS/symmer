@@ -1,18 +1,6 @@
-# general imports
 import numpy as np
-from copy import deepcopy
-from typing import Dict, List, Tuple, Union
-from functools import reduce
-from cached_property import cached_property
-# specialized imports
-from symred.symplectic import PauliwordOp, StabilizerOp, symplectic_to_string
-from symred.utils import (
-    gf2_gaus_elim, 
-    gf2_basis_for_gf2_rref,
-    heavy_gaussian_elimination,
-    unit_n_sphere_cartesian_coords,
-    quasi_model
-    )
+from typing import List, Tuple, Union
+from symred.symplectic import PauliwordOp, StabilizerOp
 
 class S3_projection:
     """ Base class for enabling qubit reduction techniques derived from
@@ -106,12 +94,12 @@ class S3_projection:
         self.stab_qubit_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1] % operator.n_qubits
         self.free_qubit_indices  = np.setdiff1d(np.arange(operator.n_qubits),self.stab_qubit_indices)
 
-        # insert any supplementary rotations coming from the child class
+        # insert any supplementary rotations coming from the child class to be applied first
         stab_rotations = insert_rotations + self.stabilizers.stabilizer_rotations
 
         # perform the full list of rotations on the input operator...
         if stab_rotations != []:
-            op_rotated = operator.recursive_rotate_by_Pword(stab_rotations)
+            op_rotated = operator.perform_rotations(stab_rotations)
         else:
             op_rotated = operator
         

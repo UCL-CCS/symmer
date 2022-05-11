@@ -1,7 +1,6 @@
 import numpy as np
 from copy import deepcopy
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
-from symred.symplectic import PauliwordOp, StabilizerOp
+from symred.symplectic import PauliwordOp, StabilizerOp, find_symmetry_basis
 
 class HamiltonianBiasing:
     """ Class for re-weighting Hamiltonian terms based on some criteria, such as HOMO-LUMO bias
@@ -73,10 +72,7 @@ class StabilizerIdentification:
         Then generate the largest symmetry basis that preserves them
         """
         preserve = self.basis_weighting.sort(key='magnitude')[:n_preserved]
-        ZX_symp = np.hstack([preserve.Z_block, preserve.X_block])
-        reduced = gf2_gaus_elim(ZX_symp)
-        kernel  = gf2_basis_for_gf2_rref(reduced)
-        stabilizers = StabilizerOp(kernel, np.ones(kernel.shape[0]))
+        stabilizers = find_symmetry_basis(preserve, commuting_override=True)
         mask_diag = np.where(~np.any(stabilizers.X_block, axis=1))[0]
         return StabilizerOp(stabilizers.symp_matrix[mask_diag], stabilizers.coeff_vec[mask_diag])
 

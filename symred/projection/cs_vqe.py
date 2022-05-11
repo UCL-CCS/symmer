@@ -4,48 +4,9 @@ import warnings
 import numpy as np
 from scipy.optimize import shgo, differential_evolution
 from symred.utils import unit_n_sphere_cartesian_coords, gf2_gaus_elim
-from symred.symplectic import PauliwordOp, StabilizerOp, symplectic_to_string
+from symred.symplectic import PauliwordOp, StabilizerOp
 from symred.projection import S3_projection
-
-def unitary_partitioning_rotations(AC_op: PauliwordOp) -> List[Tuple[str,float]]:
-    """ Perform unitary partitioning as per https://doi.org/10.1103/PhysRevA.101.062322 (Section A)
-    Note unitary paritioning only works when the terms are mutually anticommuting
-    """
-    # check the terms are mutually anticommuting to avoid an infinite loop:
-    assert(
-        np.all(
-            np.array(AC_op.adjacency_matrix, dtype=int)
-                      ==np.eye(AC_op.n_terms, AC_op.n_terms)
-        )
-    ), 'Operator terms are not mutually anticommuting'
-    
-    rotations = []
-    
-    def _recursive_unitary_partitioning(AC_op: PauliwordOp) -> None:
-        """ Always retains the first term of the operator, deletes the second 
-        term at each level of recursion and reads out the necessary rotations
-        """
-        if AC_op.n_terms == 1:
-            return None
-        else:
-            op_for_rotation = AC_op.copy()
-            A0, A1 = op_for_rotation[0], op_for_rotation[1]
-            angle = np.arctan(A1.coeff_vec / A0.coeff_vec)
-            # set coefficients to 1 since we only want to track sign flip from here
-            A0.coeff_vec, A1.coeff_vec = [1], [1]
-            pauli_rot = (A0 * A1).multiply_by_constant(-1j)
-            angle*=pauli_rot.coeff_vec
-            # perform the rotation, thus deleting a single term from the input operator
-            AC_op_rotated = op_for_rotation._rotate_by_single_Pword(pauli_rot, angle).cleanup_zeros()
-            
-            # append the rotation to list
-            rotations.append((symplectic_to_string(pauli_rot.symp_matrix[0]), angle.real[0]))
-            
-            return _recursive_unitary_partitioning(AC_op_rotated)
-    
-    _recursive_unitary_partitioning(AC_op)
-    
-    return rotations
+from symred.unitary_partitioning import AntiCommutingOp
 
 class CS_VQE(S3_projection):
     """
@@ -75,7 +36,7 @@ class CS_VQE(S3_projection):
         )
         self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
         self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
-        self.clique_operator = (self.noncontextual_basis[:self.n_cliques]).sort(key='Z')
+        self.clique_operator = (self.noncontextual_basis[:self.n_cliques])
         symmetry_generators_symp = self.noncontextual_basis.symp_matrix[self.n_cliques:]
         self.symmetry_generators = StabilizerOp(
             symmetry_generators_symp,
@@ -84,6 +45,15 @@ class CS_VQE(S3_projection):
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
         self.solve_noncontextual(ref_state)
+        # Determine the unitary partitioning rotations and the single Pauli operator that is rotated onto
+        self.clique_operator = AntiCommutingOp(
+            self.clique_operator.symp_matrix, 
+            self.clique_operator.coeff_vec
+        )
+        self.SeqRots, self.C0 = self.clique_operator.gen_seq_rotations(
+            s_index=np.where(~np.any(self.clique_operator.X_block, axis=1))[0][0], 
+            check_reduction=True
+        )
         
     def basis_score(self, 
             basis: StabilizerOp
@@ -276,9 +246,8 @@ class CS_VQE(S3_projection):
         insert_rotations=[]
         if enforce_clique_operator and self.n_cliques != 0:
             # if any stabilizers in the list contain more than one term then apply unitary partitioning
-            UP_rot = unitary_partitioning_rotations(self.clique_operator)
-            fix_stabilizers += self.clique_operator.recursive_rotate_by_Pword(UP_rot).cleanup_zeros()
-            insert_rotations = UP_rot
+            fix_stabilizers += self.C0
+            insert_rotations = self.SeqRots
             
         # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
         fix_stabilizers = StabilizerOp(
