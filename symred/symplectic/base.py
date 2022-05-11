@@ -504,6 +504,11 @@ class PauliwordOp:
         
         return commute_self + anticom_part
 
+
+    def __repr__(self):
+        return str(self)
+
+
     def recursive_rotate_by_Pword(self, 
             rotations: List[Tuple[str, float]]
         ) -> "PauliwordOp":
