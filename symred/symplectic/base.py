@@ -1,3 +1,4 @@
+from multiprocessing.sharedctypes import Value
 import numpy as np
 from copy import deepcopy
 from typing import Dict, List, Tuple, Union
@@ -306,6 +307,23 @@ class PauliwordOp:
         return PauliwordOp(clean_operator.symp_matrix[mask_nonzero], 
                             clean_operator.coeff_vec[mask_nonzero])
 
+    def __eq__(self, Pword: "PauliwordOp") -> bool:
+        """ In theory should use logical XNOR to check symplectic matrix match, however
+        can use standard logical XOR and look for False indices instead (implementation
+        skips an additional NOT operation) 
+        """
+        check_1 = self.cleanup()
+        check_2 = Pword.cleanup()
+        if check_1.n_qubits != check_2.n_qubits:
+            raise ValueError('Operators defined over differing numbers of qubits.')
+        elif check_1.n_terms != check_2.n_terms:
+            return False
+        else:
+            return (
+                not np.einsum('ij->', np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and 
+                np.allclose(check_1.coeff_vec, check_2.coeff_vec)
+            )
+
     def __add__(self, 
             Pword: "PauliwordOp"
         ) -> "PauliwordOp":
@@ -504,8 +522,8 @@ class PauliwordOp:
         
         return commute_self + anticom_part
 
-    def recursive_rotate_by_Pword(self, 
-            rotations: List[Tuple[str, float]]
+    def perform_rotations(self, 
+            rotations: List[Tuple["PauliwordOp", float]]
         ) -> "PauliwordOp":
         """ 
         Performs single Pauli rotations recursively left-to-right given a list of paulis supplied 
@@ -516,9 +534,7 @@ class PauliwordOp:
         """
         op_copy = self.copy()
         for pauli_rotation,angle in rotations:
-            symp_rotation = string_to_symplectic(pauli_rotation, self.n_qubits)
-            Pword_temp = PauliwordOp(symp_rotation, [1]) # enforcing coefficient to be 1, see above
-            op_copy = op_copy._rotate_by_single_Pword(Pword_temp, angle).cleanup()
+            op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle).cleanup()
         return op_copy
 
     @cached_property

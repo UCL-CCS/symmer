@@ -45,12 +45,15 @@ class CS_VQE(S3_projection):
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
         self.solve_noncontextual(ref_state)
-        AC_operator = AntiCommutingOp(self.clique_operator.symp_matrix, self.clique_operator.coeff_vec)
-        SeqRots, self.C0 = AC_operator.gen_seq_rotations(
+        # Determine the unitary partitioning rotations and the single Pauli operator that is rotated onto
+        AC_operator = AntiCommutingOp(
+            self.clique_operator.symp_matrix, 
+            self.clique_operator.coeff_vec
+        )
+        self.SeqRots, self.C0 = AC_operator.gen_seq_rotations(
             s_index=np.where(~np.any(AC_operator.X_block, axis=1))[0][0], 
             check_reduction=True
         )
-        self.SeqRots = [(list(R.to_dictionary.keys())[0], angle) for R,angle in SeqRots]
         
     def basis_score(self, 
             basis: StabilizerOp

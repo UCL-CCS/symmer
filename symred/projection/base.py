@@ -111,7 +111,7 @@ class S3_projection:
 
         # perform the full list of rotations on the input operator...
         if stab_rotations != []:
-            op_rotated = operator.recursive_rotate_by_Pword(stab_rotations)
+            op_rotated = operator.perform_rotations(stab_rotations)
         else:
             op_rotated = operator
         
