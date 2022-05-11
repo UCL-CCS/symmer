@@ -183,6 +183,9 @@ class PauliwordOp:
             out_string += (f'{format(coeff, self.sigfig)} {p_string} +\n')
         return out_string[:-3]
 
+    def __repr__(self):
+        return str(self)
+
     def copy(self) -> "PauliwordOp":
         """ 
         Create a carbon copy of the class instance
