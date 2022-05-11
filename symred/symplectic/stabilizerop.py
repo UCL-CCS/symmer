@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
 from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
-from symred.symplectic import PauliwordOp, symplectic_to_string
+from symred.symplectic import PauliwordOp, ObservableGraph, symplectic_to_string
 
 def find_symmetry_basis(operator):
     """ Find an independent symmetry basis for the input operator,
@@ -13,12 +13,12 @@ def find_symmetry_basis(operator):
     ZX_symp = np.hstack([operator.Z_block, operator.X_block])
     reduced = gf2_gaus_elim(ZX_symp)
     kernel  = gf2_basis_for_gf2_rref(reduced)
-    stabilizers = StabilizerOp(kernel, np.ones(kernel.shape[0]))
+    stabilizers = ObservableGraph(kernel, np.ones(kernel.shape[0]))
+    if np.any(~stabilizers.adjacency_matrix):
+        # if any of the stabilizers are not mutually commuting, take the largest commuting subset
+        stabilizers = stabilizers.clique_cover(clique_relation='C', colouring_strategy='largest_first')[0]
 
-    # TODO choose mutually commuting subset of symmetry generators, throws error for now
-    assert(np.all(stabilizers.adjacency_matrix)), 'Generators are not mutually commuting'
-
-    return stabilizers
+    return StabilizerOp(stabilizers.symp_matrix, np.ones(stabilizers.n_terms))
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
@@ -33,13 +33,14 @@ class StabilizerOp(PauliwordOp):
     """
     def __init__(self,
             operator:   Union[List[str], Dict[str, float], np.array],
-            coeff_vec: Union[List[complex], np.array] = None,
+            coeff_vec:  Union[List[complex], np.array] = None,
             target_sqp: str = 'Z'):
         """
         """
         super().__init__(operator, coeff_vec)
         self._check_stab()
         self._check_independent()
+        self.coeff_vec = self.coeff_vec.astype(int)
         if target_sqp in ['X', 'Z']:
             self.target_sqp = target_sqp
         elif target_sqp == 'Y':
@@ -60,6 +61,38 @@ class StabilizerOp(PauliwordOp):
             if np.all(row==0):
                 # there is a dependent row
                 raise ValueError('The supplied stabilizers are not independent')
+
+    def __str__(self) -> str:
+        """ 
+        Defines the print behaviour of StabilizerOp - 
+        returns the operator in an easily readable format
+
+        Returns:
+            out_string (str): human-readable StabilizerOp string
+        """
+        out_string = ''
+        for pauli_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
+            p_string = symplectic_to_string(pauli_vec)
+            out_string += (f'{coeff: d} {p_string} \n')
+        return out_string[:-2]
+
+    def __repr__(self):
+        return str(self)
+
+    def _rotate_by_single_Pword(self, 
+            Pword: "PauliwordOp", 
+            angle: float = None
+        ) -> "PauliwordOp":
+        rotated_stabilizers = super()._rotate_by_single_Pword(Pword, angle)
+        return StabilizerOp(rotated_stabilizers.symp_matrix, rotated_stabilizers.coeff_vec)
+
+    def perform_rotations(self, 
+        rotations: List[Tuple["PauliwordOp", float]]
+        ) -> "PauliwordOp":
+        """ Overwrite PauliwordOp.perform_rotations to return a StabilizerOp
+        """
+        rotated_stabilizers = super().perform_rotations(rotations)
+        return StabilizerOp(rotated_stabilizers.symp_matrix, rotated_stabilizers.coeff_vec)
 
     @cached_property
     def stabilizer_rotations(self) -> Tuple[List[str], List[Union[None,float]]]:
@@ -152,10 +185,6 @@ class StabilizerOp(PauliwordOp):
         """ Returns the rotated single-qubit Pauli stabilizers
         """
         if self.stabilizer_rotations != []:
-            rotated_stabilizers = self.perform_rotations(self.stabilizer_rotations)
+            return self.perform_rotations(self.stabilizer_rotations)
         else:
-            rotated_stabilizers = self
-        return StabilizerOp(
-            rotated_stabilizers.symp_matrix,
-            rotated_stabilizers.coeff_vec
-        )
+            return self
