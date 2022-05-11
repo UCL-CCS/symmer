@@ -1,10 +1,8 @@
-from symred import projection
-from symred.projection import S3_projection
-from symred.symplectic import PauliwordOp, StabilizerOp
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
 import numpy as np
-from typing import Tuple, List, Dict, Union
+from typing import List, Union
 from cached_property import cached_property
+from symred.projection import S3_projection
+from symred.symplectic import PauliwordOp, StabilizerOp, find_symmetry_basis
 
 class QubitTapering(S3_projection):
     """ Class for performing qubit tapering as per https://arxiv.org/abs/1701.08213.
@@ -36,15 +34,8 @@ class QubitTapering(S3_projection):
     def symmetry_generators(self) -> StabilizerOp:
         """ Find an independent basis for the input operator symmetry
         """
-        # swap order of XZ blocks in symplectic matrix to ZX
-        ZX_symp = np.hstack([self.operator.Z_block, self.operator.X_block])
-        reduced = gf2_gaus_elim(ZX_symp)
-        kernel  = gf2_basis_for_gf2_rref(reduced)
-        stabilizers = StabilizerOp(kernel, np.ones(kernel.shape[0]), target_sqp=self.target_sqp)
-
-        # TODO choose mutually commuting subset of symmetry generators, throws error for now
-        assert(np.all(stabilizers.adjacency_matrix)), 'Generators are not mutually commuting'
-
+        stabilizers = find_symmetry_basis(self.operator)
+        stabilizers.target_sqp = self.target_sqp
         return stabilizers
 
     def taper_it(self,

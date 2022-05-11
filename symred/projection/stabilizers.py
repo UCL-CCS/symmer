@@ -1,9 +1,11 @@
 import numpy as np
 from copy import deepcopy
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
-from symred.symplectic import PauliwordOp, StabilizerOp
+from typing import Union
+from scipy.optimize import differential_evolution
+from symred.symplectic import PauliwordOp, StabilizerOp, find_symmetry_basis
+from symred.projection import QubitTapering, CS_VQE, CS_VQE_LW
 
-class HamiltonianBiasing:
+class ObservableBiasing:
     """ Class for re-weighting Hamiltonian terms based on some criteria, such as HOMO-LUMO bias
     """
     # HOMO/LUMO bias is a value between 0 and 1 representing how sharply 
@@ -54,29 +56,38 @@ class HamiltonianBiasing:
             and sums the total HOM-LUMO-biased contribution. This is multiplied by the coefficient
             vector to re-weight according to how close to the gap each term acts
         """
-        X_block = self.base_operator.X_block
-        X_op = PauliwordOp(
-            np.hstack([X_block, np.zeros_like(X_block)]), 
-            np.abs(self.base_operator.coeff_vec)
-        ).cleanup()
-        X_op.coeff_vec = np.sum(X_op.X_block*self.HOMO_LUMO_bias_curve(), axis=1)*X_op.coeff_vec
-        return X_op
+        reweighted_operator = self.base_operator.copy()
+        reweighted_operator.coeff_vec = np.sum(
+            reweighted_operator.X_block*self.HOMO_LUMO_bias_curve(), 
+            axis=1
+        )*reweighted_operator.coeff_vec
+        return reweighted_operator
 
 class StabilizerIdentification:
-    def __init__(self,weighting_operator: PauliwordOp) -> None:
-        self.basis_weighting = weighting_operator
-        self.qubit_positions = np.arange(weighting_operator.n_qubits)
+    def __init__(self,
+        weighting_operator: PauliwordOp
+        ) -> None:
+        """
+        """
+        self.weighting_operator = weighting_operator
+        self.build_basis_weighting_operator()
+
+    def build_basis_weighting_operator(self):
+        X_block = self.weighting_operator.X_block
+        X_op = PauliwordOp(
+            np.hstack([X_block, np.zeros_like(X_block)]), 
+            np.abs(self.weighting_operator.coeff_vec)
+        ).cleanup()
+        self.basis_weighting = X_op.sort(key='magnitude')
+        self.qubit_positions = np.arange(self.weighting_operator.n_qubits)
         self.term_region = [0,self.basis_weighting.n_terms]
         
     def symmetry_basis_by_term_significance(self, n_preserved):
         """ Set the number of terms to be preserved in order of coefficient magnitude
         Then generate the largest symmetry basis that preserves them
         """
-        preserve = self.basis_weighting.sort(key='magnitude')[:n_preserved]
-        ZX_symp = np.hstack([preserve.Z_block, preserve.X_block])
-        reduced = gf2_gaus_elim(ZX_symp)
-        kernel  = gf2_basis_for_gf2_rref(reduced)
-        stabilizers = StabilizerOp(kernel, np.ones(kernel.shape[0]))
+        preserve = self.basis_weighting[:n_preserved]
+        stabilizers = find_symmetry_basis(preserve, commuting_override=True)
         mask_diag = np.where(~np.any(stabilizers.X_block, axis=1))[0]
         return StabilizerOp(stabilizers.symp_matrix[mask_diag], stabilizers.coeff_vec[mask_diag])
 
@@ -103,3 +114,40 @@ class StabilizerIdentification:
             region[0] = n_terms
             
         return self.symmetry_basis_by_subspace_dimension(n_sim_qubits, region=region)
+      
+def stabilizer_walk(
+        n_sim_qubits,
+        biasing_operator: ObservableBiasing, 
+        cs_vqe_object: Union[CS_VQE, CS_VQE_LW],
+        tapering_object: QubitTapering = None,
+        reference_state: np.array = None,
+        print_info: bool = False
+    ) -> StabilizerOp:
+    """
+    """
+    def get_stabilizers(x):
+        biasing_operator.HOMO_bias,biasing_operator.LUMO_bias = x
+        biased_op = biasing_operator.HOMO_LUMO_biased_operator()
+        if tapering_object is not None:
+            assert(reference_state is not None), 'Reference state was not supplied'
+            biased_op = tapering_object.taper_it(
+                aux_operator=biased_op, ref_state=reference_state
+            )
+        stabilizers = StabilizerIdentification(biased_op)
+        S = stabilizers.symmetry_basis_by_subspace_dimension(n_sim_qubits)
+        return(S)
+    
+    def objective(x):
+        S = get_stabilizers(x)
+        stab_score = cs_vqe_object.basis_score(S)
+        return -stab_score
+    
+    opt_out = differential_evolution(objective, x0=[.5,.5], bounds=[(0,1),(0,1)])
+    stab_score =-opt_out['fun']
+    bias_param =opt_out['x']
+    S = get_stabilizers(bias_param)
+    
+    if print_info:
+        print(f'Optimal score w(S)={stab_score} for HOMO/LUMO bias {bias_param}')
+    
+    return S
