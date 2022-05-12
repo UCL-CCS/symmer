@@ -33,17 +33,13 @@ class CS_VQE(S3_projection):
             self.basis_weighting_operator = self.contextual_operator
         # decompose the noncontextual set into a dictionary of its 
         # universally commuting elements and anticommuting cliques
-        self.noncontextual_basis()
-        # Reconstruct the noncontextual Hamiltonian into its G component
+        self.symmetry_generators, self.clique_operator = self.noncontextual_basis()
+        # Reconstruct the noncontextual Hamiltonian into its G and C(r) components
         self.G_indices, self.r_indices, self.pauli_mult_signs = self.noncontextual_reconstruction()
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
         self.solve_noncontextual(ref_state)
         # Determine the unitary partitioning rotations and the single Pauli operator that is rotated onto
-        self.clique_operator = AntiCommutingOp(
-            self.clique_operator.symp_matrix, 
-            self.clique_operator.coeff_vec
-        )
         self.SeqRots, self.C0 = self.clique_operator.gen_seq_rotations(
             s_index=None, #np.where(~np.any(self.clique_operator.X_block, axis=1))[0][0]
         )
@@ -70,8 +66,8 @@ class CS_VQE(S3_projection):
         """ Update the +/-1 eigenvalue assigned to the input stabilizer
         according to the noncontextual ground state configuration
         """
-        reconstruction, successful_reconstruction = stabilizers.basis_reconstruction(self.symmetry_generators)
-        if reconstruction.shape[0] != len(successful_reconstruction):
+        reconstruction, successfully_reconstructed = stabilizers.basis_reconstruction(self.symmetry_generators)
+        if reconstruction.shape[0] != len(successfully_reconstructed):
             raise ValueError('Basis not sufficient to reconstruct symmetry operators')
         stabilizers.coeff_vec = (-1) ** np.count_nonzero(
             np.bitwise_and(
@@ -118,11 +114,11 @@ class CS_VQE(S3_projection):
         """
         self.decomposed = {}
         # identify a basis of universally commuting operators
-        self.symmetry_generators = find_symmetry_basis(self.noncontextual_operator)
+        symmetry_generators = find_symmetry_basis(self.noncontextual_operator)
         # try to reconstruct the noncontextual operator in this basis
-        reconstructed_indices, succesfully_reconstructed = self.noncontextual_operator.basis_reconstruction(self.symmetry_generators)
         # not all terms can be decomposed in this basis, so check which can
-                # extract the universally commuting noncontextual terms
+        reconstructed_indices, succesfully_reconstructed = self.noncontextual_operator.basis_reconstruction(symmetry_generators)
+        # extract the universally commuting noncontextual terms (i.e. those which may be constructed from symmetry generators)
         universal_operator = PauliwordOp(self.noncontextual_operator.symp_matrix[succesfully_reconstructed],
                                          self.noncontextual_operator.coeff_vec[succesfully_reconstructed])
         self.decomposed['symmetry'] = universal_operator
@@ -137,16 +133,17 @@ class CS_VQE(S3_projection):
             for i in np.unique(clique_inverse_map):
                 # mask each clique and select a class represetative for its contribution in the noncontextual basis
                 Ci_indices = np.where(clique_inverse_map==i)[0]
-                Ci_symp,Ci_coef = clique_union.symp_matrix[Ci_indices],clique_union.coeff_vec[Ci_indices]
-                Ci_operator = PauliwordOp(Ci_symp, Ci_coef)
+                Ci_symp,Ci_coeff = clique_union.symp_matrix[Ci_indices],clique_union.coeff_vec[Ci_indices]
+                Ci_operator = PauliwordOp(Ci_symp, Ci_coeff)
                 self.decomposed[f'clique_{i}'] = Ci_operator
                 # choose cliques representative that maximises basis_score (summed coefficients of commuting terms)
-                rep_scores = [(Ci_operator[i], self.basis_score(Ci_operator[i])) for i in range(len(Ci_coef))]
+                rep_scores = [(Ci_operator[i], self.basis_score(Ci_operator[i])) for i in range(len(Ci_coeff))]
                 clique_reps.append(sorted(rep_scores, key=lambda x:-x[1])[0][0].symp_matrix)
             clique_reps = np.vstack(clique_reps)
-            self.clique_operator = StabilizerOp(clique_reps, np.ones(clique_reps.shape[0]))
+            self.n_cliques = clique_reps.shape[0]
+            clique_operator = AntiCommutingOp(clique_reps, np.ones(self.n_cliques))
 
-        self.n_cliques = self.clique_operator.n_terms
+        return symmetry_generators, clique_operator
 
     def noncontextual_reconstruction(self):
         """ Reconstruct the noncontextual operator in each independent basis GuCi - one for every clique.
