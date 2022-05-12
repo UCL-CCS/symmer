@@ -224,11 +224,18 @@ class PauliwordOp:
         the corresponding term in the operator.
         """
         dim = operator_basis.n_terms
-        basis_symp_csc = operator_basis.symp_matrix
-        basis_op_stack = np.vstack([basis_symp_csc, self.symp_matrix])
-        op_reconstruction = gf2_gaus_elim(basis_op_stack.T)[:dim,dim:].T
+        basis_symp = operator_basis.symp_matrix
+        basis_op_stack = np.vstack([basis_symp, self.symp_matrix])
+        reduced = gf2_gaus_elim(basis_op_stack.T)
 
-        return op_reconstruction
+        index_successful_reconstruction = np.where(
+            np.einsum('ij->j', reduced[dim:,dim:])==0
+        )[0]
+        #if index_unsuccessful_reconstruction:
+        #    warnings.warn(f'Terms {index_unsuccessful_reconstruction} cannot be reconstructed.')
+        op_reconstruction = reduced[:dim,dim:].T
+
+        return op_reconstruction, index_successful_reconstruction
 
     @cached_property
     def Y_count(self) -> np.array:
