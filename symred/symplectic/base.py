@@ -222,20 +222,23 @@ class PauliwordOp:
         so that the row-reduced identity block is removed. Each row of the
         resulting matrix will index the basis elements required to reconstruct
         the corresponding term in the operator.
+
+        Nonzero entries ocurring below the resulting identity block cannot be reconstructed
+        in the supplied basis - index_successfully_reconstructed indicates those which succeeded
         """
         dim = operator_basis.n_terms
         basis_symp = operator_basis.symp_matrix
         basis_op_stack = np.vstack([basis_symp, self.symp_matrix])
         reduced = gf2_gaus_elim(basis_op_stack.T)
 
-        index_successful_reconstruction = np.where(
+        index_successfully_reconstructed = np.where(
             np.einsum('ij->j', reduced[dim:,dim:])==0
         )[0]
         #if index_unsuccessful_reconstruction:
         #    warnings.warn(f'Terms {index_unsuccessful_reconstruction} cannot be reconstructed.')
         op_reconstruction = reduced[:dim,dim:].T
 
-        return op_reconstruction, index_successful_reconstruction
+        return op_reconstruction, index_successfully_reconstructed
 
     @cached_property
     def Y_count(self) -> np.array:
@@ -248,9 +251,8 @@ class PauliwordOp:
         Returns:
             numpy array of Y counts over terms of PauliwordOp
         """
-        # Y_coords = self.X_block + self.Z_block == 2
         Y_coords = np.bitwise_and(self.X_block, self.Z_block)
-        return np.array(Y_coords.sum(axis=1))
+        return np.einsum('ij->i', Y_coords)
 
     def _multiply_single_Pword_phaseless(self,
             Pword:"PauliwordOp"
@@ -285,9 +287,9 @@ class PauliwordOp:
 
         # the full phase modification
         phase_mod = sign_change * sigma_tau_compensation * tau_sigma_compensation
-        new_coeff_vec = phase_mod * self.coeff_vec * Pword.coeff_vec
+        phaseless_prod_Pword.coeff_vec = phase_mod * self.coeff_vec * Pword.coeff_vec
 
-        return PauliwordOp(phaseless_prod_Pword.symp_matrix, new_coeff_vec)
+        return phaseless_prod_Pword
 
     def cleanup(self) -> "PauliwordOp":
         """ Remove duplicated rows of symplectic matrix terms, whilst summing
@@ -314,8 +316,10 @@ class PauliwordOp:
         """
         clean_operator = self.cleanup()
         mask_nonzero = np.where(abs(clean_operator.coeff_vec)>zero_threshold)
-        return PauliwordOp(clean_operator.symp_matrix[mask_nonzero], 
-                            clean_operator.coeff_vec[mask_nonzero])
+        return PauliwordOp(
+            clean_operator.symp_matrix[mask_nonzero], 
+            clean_operator.coeff_vec[mask_nonzero]
+        )
 
     def __eq__(self, Pword: "PauliwordOp") -> bool:
         """ In theory should use logical XNOR to check symplectic matrix match, however
@@ -335,25 +339,34 @@ class PauliwordOp:
             )
 
     def __add__(self, 
-            Pword: "PauliwordOp"
+            PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
         """ Add to this PauliwordOp another PauliwordOp by stacking the
         respective symplectic matrices and cleaning any resulting duplicates
         """
-        assert (self.n_qubits == Pword.n_qubits), 'Pauliwords defined for different number of qubits'
-        P_symp_mat_new = np.vstack((self.symp_matrix, Pword.symp_matrix))
-        P_new_coeffs = np.hstack((self.coeff_vec, Pword.coeff_vec)) 
+        assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
+        P_symp_mat_new = np.vstack((self.symp_matrix, PwordOp.symp_matrix))
+        P_new_coeffs = np.hstack((self.coeff_vec, PwordOp.coeff_vec)) 
 
         # cleanup run to remove duplicate rows (Pauliwords)
         return PauliwordOp(P_symp_mat_new, P_new_coeffs).cleanup()
 
+    def __radd__(self,
+        add_obj: Union[int, "PauliwordOp"]) -> "PauliwordOp":
+        """ Allows use of sum() over a list of PauliwordOps
+        """
+        if add_obj == 0:
+            return self
+        else:
+            return self + add_obj
+
     def __sub__(self,
-            Pword: "PauliwordOp"
+            PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
         """ Subtract from this PauliwordOp another PauliwordOp 
         by negating the coefficients and summing
         """     
-        op_copy = Pword.copy()
+        op_copy = PwordOp.copy()
         op_copy.coeff_vec*=-1
         
         return self+op_copy
@@ -368,25 +381,24 @@ class PauliwordOp:
         """
         if isinstance(mul_obj, QuantumState):
             assert(mul_obj.vec_type == 'ket'), 'cannot multiply a bra from the left'
-            Pword = mul_obj.state_op
+            PwordOp = mul_obj.state_op
         else:
-            Pword = mul_obj
-        assert (self.n_qubits == Pword.n_qubits), 'Pauliwords defined for different number of qubits'
-        P_updated_list =[]
-        for Pvec_single,coeff_single in zip(Pword.symp_matrix,Pword.coeff_vec):
-            Pword_temp = PauliwordOp(Pvec_single, [coeff_single])
-            P_new = self._multiply_single_Pword(Pword_temp)
-            P_updated_list.append(P_new)
+            PwordOp = mul_obj
+        assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
+        list_of_multiplications = []
+        for term in PwordOp:
+            self_X_term = self._multiply_single_Pword(term)
+            list_of_multiplications.append(self_X_term)
 
-        P_final = reduce(lambda x,y: x+y, P_updated_list)
+        self_X_PwordOp = reduce(lambda x,y: x+y, list_of_multiplications)
 
         if isinstance(mul_obj, QuantumState):
-            coeff_vector = P_final.coeff_vec*(1j**P_final.Y_count)
+            coeff_vec = self_X_PwordOp.coeff_vec*(1j**self_X_PwordOp.Y_count)
             # need to run a separate cleanup since identities are all mapped to Z 
             # i.e. ZZZZ==IIII in QuantumState
-            return QuantumState(P_final.X_block, coeff_vector).cleanup()
+            return QuantumState(self_X_PwordOp.X_block, coeff_vec).cleanup()
         else:
-            return P_final
+            return self_X_PwordOp
 
     def __getitem__(self, key: Union[slice, int]) -> "PauliwordOp":
         """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
@@ -425,7 +437,7 @@ class PauliwordOp:
         return PauliwordOp(self.symp_matrix, self.coeff_vec*const)
 
     def commutes_termwise(self, 
-            Pword: "PauliwordOp"
+            PwordOp: "PauliwordOp"
         ) -> np.array:
         """ Outputs an array in which rows correspond with terms of the internal PauliwordOp (self)
         and colummns of Pword - True where terms commute and False if anticommutes
@@ -439,26 +451,26 @@ class PauliwordOp:
                 [ True, False,  True]]
                 )
         """
-        assert (self.n_qubits == Pword.n_qubits), 'Pauliwords defined for different number of qubits'
-        Omega_Pword_symp = np.hstack((Pword.Z_block,  Pword.X_block)).T
-        return (self.symp_matrix @ Omega_Pword_symp) % 2 == 0
+        assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
+        Omega_PwordOp_symp = np.hstack((PwordOp.Z_block,  PwordOp.X_block)).T
+        return (self.symp_matrix @ Omega_PwordOp_symp) % 2 == 0
 
-    def commutator(self, Pword: "PauliwordOp") -> "PauliwordOp":
+    def commutator(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
         """ Computes the commutator [A, B] = AB - BA
         """
-        return (self * Pword - Pword * self).cleanup_zeros()
+        return (self * PwordOp - PwordOp * self).cleanup_zeros()
 
-    def anticommutator(self, Pword: "PauliwordOp") -> "PauliwordOp":
+    def anticommutator(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
         """ Computes the anticommutator {A, B} = AB + BA
         """
-        return (self * Pword + Pword * self).cleanup_zeros()
+        return (self * PwordOp + PwordOp * self).cleanup_zeros()
 
     def commutes(self, 
-            Pword: "PauliwordOp"
+            PwordOp: "PauliwordOp"
         ) -> bool:
-        """ Checks if every term of self commutes with every term of Pword
+        """ Checks if every term of self commutes with every term of PwordOp
         """
-        return self.commutator(Pword).n_terms == 0
+        return self.commutator(PwordOp).n_terms == 0
     
     @cached_property
     def adjacency_matrix(self):
@@ -472,20 +484,17 @@ class PauliwordOp:
         Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
         """
         # mask the terms that do not commute universally amongst the operator
-        mask_non_universal = np.where(np.any(~self.adjacency_matrix, axis=1))[0]
+        mask_non_universal = np.where(~np.all(self.adjacency_matrix, axis=1))[0]
         # look only at the unique rows in the masked adjacency matrix -
         # identical rows correspond with operators of the same clique
         unique_commutation_character = np.unique(
-            np.array(
-                self.adjacency_matrix[mask_non_universal,:][:,mask_non_universal], 
-                dtype=int
-                ), 
+            self.adjacency_matrix[mask_non_universal,:][:,mask_non_universal],
             axis=0
         )
         # if the unique commutation characteristics are disjoint, i.e. no overlapping ones 
         # between rows, the operator is noncontextual - hence we sum over rows and check
         # the resulting vector consists of all ones.
-        return np.all(np.einsum('ij->j', unique_commutation_character)==1)
+        return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 
@@ -513,14 +522,9 @@ class PauliwordOp:
             Pword_copy = Pword
 
         commute_vec = self.commutes_termwise(Pword_copy).flatten()
-        commute_symp = self.symp_matrix[commute_vec]
-        commute_coeff = self.coeff_vec[commute_vec]
-        # ~commute_vec == not commutes, this indexes the anticommuting terms
-        anticommute_symp = self.symp_matrix[~commute_vec]
-        anticommute_coeff = self.coeff_vec[~commute_vec]
-
-        commute_self = PauliwordOp(commute_symp, commute_coeff)
-        anticom_self = PauliwordOp(anticommute_symp, anticommute_coeff)
+        # note ~commute_vec == not commutes, this indexes the anticommuting terms
+        commute_self = PauliwordOp(self.symp_matrix[commute_vec], self.coeff_vec[commute_vec])
+        anticom_self = PauliwordOp(self.symp_matrix[~commute_vec], self.coeff_vec[~commute_vec])
 
         if angle is None:
             # assumes pi/2 rotation so Clifford
