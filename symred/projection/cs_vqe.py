@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 from functools import reduce
 from scipy.optimize import shgo, differential_evolution
+from symred.symplectic.base import symplectic_to_string
 from symred.symplectic.stabilizerop import find_symmetry_basis
 from symred.utils import unit_n_sphere_cartesian_coords, gf2_gaus_elim
 from symred.symplectic import PauliwordOp, StabilizerOp
@@ -238,7 +239,7 @@ class CS_VQE(S3_projection):
             )
         
     def project_onto_subspace(self,
-            stabilizers: List[PauliwordOp],
+            stabilizers: StabilizerOp,
             enforce_clique_operator=False,
             aux_operator: PauliwordOp = None
         ) -> PauliwordOp:
@@ -262,7 +263,8 @@ class CS_VQE(S3_projection):
         )
         # raise a warning if any stabilizers are discarded due to anticommutation with a clique
         if len(valid_stab_indices) < stabilizers.n_terms:
-            removed = list((stabilizers-fix_stabilizers).cleanup_zeros().to_dictionary.keys())
+            invalid_stab_indices = np.setdiff1d(np.arange(stabilizers.n_terms), valid_stab_indices).tolist()
+            removed = [symplectic_to_string(stabilizers[i].symp_matrix[0]) for i in invalid_stab_indices]
             warnings.warn(
                 'Specified a clique element in the stabilizer set!\n' +
                 f'The term(s) {removed} were discarded, but note that the number of ' +
