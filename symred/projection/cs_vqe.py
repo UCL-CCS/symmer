@@ -253,7 +253,7 @@ class CS_VQE(S3_projection):
         
         # only allow stabilizers that commute with the cliques, else behaviour is unpredictable
         valid_stab_indices = np.where(
-            ~np.any(~stabilizers.commutes_termwise(self.clique_operator), axis=1))[0]
+            np.all(stabilizers.commutes_termwise(self.clique_operator), axis=1))[0]
         # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
         fix_stabilizers = StabilizerOp(
             stabilizers.symp_matrix[valid_stab_indices],
