@@ -1,7 +1,7 @@
 from symred.symplectic import PauliwordOp
 from symred.utils import QubitOperator_to_dict
 from symred.chem import FermionicHamilt, FermioniCC, PySCFDriver
-from openfermion import get_fermion_operator, jordan_wigner
+from openfermion import get_fermion_operator, jordan_wigner, FermionOperator
 from typing import Tuple, List
 
 def list_to_xyz(geometry: List[Tuple[str, Tuple[float, float, float]]]) -> str:
@@ -45,6 +45,7 @@ class MoleculeBuilder:
         self.T_fermion.build_operator()
 
         self.n_qubits = self.H_fermion.n_qubits
+        self.hf_array = self.H_fermion.hf_comp_basis_state
         if self.print_info:
             print()
             print('Number of qubits:', self.n_qubits)
@@ -60,6 +61,7 @@ class MoleculeBuilder:
         self.H_q = PauliwordOp(QubitOperator_to_dict(self.H_jw, self.n_qubits))
         self.T_q = PauliwordOp(QubitOperator_to_dict(self.T_jw, self.n_qubits))
         self.T_q.coeff_vec = self.T_q.coeff_vec.imag
+        self.SOR_q = self.second_order_response()
 
     def calculate(self,
         run_mp2  = True, 
@@ -104,4 +106,43 @@ class MoleculeBuilder:
             print(f'CCSD energy: {self.ccsd_energy}')
             print(f'FCI energy:  {self.fci_energy}')
             print()
+
+    def sor_data(self):
+        """ Calculate the w(i) function 
+        as in https://arxiv.org/pdf/1406.4920.pdf
+        """
+        w = {i:0 for i in range(self.n_qubits)}
+        for f_op,coeff in self.H.terms.items():
+            if len(f_op)==2:
+                (p,p_ex),(q,q_ex) = f_op
+                # self-interaction terms p==q
+                if p==q:
+                    w[p] += coeff
+            if len(f_op)==4:
+                (p,p_ex),(q,q_ex),(r,r_ex),(s,s_ex) = f_op
+                #want p==r and q==s for hopping
+                if p==r:
+                    if q==s and self.hf_array[q]==1:
+                        w[p]+=coeff
+        return w
+
+    def second_order_response(self):
+        """ Calculate the I_a Hamiltonian term importance metric 
+        as in https://arxiv.org/pdf/1406.4920.pdf
+        """
+        w = self.sor_data()
+        f_out = FermionOperator()
+        for H_a,coeff in self.H.terms.items():
+            if len(H_a)==4:
+                (p,p_ex),(q,q_ex),(r,r_ex),(s,s_ex) = H_a
+                Delta_pqrs = abs(w[p]+w[q]-w[r]-w[s])
+                if Delta_pqrs == 0:
+                    I_a = 1e6
+                else:
+                    I_a = (abs(coeff)**2)/Delta_pqrs
+                
+                f_out += FermionOperator(H_a, I_a)
+        f_out_jw = jordan_wigner(f_out)
+        f_out_q = QubitOperator_to_dict(f_out_jw, self.n_qubits)
+        return PauliwordOp(f_out_q)
  

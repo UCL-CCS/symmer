@@ -39,8 +39,8 @@ class StabilizerOp(PauliwordOp):
         """
         super().__init__(operator, coeff_vec)
         self._check_stab()
+        self.coeff_vec = self.coeff_vec.real.astype(int)
         self._check_independent()
-        self.coeff_vec = self.coeff_vec.astype(int)
         if target_sqp in ['X', 'Z']:
             self.target_sqp = target_sqp
         elif target_sqp == 'Y':
@@ -78,6 +78,10 @@ class StabilizerOp(PauliwordOp):
 
     def __repr__(self):
         return str(self)
+    
+    def __add__(self, Pword: "PauliwordOp") -> "PauliwordOp":
+        summed = super().__add__(Pword)
+        return StabilizerOp(summed.symp_matrix, summed.coeff_vec)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 

@@ -2,7 +2,9 @@ from typing import Tuple, List
 from cached_property import cached_property
 import warnings
 import numpy as np
+from functools import reduce
 from scipy.optimize import shgo, differential_evolution
+from symred.symplectic.stabilizerop import find_symmetry_basis
 from symred.utils import unit_n_sphere_cartesian_coords, gf2_gaus_elim
 from symred.symplectic import PauliwordOp, StabilizerOp
 from symred.projection import S3_projection
@@ -31,17 +33,9 @@ class CS_VQE(S3_projection):
             self.basis_weighting_operator = self.contextual_operator
         # decompose the noncontextual set into a dictionary of its 
         # universally commuting elements and anticommuting cliques
-        self.noncontextual_reconstruction = (
-            self.noncontextual_operator.basis_reconstruction(self.noncontextual_basis)
-        )
-        self.r_indices = self.noncontextual_reconstruction[:,:self.n_cliques]
-        self.G_indices = self.noncontextual_reconstruction[:,self.n_cliques:]
-        self.clique_operator = (self.noncontextual_basis[:self.n_cliques])
-        symmetry_generators_symp = self.noncontextual_basis.symp_matrix[self.n_cliques:]
-        self.symmetry_generators = StabilizerOp(
-            symmetry_generators_symp,
-            np.ones(symmetry_generators_symp.shape[0])
-        )
+        self.noncontextual_basis()
+        # Reconstruct the noncontextual Hamiltonian into its G component
+        self.G_indices, self.r_indices, self.pauli_mult_signs = self.noncontextual_reconstruction()
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
         self.solve_noncontextual(ref_state)
@@ -51,9 +45,9 @@ class CS_VQE(S3_projection):
             self.clique_operator.coeff_vec
         )
         self.SeqRots, self.C0 = self.clique_operator.gen_seq_rotations(
-            s_index=np.where(~np.any(self.clique_operator.X_block, axis=1))[0][0], 
-            check_reduction=True
+            s_index=None, #np.where(~np.any(self.clique_operator.X_block, axis=1))[0][0]
         )
+        self.C0.coeff_vec[0] = int(self.C0.coeff_vec[0].real)
         
     def basis_score(self, 
             basis: StabilizerOp
@@ -67,7 +61,7 @@ class CS_VQE(S3_projection):
         """
         # mask terms of the weighting operator that are preserved under projection over the basis
         mask_preserved = np.where(np.all(self.basis_weighting_operator.commutes_termwise(basis),axis=1))[0]
-        return (
+        return np.square(
             np.linalg.norm(self.basis_weighting_operator.coeff_vec[mask_preserved]) /
             np.linalg.norm(self.basis_weighting_operator.coeff_vec)
             )
@@ -76,9 +70,12 @@ class CS_VQE(S3_projection):
         """ Update the +/-1 eigenvalue assigned to the input stabilizer
         according to the noncontextual ground state configuration
         """
+        reconstruction, successful_reconstruction = stabilizers.basis_reconstruction(self.symmetry_generators)
+        if reconstruction.shape[0] != len(successful_reconstruction):
+            raise ValueError('Basis not sufficient to reconstruct symmetry operators')
         stabilizers.coeff_vec = (-1) ** np.count_nonzero(
             np.bitwise_and(
-                stabilizers.basis_reconstruction(self.symmetry_generators), 
+                reconstruction, 
                 self.symmetry_generators.coeff_vec==-1
             ),
             axis=1
@@ -114,50 +111,84 @@ class CS_VQE(S3_projection):
         else:
             raise ValueError('noncontextual_form not recognised: must be one of diag or legacy.')
             
-        return noncontextual_operator
+        return noncontextual_operator.cleanup_zeros()
 
-    @cached_property
     def noncontextual_basis(self) -> StabilizerOp:
         """ Find an independent basis for the noncontextual symmetry
         """
         self.decomposed = {}
-        # extract the universally commuting noncontextual terms
-        universal_mask = np.where(np.all(self.noncontextual_operator.adjacency_matrix, axis=1))
-        universal_operator = PauliwordOp(self.noncontextual_operator.symp_matrix[universal_mask],
-                                         self.noncontextual_operator.coeff_vec[universal_mask])
+        # identify a basis of universally commuting operators
+        self.symmetry_generators = find_symmetry_basis(self.noncontextual_operator)
+        # try to reconstruct the noncontextual operator in this basis
+        reconstructed_indices, succesfully_reconstructed = self.noncontextual_operator.basis_reconstruction(self.symmetry_generators)
+        # not all terms can be decomposed in this basis, so check which can
+                # extract the universally commuting noncontextual terms
+        universal_operator = PauliwordOp(self.noncontextual_operator.symp_matrix[succesfully_reconstructed],
+                                         self.noncontextual_operator.coeff_vec[succesfully_reconstructed])
         self.decomposed['symmetry'] = universal_operator
-        # build the noncontextual basis by performing Gaussian elimination on the symmetry terms:
-        reduced_universal = gf2_gaus_elim(universal_operator.symp_matrix)
-        reduced_universal = reduced_universal[np.where(np.any(reduced_universal, axis=1))]
-        basis = PauliwordOp(reduced_universal, np.ones(reduced_universal.shape[0]))
-       
+        
         # identify the anticommuting cliques
         clique_union = (self.noncontextual_operator - universal_operator).cleanup_zeros()
         if clique_union.n_terms != 0:
             # identify unique rows in the adjacency matrix with inverse mapping 
             # so that terms of the same clique have matching indices
-            clique_characters, inverse = np.unique(clique_union.adjacency_matrix, axis=0, return_inverse=True)
-            mask_cliques = np.stack([np.where(inverse==i)[0] for i in np.unique(inverse)])
-            # mask each clique and select a class represetative for its contribution in the noncontextual basis
+            clique_characters, clique_inverse_map = np.unique(clique_union.adjacency_matrix, axis=0, return_inverse=True)
             clique_reps = []
-            for i, (Ci_symp, Ci_coef) in enumerate(
-                zip(clique_union.symp_matrix[mask_cliques],clique_union.coeff_vec[mask_cliques])
-            ):
+            for i in np.unique(clique_inverse_map):
+                # mask each clique and select a class represetative for its contribution in the noncontextual basis
+                Ci_indices = np.where(clique_inverse_map==i)[0]
+                Ci_symp,Ci_coef = clique_union.symp_matrix[Ci_indices],clique_union.coeff_vec[Ci_indices]
                 Ci_operator = PauliwordOp(Ci_symp, Ci_coef)
                 self.decomposed[f'clique_{i}'] = Ci_operator
-                # choose cliques representative that maximises basis_score
+                # choose cliques representative that maximises basis_score (summed coefficients of commuting terms)
                 rep_scores = [(Ci_operator[i], self.basis_score(Ci_operator[i])) for i in range(len(Ci_coef))]
                 clique_reps.append(sorted(rep_scores, key=lambda x:-x[1])[0][0].symp_matrix)
             clique_reps = np.vstack(clique_reps)
-            basis = basis + PauliwordOp(clique_reps, np.ones(clique_reps.shape[0]))
-            # order so clique terms appear first
-            basis_order = np.lexsort(basis.adjacency_matrix)
-            basis = StabilizerOp(basis.symp_matrix[basis_order],np.ones(basis.n_terms))
+            self.clique_operator = StabilizerOp(clique_reps, np.ones(clique_reps.shape[0]))
 
-        self.n_cliques = np.count_nonzero(np.any(~basis.adjacency_matrix, axis=1))
+        self.n_cliques = self.clique_operator.n_terms
 
-        return basis
-    
+    def noncontextual_reconstruction(self):
+        """ Reconstruct the noncontextual operator in each independent basis GuCi - one for every clique.
+        This mitigates against dependency between the symmetry generators G and the clique representatives Ci
+        """
+        reconstruction_ind_matrix = np.zeros(
+            [self.noncontextual_operator.n_terms, self.symmetry_generators.n_terms + self.n_cliques]
+        )
+        # Cannot simultaneously know eigenvalues of cliques so zero rows with more than one clique
+        # therefore, we decompose the noncontextual terms in the respective independent bases
+        for index, Ci in enumerate(self.clique_operator):
+            clique_column_index = self.symmetry_generators.n_terms+index
+            col_mask_inds = np.append(
+                np.arange(self.symmetry_generators.n_terms), clique_column_index
+            )
+            GuCi_symp = np.vstack([self.symmetry_generators.symp_matrix, Ci.symp_matrix])
+            GuCi = StabilizerOp(GuCi_symp, np.ones(GuCi_symp.shape[0]))
+            reconstructed, row_mask_inds = self.noncontextual_operator.basis_reconstruction(GuCi)
+            row_col_mask = np.ix_(row_mask_inds, col_mask_inds)
+            reconstruction_ind_matrix[row_col_mask] = reconstructed[row_mask_inds]
+            
+        G_part = reconstruction_ind_matrix[:,:self.symmetry_generators.n_terms]
+        r_part = reconstruction_ind_matrix[:,self.symmetry_generators.n_terms:]
+        
+        # individual elements of r_part commute with all of G_part - taking products over G_part with
+        # a single element of r_part will therefore never produce a complex phase, but might result in
+        # a sign slip that must be accounted for in the basis reconstruction TODO: add to basis_reconstruction!
+        pauli_mult_signs = np.ones(self.noncontextual_operator.n_terms)
+        for index, (G, r) in enumerate(zip(G_part, r_part)):
+            G_inds = np.where(G!=0)[0]
+            r_inds = np.where(r!=0)[0]
+            G_component = self.symmetry_generators.symp_matrix[G_inds]
+            r_component = self.clique_operator.symp_matrix[r_inds]
+            all_factors = PauliwordOp(
+                np.vstack([G_component, r_component]), 
+                np.ones(G_component.shape[0]+r_component.shape[0])
+            )
+            if all_factors.n_terms > 0:
+                gen_mult = reduce(lambda x,y:x*y, list(all_factors))
+                pauli_mult_signs[index] = gen_mult.coeff_vec[0]
+        return G_part, r_part, pauli_mult_signs
+
     def noncontextual_objective_function(self, 
             nu: np.array, 
             r: np.array
@@ -167,7 +198,7 @@ class CS_VQE(S3_projection):
         G_prod = (-1)**np.count_nonzero(np.logical_and(self.G_indices==1, nu == -1), axis=1)
         r_part = np.sum(self.r_indices*r, axis=1)
         r_part[np.where(r_part==0)]=1
-        return np.sum(self.noncontextual_operator.coeff_vec*G_prod*r_part).real
+        return np.sum(self.noncontextual_operator.coeff_vec*G_prod*r_part*self.pauli_mult_signs).real
 
     def solve_noncontextual(self, ref_state: np.array = None) -> None:
         """ Minimize the classical objective function, yielding the noncontextual ground state
@@ -226,9 +257,11 @@ class CS_VQE(S3_projection):
         # only allow stabilizers that commute with the cliques, else behaviour is unpredictable
         valid_stab_indices = np.where(
             ~np.any(~stabilizers.commutes_termwise(self.clique_operator), axis=1))[0]
-        fix_stabilizers = PauliwordOp(
+        # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
+        fix_stabilizers = StabilizerOp(
             stabilizers.symp_matrix[valid_stab_indices],
-            stabilizers.coeff_vec[valid_stab_indices]
+            stabilizers.coeff_vec[valid_stab_indices],
+            target_sqp=self.target_sqp
         )
         # raise a warning if any stabilizers are discarded due to anticommutation with a clique
         if len(valid_stab_indices) < stabilizers.n_terms:
@@ -249,12 +282,6 @@ class CS_VQE(S3_projection):
             fix_stabilizers += self.C0
             insert_rotations = self.SeqRots
             
-        # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
-        fix_stabilizers = StabilizerOp(
-            fix_stabilizers.symp_matrix, 
-            np.array(fix_stabilizers.coeff_vec, dtype=int),
-            target_sqp=self.target_sqp
-        )
         # instantiate the parent S3_projection class with the stabilizers we are enforcing
         super().__init__(fix_stabilizers)
 
@@ -328,7 +355,7 @@ class CS_VQE_LW(S3_projection):
         """
         # mask terms of the weighting operator that are preserved under projection over the basis
         mask_preserved = np.where(np.all(self.basis_weighting_operator.commutes_termwise(basis),axis=1))[0]
-        return (
+        return np.square(
             np.linalg.norm(self.basis_weighting_operator.coeff_vec[mask_preserved]) /
             np.linalg.norm(self.basis_weighting_operator.coeff_vec)
             )
