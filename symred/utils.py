@@ -5,6 +5,16 @@ from qiskit import QuantumCircuit
 import pyzx as zx
 import openfermion as of
 
+def random_symplectic_matrix(n_qubits,n_terms, diagonal=False):
+    """ Generates a random binary matrix of dimension (n_terms) x (2*n_qubits)
+    Specifying diagonal=True will set the left hand side (X_block) to all zeros
+    """
+    if diagonal:
+        Z_block = np.random.randint(0,2,(n_terms, n_qubits))
+        return np.hstack([np.zeros_like(Z_block), Z_block])
+    else:
+        return np.random.randint(0,2,(n_terms, 2*n_qubits)) 
+
 def norm(vector: np.array) -> complex:
     """
     Returns:
