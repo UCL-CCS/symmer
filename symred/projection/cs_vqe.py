@@ -41,10 +41,9 @@ class CS_VQE(S3_projection):
         # representative operator C(r) and symmetry generators G with the optimal configuration
         self.solve_noncontextual(ref_state)
         # Determine the unitary partitioning rotations and the single Pauli operator that is rotated onto
-        self.SeqRots, self.C0 = self.clique_operator.gen_seq_rotations(
-            s_index=None, #np.where(~np.any(self.clique_operator.X_block, axis=1))[0][0]
-        )
-        self.C0.coeff_vec[0] = int(self.C0.coeff_vec[0].real)
+        if self.n_cliques > 0:
+            self.unitary_partitioning_rotations, self.C0 = self.clique_operator.gen_seq_rotations()
+            self.C0.coeff_vec[0] = int(self.C0.coeff_vec[0].real)
         
     def basis_score(self, 
             basis: StabilizerOp
@@ -143,6 +142,9 @@ class CS_VQE(S3_projection):
             clique_reps = np.vstack(clique_reps)
             self.n_cliques = clique_reps.shape[0]
             clique_operator = AntiCommutingOp(clique_reps, np.ones(self.n_cliques))
+        else:
+            clique_operator = None
+            self.n_cliques  = 0
 
         return symmetry_generators, clique_operator
 
@@ -150,25 +152,30 @@ class CS_VQE(S3_projection):
         """ Reconstruct the noncontextual operator in each independent basis GuCi - one for every clique.
         This mitigates against dependency between the symmetry generators G and the clique representatives Ci
         """
-        reconstruction_ind_matrix = np.zeros(
-            [self.noncontextual_operator.n_terms, self.symmetry_generators.n_terms + self.n_cliques]
-        )
-        # Cannot simultaneously know eigenvalues of cliques so zero rows with more than one clique
-        # therefore, we decompose the noncontextual terms in the respective independent bases
-        for index, Ci in enumerate(self.clique_operator):
-            clique_column_index = self.symmetry_generators.n_terms+index
-            col_mask_inds = np.append(
-                np.arange(self.symmetry_generators.n_terms), clique_column_index
+        if self.n_cliques > 0:
+            reconstruction_ind_matrix = np.zeros(
+                [self.noncontextual_operator.n_terms, self.symmetry_generators.n_terms + self.n_cliques]
             )
-            GuCi_symp = np.vstack([self.symmetry_generators.symp_matrix, Ci.symp_matrix])
-            GuCi = StabilizerOp(GuCi_symp, np.ones(GuCi_symp.shape[0]))
-            reconstructed, row_mask_inds = self.noncontextual_operator.basis_reconstruction(GuCi)
-            row_col_mask = np.ix_(row_mask_inds, col_mask_inds)
-            reconstruction_ind_matrix[row_col_mask] = reconstructed[row_mask_inds]
-            
+            # Cannot simultaneously know eigenvalues of cliques so zero rows with more than one clique
+            # therefore, we decompose the noncontextual terms in the respective independent bases
+            for index, Ci in enumerate(self.clique_operator):
+                clique_column_index = self.symmetry_generators.n_terms+index
+                col_mask_inds = np.append(
+                    np.arange(self.symmetry_generators.n_terms), clique_column_index
+                )
+                GuCi_symp = np.vstack([self.symmetry_generators.symp_matrix, Ci.symp_matrix])
+                GuCi = StabilizerOp(GuCi_symp, np.ones(GuCi_symp.shape[0]))
+                reconstructed, row_mask_inds = self.noncontextual_operator.basis_reconstruction(GuCi)
+                row_col_mask = np.ix_(row_mask_inds, col_mask_inds)
+                reconstruction_ind_matrix[row_col_mask] = reconstructed[row_mask_inds]
+        else:
+            (
+                reconstruction_ind_matrix, 
+                succesfully_reconstructed
+            ) = self.noncontextual_operator.basis_reconstruction(self.symmetry_generators)
+        
         G_part = reconstruction_ind_matrix[:,:self.symmetry_generators.n_terms]
         r_part = reconstruction_ind_matrix[:,self.symmetry_generators.n_terms:]
-        
         # individual elements of r_part commute with all of G_part - taking products over G_part with
         # a single element of r_part will therefore never produce a complex phase, but might result in
         # a sign slip that must be accounted for in the basis reconstruction TODO: add to basis_reconstruction!
@@ -177,10 +184,14 @@ class CS_VQE(S3_projection):
             G_inds = np.where(G!=0)[0]
             r_inds = np.where(r!=0)[0]
             G_component = self.symmetry_generators.symp_matrix[G_inds]
-            r_component = self.clique_operator.symp_matrix[r_inds]
+            if self.n_cliques > 0:
+                r_component = self.clique_operator.symp_matrix[r_inds]
+                all_factors_symp_matrix = np.vstack([G_component, r_component])
+            else:
+                all_factors_symp_matrix = G_component
             all_factors = PauliwordOp(
-                np.vstack([G_component, r_component]), 
-                np.ones(G_component.shape[0]+r_component.shape[0])
+                all_factors_symp_matrix,
+                np.ones(all_factors_symp_matrix.shape[0])
             )
             if all_factors.n_terms > 0:
                 gen_mult = reduce(lambda x,y:x*y, list(all_factors))
@@ -252,34 +263,38 @@ class CS_VQE(S3_projection):
         else:
             operator_to_project = self.operator.copy()
         
-        # only allow stabilizers that commute with the cliques, else behaviour is unpredictable
-        valid_stab_indices = np.where(
-            np.all(stabilizers.commutes_termwise(self.clique_operator), axis=1))[0]
+        if self.n_cliques > 0:
+            # only allow stabilizers that commute with the cliques, else behaviour is unpredictable
+            valid_stab_indices = np.where(
+                np.all(stabilizers.commutes_termwise(self.clique_operator), axis=1))[0]
+            # raise a warning if any stabilizers are discarded due to anticommutation with a clique
+            if len(valid_stab_indices) < stabilizers.n_terms:
+                invalid_stab_indices = np.setdiff1d(np.arange(stabilizers.n_terms), valid_stab_indices).tolist()
+                removed = [symplectic_to_string(stabilizers[i].symp_matrix[0]) for i in invalid_stab_indices]
+                warnings.warn(
+                    'Specified a clique element in the stabilizer set!\n' +
+                    f'The term(s) {removed} were discarded, but note that the number of ' +
+                    'qubits in the stabilizer subspace will be greater than expected.'
+                )   
+        else:
+            valid_stab_indices = np.arange(stabilizers.n_terms)
+        
         # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
         fix_stabilizers = StabilizerOp(
             stabilizers.symp_matrix[valid_stab_indices],
             stabilizers.coeff_vec[valid_stab_indices],
             target_sqp=self.target_sqp
         )
-        # raise a warning if any stabilizers are discarded due to anticommutation with a clique
-        if len(valid_stab_indices) < stabilizers.n_terms:
-            invalid_stab_indices = np.setdiff1d(np.arange(stabilizers.n_terms), valid_stab_indices).tolist()
-            removed = [symplectic_to_string(stabilizers[i].symp_matrix[0]) for i in invalid_stab_indices]
-            warnings.warn(
-                'Specified a clique element in the stabilizer set!\n' +
-                f'The term(s) {removed} were discarded, but note that the number of ' +
-                'qubits in the stabilizer subspace will be greater than expected.'
-            )
         # update the eigenvalue assignments to the specified stabilizers 
         # in accordance with the noncontextual ground state
         self.update_eigenvalues(fix_stabilizers)
         
         # if the clique operator is to be enforced, perform unitary partitioning:
         insert_rotations=[]
-        if enforce_clique_operator and self.n_cliques != 0:
+        if enforce_clique_operator and self.n_cliques > 0:
             # if any stabilizers in the list contain more than one term then apply unitary partitioning
             fix_stabilizers += self.C0
-            insert_rotations = self.SeqRots
+            insert_rotations = self.unitary_partitioning_rotations
             
         # instantiate the parent S3_projection class with the stabilizers we are enforcing
         super().__init__(fix_stabilizers)
