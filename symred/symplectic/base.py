@@ -133,8 +133,7 @@ class PauliwordOp:
         since it circumvents various conversions required - this is how the methods defined 
         below function.
         """
-
-        if isinstance(operator, np.ndarray):
+        if isinstance(operator, np.ndarray): 
             if len(operator.shape)==1:
                 operator = operator.reshape([1, len(operator)])
             self.symp_matrix = operator
@@ -162,11 +161,14 @@ class PauliwordOp:
         """
         """
         n_rows = len(operator_list)
-        self.n_qubits = len(operator_list[0])
-
-        self.symp_matrix = np.zeros((n_rows, 2 * self.n_qubits), dtype=int)
-        for row_ind, pauli_str in enumerate(operator_list):
-            self.symp_matrix[row_ind] = string_to_symplectic(pauli_str, self.n_qubits)
+        if operator_list:
+            self.n_qubits = len(operator_list[0])
+            self.symp_matrix = np.zeros((n_rows, 2 * self.n_qubits), dtype=int)
+            for row_ind, pauli_str in enumerate(operator_list):
+                self.symp_matrix[row_ind] = string_to_symplectic(pauli_str, self.n_qubits)
+        else:
+            self.n_qubits = 0
+            self.symp_matrix = np.array([[]], dtype=int)
 
     def __str__(self) -> str:
         """ 
@@ -176,11 +178,14 @@ class PauliwordOp:
         Returns:
             out_string (str): human-readable PauliwordOp string
         """
-        out_string = ''
-        for pauli_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
-            p_string = symplectic_to_string(pauli_vec)
-            out_string += (f'{format(coeff, self.sigfig)} {p_string} +\n')
-        return out_string[:-3]
+        if self.symp_matrix.shape[1]:
+            out_string = ''
+            for pauli_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
+                p_string = symplectic_to_string(pauli_vec)
+                out_string += (f'{format(coeff, self.sigfig)} {p_string} +\n')
+            return out_string[:-3]
+        else: 
+            return f'{format(self.coeff_vec[0], self.sigfig)}'
 
     def __repr__(self):
         return str(self)
@@ -290,10 +295,13 @@ class PauliwordOp:
 
         return phaseless_prod_Pword
 
-    def cleanup(self) -> "PauliwordOp":
+    def _cleanup(self) -> "PauliwordOp":
         """ Remove duplicated rows of symplectic matrix terms, whilst summing
         the corresponding coefficients of the deleted rows in coeff
         """
+        if self.n_qubits == 0:
+            return PauliwordOp([], [np.sum(self.coeff_vec)])
+
         # order lexicographically
         term_ordering = np.lexsort(self.symp_matrix.T)
         sorted_terms = self.symp_matrix[term_ordering]
@@ -308,12 +316,12 @@ class PauliwordOp:
 
         return PauliwordOp(reduced_symp_matrix, reduced_coeff_vec)
 
-    def cleanup_zeros(self, zero_threshold=1e-15):
+    def cleanup(self, zero_threshold=1e-15):
         """ 
         Delete terms with zero coefficient - this is not included in the cleanup method
         as one may wish to allow zero coefficients (e.g. as an Ansatz parameter angle)
         """
-        clean_operator = self.cleanup()
+        clean_operator = self._cleanup()
         mask_nonzero = np.where(abs(clean_operator.coeff_vec)>zero_threshold)
         return PauliwordOp(
             clean_operator.symp_matrix[mask_nonzero], 
@@ -457,12 +465,12 @@ class PauliwordOp:
     def commutator(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
         """ Computes the commutator [A, B] = AB - BA
         """
-        return (self * PwordOp - PwordOp * self).cleanup_zeros()
+        return (self * PwordOp - PwordOp * self).cleanup()
 
     def anticommutator(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
         """ Computes the anticommutator {A, B} = AB + BA
         """
-        return (self * PwordOp + PwordOp * self).cleanup_zeros()
+        return (self * PwordOp + PwordOp * self).cleanup()
 
     def commutes(self, 
             PwordOp: "PauliwordOp"
@@ -481,6 +489,11 @@ class PauliwordOp:
     def is_noncontextual(self):
         """ Returns True if the operator is noncontextual, False if contextual
         Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
+        Constructing the adjacency matrix is by far the most expensive part - very fast once that has been built.
+
+        Note, the legacy utils.contextualQ function CAN be faster than this method when the input operator
+        contains MANY triples that violate transitivity of commutation. However, if this is not the case - for
+        example when the diagonal contribution dominates the operator - this method is significantly faster.
         """
         # mask the terms that do not commute universally amongst the operator
         mask_non_universal = np.where(~np.all(self.adjacency_matrix, axis=1))[0]
@@ -591,6 +604,9 @@ class PauliwordOp:
         Function to get (2**n, 2**n) matrix of operator acting in Hilbert space
 
         """
+        if self.n_qubits == 0:
+            return csr_matrix([self.coeff_vec[0]])
+        
         out_matrix = csr_matrix( ([],([],[])),
                                   shape=(2**self.n_qubits,2**self.n_qubits)
                                   )
@@ -790,7 +806,7 @@ class QuantumState:
     def cleanup(self, zero_threshold=1e-15) -> "QuantumState":
         """ Combines duplicate basis states, summing their coefficients
         """
-        clean_state_op = self.state_op.cleanup_zeros(zero_threshold=zero_threshold)
+        clean_state_op = self.state_op.cleanup(zero_threshold=zero_threshold)
         return QuantumState(
             clean_state_op.X_block, 
             clean_state_op.coeff_vec, 
