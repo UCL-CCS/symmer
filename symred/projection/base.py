@@ -67,9 +67,10 @@ class S3_projection:
 
         # there may be duplicate rows in op_projected - these are identified and
         # the corresponding coefficients collected in the cleanup method
-        projected_operator = PauliwordOp(projected_symplectic, coeff_sign_flip).cleanup()
-        
-        return projected_operator
+        if projected_symplectic.shape[1]:
+            return PauliwordOp(projected_symplectic, coeff_sign_flip).cleanup()
+        else:
+            return PauliwordOp([], [np.sum(coeff_sign_flip)])
             
     def perform_projection(self,
             operator: PauliwordOp,
@@ -106,3 +107,5 @@ class S3_projection:
         self.rotated_flag = True
         # ...and finally perform the stabilizer subspace projection
         return self._perform_projection(operator=op_rotated)
+
+#class S3_projection_maj:
