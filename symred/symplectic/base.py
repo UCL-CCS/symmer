@@ -627,12 +627,42 @@ class PauliwordOp:
         else:
             return False
 
-def random_PauliwordOp(n_qubits, n_terms, diagonal=False):
-    """ Generate a random PauliwordOp with normally distributed complex coefficients
+
+def random_PauliwordOp(n_qubits, n_terms, diagonal=False, complex_coeffs=True):
+    """ Generate a random PauliwordOp with normally distributed coefficients
     """
     symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal)
-    coeff_vec = np.random.randn(n_terms) + 1j*np.random.randn(n_terms)
+    coeff_vec = np.random.randn(n_terms)
+    if complex_coeffs:
+        coeff_vec += 1j * np.random.randn(n_terms)
+
     return PauliwordOp(symp_matrix, coeff_vec)
+
+
+def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True):
+    """ Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
+        with normally distributed coefficients
+    """
+    base   = 'X' * n_qubits
+    I_term = 'I' * n_qubits
+
+    P_list = [base]
+    for i in range(n_qubits):
+        # Z_term
+        P_list.append(base[:i] + 'Z' + I_term[i+1:])
+        # Y_term
+        P_list.append(base[:i] + 'Y' + I_term[i+1:])
+
+    coeff_vec = np.random.randn(len(P_list))
+    if complex_coeff:
+        coeff_vec+= 1j*np.random.randn((len(P_list))
+
+    P_anticomm = PauliwordOp(dict(zip(P_list, coeff_vec)))
+    anti_comm_check = P_anticomm.adjacency_matrix.astype(int) - np.eye(P_anticomm.adjacency_matrix.shape[0])
+    assert (np.einsum('ij->', anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
+
+    return P_anticomm
+
 
 class QuantumState:
     """ Class to represent quantum states.
