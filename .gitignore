@@ -663,6 +663,7 @@ notebooks/molecule_geometries/molecule_data.json
 notebooks/data/*
 !notebooks/data/score_data.json
 !notebooks/data/score_data_2.json
+!notebooks/data/score_vs_energy.json
 !notebooks/data/molecule_data.json
 notebooks/plots/*
 notebooks/sandbox.ipynb
