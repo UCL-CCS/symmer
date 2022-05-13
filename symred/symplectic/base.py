@@ -481,6 +481,11 @@ class PauliwordOp:
     def is_noncontextual(self):
         """ Returns True if the operator is noncontextual, False if contextual
         Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
+        Constructing the adjacency matrix is by far the most expensive part - very fast once that has been built.
+
+        Note, the legacy utils.contextualQ function CAN be faster than this method when the input operator
+        contains MANY triples that violate transitivity of commutation. However, if this is not the case - for
+        example when the diagonal contribution dominates the operator - this method is significantly faster.
         """
         # mask the terms that do not commute universally amongst the operator
         mask_non_universal = np.where(~np.all(self.adjacency_matrix, axis=1))[0]
