@@ -27,7 +27,7 @@ class CS_VQE(S3_projection):
         self.ref_state = ref_state
         self.target_sqp = target_sqp
         self.noncontextual_form = noncontextual_form
-        self.contextual_operator = (operator-self.noncontextual_operator).cleanup()
+        self.contextual_operator = operator-self.noncontextual_operator
         if basis_weighting_operator is not None:
             self.basis_weighting_operator = basis_weighting_operator
         else:
@@ -107,7 +107,7 @@ class CS_VQE(S3_projection):
         else:
             raise ValueError('noncontextual_form not recognised: must be one of diag or legacy.')
             
-        return noncontextual_operator.cleanup()
+        return noncontextual_operator
 
     def noncontextual_basis(self) -> StabilizerOp:
         """ Find an independent basis for the noncontextual symmetry
@@ -124,7 +124,7 @@ class CS_VQE(S3_projection):
         self.decomposed['symmetry'] = universal_operator
         
         # identify the anticommuting cliques
-        clique_union = (self.noncontextual_operator - universal_operator).cleanup()
+        clique_union = self.noncontextual_operator - universal_operator
         if clique_union.n_terms != 0:
             # identify unique rows in the adjacency matrix with inverse mapping 
             # so that terms of the same clique have matching indices
@@ -324,7 +324,7 @@ class CS_VQE_LW(S3_projection):
                 self.operator.symp_matrix[mask_diag],
                 self.operator.coeff_vec[mask_diag]
             )
-            contextual_operator = (operator-noncontextual_operator).cleanup()
+            contextual_operator = operator-noncontextual_operator
             self.basis_weighting_operator = contextual_operator
         else:
             self.basis_weighting_operator = basis_weighting_operator
