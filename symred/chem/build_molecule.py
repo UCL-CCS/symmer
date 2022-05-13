@@ -20,7 +20,7 @@ class MoleculeBuilder:
         geometry, 
         charge=1, 
         basis='STO-3G', 
-        spin=1,
+        spin=0,
         run_fci = True,
         print_info = True) -> None:
         """
@@ -75,6 +75,7 @@ class MoleculeBuilder:
         self.pyscf_obj = PySCFDriver(self.geometry,
                                 self.basis,
                                 charge=self.charge,
+                                spin=self.spin,
                                 run_mp2=run_mp2,
                                 run_cisd=run_cisd,
                                 run_ccsd=run_ccsd,

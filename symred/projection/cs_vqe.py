@@ -27,7 +27,7 @@ class CS_VQE(S3_projection):
         self.ref_state = ref_state
         self.target_sqp = target_sqp
         self.noncontextual_form = noncontextual_form
-        self.contextual_operator = (operator-self.noncontextual_operator).cleanup_zeros()
+        self.contextual_operator = (operator-self.noncontextual_operator).cleanup()
         if basis_weighting_operator is not None:
             self.basis_weighting_operator = basis_weighting_operator
         else:
@@ -43,7 +43,7 @@ class CS_VQE(S3_projection):
         # Determine the unitary partitioning rotations and the single Pauli operator that is rotated onto
         if self.n_cliques > 0:
             self.unitary_partitioning_rotations, self.C0 = self.clique_operator.gen_seq_rotations()
-            self.C0.coeff_vec[0] = int(self.C0.coeff_vec[0].real)
+            self.C0.coeff_vec[0] = round(self.C0.coeff_vec[0].real)
         
     def basis_score(self, 
             basis: StabilizerOp
@@ -107,7 +107,7 @@ class CS_VQE(S3_projection):
         else:
             raise ValueError('noncontextual_form not recognised: must be one of diag or legacy.')
             
-        return noncontextual_operator.cleanup_zeros()
+        return noncontextual_operator.cleanup()
 
     def noncontextual_basis(self) -> StabilizerOp:
         """ Find an independent basis for the noncontextual symmetry
@@ -124,7 +124,7 @@ class CS_VQE(S3_projection):
         self.decomposed['symmetry'] = universal_operator
         
         # identify the anticommuting cliques
-        clique_union = (self.noncontextual_operator - universal_operator).cleanup_zeros()
+        clique_union = (self.noncontextual_operator - universal_operator).cleanup()
         if clique_union.n_terms != 0:
             # identify unique rows in the adjacency matrix with inverse mapping 
             # so that terms of the same clique have matching indices
@@ -195,7 +195,7 @@ class CS_VQE(S3_projection):
             )
             if all_factors.n_terms > 0:
                 gen_mult = reduce(lambda x,y:x*y, list(all_factors))
-                pauli_mult_signs[index] = gen_mult.coeff_vec[0]
+                pauli_mult_signs[index] = int(gen_mult.coeff_vec.real[0])
         return G_part, r_part, pauli_mult_signs
 
     def noncontextual_objective_function(self, 
@@ -324,7 +324,7 @@ class CS_VQE_LW(S3_projection):
                 self.operator.symp_matrix[mask_diag],
                 self.operator.coeff_vec[mask_diag]
             )
-            contextual_operator = (operator-noncontextual_operator).cleanup_zeros()
+            contextual_operator = (operator-noncontextual_operator).cleanup()
             self.basis_weighting_operator = contextual_operator
         else:
             self.basis_weighting_operator = basis_weighting_operator

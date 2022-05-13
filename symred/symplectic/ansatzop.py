@@ -18,6 +18,9 @@ class AnsatzOp(PauliwordOp):
         super().__init__(operator, coeff_vec)
         assert(np.all(self.coeff_vec.imag==0)), 'Coefficients must have zero imaginary component'
         self.coeff_vec = self.coeff_vec.real
+    
+    def cleanup(self):
+        return super()._cleanup()
 
     def exponentiate(self):
         """
