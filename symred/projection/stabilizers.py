@@ -142,7 +142,7 @@ def stabilizer_walk(
         stab_score = cs_vqe_object.basis_score(S)
         return -stab_score
     
-    opt_out = differential_evolution(objective, x0=[.5,.5], bounds=[(0,1),(0,1)])
+    opt_out = differential_evolution(objective, bounds=[(0,1),(0,1)])
     stab_score =-opt_out['fun']
     bias_param =opt_out['x']
     S = get_stabilizers(bias_param)

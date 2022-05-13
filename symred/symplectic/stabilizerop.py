@@ -39,8 +39,8 @@ class StabilizerOp(PauliwordOp):
         """
         super().__init__(operator, coeff_vec)
         self._check_stab()
+        self.coeff_vec = self.coeff_vec.real.astype(int)
         self._check_independent()
-        self.coeff_vec = self.coeff_vec.astype(int)
         if target_sqp in ['X', 'Z']:
             self.target_sqp = target_sqp
         elif target_sqp == 'Y':
@@ -118,8 +118,14 @@ class StabilizerOp(PauliwordOp):
             - also returns the Pauli rotation so it may be applied in _recursive_rotate_onto_sqp
             """
             pivot_index_X = pivot_index % self.n_qubits # index in the X block
-            base_vector[np.array([pivot_index_X, pivot_index_X+self.n_qubits])]=1
-
+            if base_vector[pivot_index_X] ^ base_vector[pivot_index_X + self.n_qubits]:
+                # for X or Z apply Y rotation
+                base_vector[np.array([pivot_index_X, pivot_index_X+self.n_qubits])]=1
+            elif base_vector[pivot_index_X] & base_vector[pivot_index_X + self.n_qubits]:
+                # for Y apply Z rotations
+                base_vector[pivot_index_X]=0
+            else:
+                raise ValueError('Passed the identity')
             rotations.append((PauliwordOp(np.array(base_vector), [1]), None))
             used_indices.append(pivot_index_X)
             used_indices.append(pivot_index_X + self.n_qubits)
@@ -170,7 +176,7 @@ class StabilizerOp(PauliwordOp):
             sqp_index = np.where(row)[0]
             if ((self.target_sqp == 'Z' and sqp_index< self.n_qubits) or 
                 (self.target_sqp == 'X' and sqp_index>=self.n_qubits)):
-                update_sets(np.zeros(2*self.n_qubits, dtype=int), sqp_index)
+                update_sets(row, sqp_index)
 
         return rotations
 
