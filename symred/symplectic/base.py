@@ -1,15 +1,14 @@
-from multiprocessing.sharedctypes import Value
 import numpy as np
 from copy import deepcopy
-from typing import Dict, List, Tuple, Union
-from functools import reduce
-from cached_property import cached_property
 from itertools import product
+from functools import reduce
+from typing import Dict, List, Tuple, Union
+from cached_property import cached_property
 from scipy.sparse import csr_matrix
+from symred.utils import gf2_gaus_elim, norm, random_symplectic_matrix
+from openfermion import QubitOperator
 import warnings
 warnings.simplefilter('always', UserWarning)
-from symred.utils import gf2_gaus_elim, norm
-from openfermion import QubitOperator
 
 def symplectic_to_string(symp_vec) -> str:
     """
@@ -627,6 +626,13 @@ class PauliwordOp:
             return True
         else:
             return False
+
+def random_PauliwordOp(n_qubits, n_terms, diagonal=False):
+    """ Generate a random PauliwordOp with normally distributed complex coefficients
+    """
+    symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal)
+    coeff_vec = np.random.randn(n_terms) + 1j*np.random.randn(n_terms)
+    return PauliwordOp(symp_matrix, coeff_vec)
 
 class QuantumState:
     """ Class to represent quantum states.
