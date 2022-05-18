@@ -6,7 +6,7 @@ from functools import reduce
 from scipy.optimize import shgo, differential_evolution
 from symred.symplectic.base import symplectic_to_string
 from symred.symplectic.stabilizerop import find_symmetry_basis
-from symred.utils import unit_n_sphere_cartesian_coords, gf2_gaus_elim
+from symred.utils import unit_n_sphere_cartesian_coords, lp_norm
 from symred.symplectic import PauliwordOp, StabilizerOp
 from symred.projection import S3_projection
 from symred.unitary_partitioning import AntiCommutingOp
@@ -46,7 +46,8 @@ class CS_VQE(S3_projection):
             self.C0.coeff_vec[0] = round(self.C0.coeff_vec[0].real)
         
     def basis_score(self, 
-            basis: StabilizerOp
+            basis: StabilizerOp,
+            p:int=1
         ) -> float:
         """ Evaluate the score of an input basis according 
         to the basis weighting operator, for example:
@@ -54,13 +55,15 @@ class CS_VQE(S3_projection):
             - specify as the SOR Hamiltonian to weight according to second-order response
             - input UCC operator to weight according to coupled-cluster theory <- best performance
             - if None given then weights by Hamiltonian coefficient magnitude
+        
+        p determines which norm is used, i.e. lp --> (\sum_{t} |t|^p)^(1/p)
         """
         # mask terms of the weighting operator that are preserved under projection over the basis
         mask_preserved = np.where(np.all(self.basis_weighting_operator.commutes_termwise(basis),axis=1))[0]
-        return np.square(
-            np.linalg.norm(self.basis_weighting_operator.coeff_vec[mask_preserved]) /
-            np.linalg.norm(self.basis_weighting_operator.coeff_vec)
-            )
+        return (
+            lp_norm(self.basis_weighting_operator.coeff_vec[mask_preserved], p=p) /
+            lp_norm(self.basis_weighting_operator.coeff_vec, p=p)
+        )
     
     def update_eigenvalues(self, stabilizers: StabilizerOp) -> None:
         """ Update the +/-1 eigenvalue assigned to the input stabilizer
