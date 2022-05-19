@@ -15,12 +15,19 @@ def random_symplectic_matrix(n_qubits,n_terms, diagonal=False):
     else:
         return np.random.randint(0,2,(n_terms, 2*n_qubits)) 
 
-def norm(vector: np.array) -> complex:
+def norm(vector: np.array) -> float:
     """
     Returns:
-        norm of input vector
+        l2-norm of input vector
     """
     return np.sqrt(np.dot(vector, vector.conjugate()))
+
+def lp_norm(vector: np.array, p:int=2) -> float:
+    """
+    Returns:
+        lp-norm of vector
+    """
+    return np.power(np.sum(np.power(np.abs(vector), p)), 1/p)
 
 def ZX_calculus_reduction(qc: QuantumCircuit) -> QuantumCircuit:
     """ Simplify the circuit via ZX calculus using PyZX... 
