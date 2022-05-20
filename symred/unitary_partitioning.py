@@ -95,12 +95,12 @@ class AntiCommutingOp(PauliwordOp):
             for X_sk, theta_sk in self.X_sk_rotations:
                 AC_op_rotated = AC_op_rotated._rotate_by_single_Pword(X_sk, theta_sk)
 
-                # remove zeros (WITHOUT RE-ORDERING... don't use cleanup of PauliwordOp)
-                zero_threshold=1e-12
-                mask_nonzero = np.where(abs(AC_op_rotated.coeff_vec) > zero_threshold)
-                AC_op_rotated = PauliwordOp(AC_op_rotated.symp_matrix[mask_nonzero],
-                                            AC_op_rotated.coeff_vec[mask_nonzero])
-                del mask_nonzero
+                # # remove zeros (WITHOUT RE-ORDERING... don't use cleanup of PauliwordOp)
+                # zero_threshold=1e-12
+                # mask_nonzero = np.where(abs(AC_op_rotated.coeff_vec) > zero_threshold)
+                # AC_op_rotated = PauliwordOp(AC_op_rotated.symp_matrix[mask_nonzero],
+                #                             AC_op_rotated.coeff_vec[mask_nonzero])
+                # del mask_nonzero
             assert (AC_op_rotated.n_terms == 1), 'rotations not reducing to a single term'
 
         return self.X_sk_rotations, P_s
@@ -181,7 +181,13 @@ class AntiCommutingOp(PauliwordOp):
             R_LCU (PauliwordOp): PauliwordOp that is a linear combination of unitaries
             P_s (PauliwordOp): single PauliwordOp that has been reduced too.
         """
+
         PauliOp = self.copy()
+
+        if PauliOp.n_terms==1:
+            R_LCU = None
+            return R_LCU, PauliOp
+
 
         # make list of rotations empty!
         self.LCU = []
@@ -215,15 +221,85 @@ class AntiCommutingOp(PauliwordOp):
             PkPs = PauliwordOp(Pk, [dk]) * P_s
             R_LCU += PkPs.multiply_by_constant(sin_term)
 
-        R_LCU = R_LCU.cleanup_zeros()
-
         if check_reduction is True:
-            # reduced_op = (R_LCU * PauliOp * R_LCU.conjugate).cleanup_zeros()
-            # assert(reduced_op.n_terms==1), 'not reducing to a single term'
-            R_AC_set = (R_LCU * PauliOp).cleanup_zeros()
-            R_AC_set_R_dagg = (R_AC_set * R_LCU.conjugate).cleanup_zeros()
-            assert (R_AC_set_R_dagg.n_terms == 1), 'not reducing to a single term'
-            del R_AC_set
-            del R_AC_set_R_dagg
+            # R_AC_set = R_LCU * PauliOp
+            # R_AC_set_R_dagg = R_AC_set * R_LCU.conjugate
+            # assert (R_AC_set_R_dagg.n_terms == 1), 'not reducing to a single term'
+            # del R_AC_set
+            # del R_AC_set_R_dagg
+
+            ### faster to check R_LCU @ P_s @ R_LCU_dag = AC_op (normalized)
+            AC_op_gen = R_LCU.conjugate * P_s * R_LCU
+            assert (AC_op_gen == self), 'rotations NOT performing unitary part LCU correclty'
+            del AC_op_gen
 
         return R_LCU, P_s
+
+
+def apply_LCU_to_operator(op_to_rotate: PauliwordOp,
+                          LCU_operator: PauliwordOp):
+
+    dI = LCU_operator.coeff_vec[0]
+    dI2 = dI**2
+    non_I_terms = LCU_operator[1:]
+    rot_H = op_to_rotate.multiply_by_constant(dI2)  # first terms
+    for j, P_jk in enumerate(non_I_terms):
+        for ci_Pi in op_to_rotate:
+            vi_Pi = P_jk * ci_Pi * P_jk.conjugate
+            rot_H += vi_Pi
+
+            P_kl = P_jk.conjugate
+            Pi_Pkl = (ci_Pi * P_kl).multiply_by_constant(dI)
+            Pjk_Pi = (P_jk * ci_Pi).multiply_by_constant(dI)
+
+            rot_H += (Pi_Pkl + Pjk_Pi)
+
+            for l, P_lk in enumerate(non_I_terms[(j + 1):]):
+                P_jk_Pi_P_kl = P_jk * ci_Pi * P_lk.conjugate
+                P_lk_Pi_P_kj = P_lk * ci_Pi * P_jk.conjugate
+                rot_H += (P_jk_Pi_P_kl + P_lk_Pi_P_kj)
+    return rot_H
+
+
+def apply_LCU_to_operator_only_necessary_ops(op_to_rotate: PauliwordOp,
+                          LCU_operator: PauliwordOp):
+
+    if LCU_operator is not None:
+        dI = LCU_operator.coeff_vec[0]
+        two_dI = 2*dI
+        dI2 = dI**2
+
+        non_I_terms = LCU_operator[1:]
+        commutation_check = op_to_rotate.commutes_termwise(non_I_terms)
+
+        rot_H = op_to_rotate.multiply_by_constant(dI2)  # first terms
+        for j, P_jk in enumerate(non_I_terms):
+            for i, ci_Pi in enumerate(op_to_rotate):
+
+                # vi_Pi = P_jk * ci_Pi * P_jk.conjugate
+                # rot_H += vi_Pi
+                signed_bjk_blk_2 = (-1) ** (not commutation_check[i, j]) * P_jk.coeff_vec[0] * P_jk.coeff_vec[0].conjugate()
+                vi_Pi = ci_Pi.multiply_by_constant(signed_bjk_blk_2)
+                rot_H += vi_Pi
+
+                # P_kl = P_jk.conjugate
+                # Pi_Pkl = (ci_Pi * P_kl).multiply_by_constant(dI)
+                # Pjk_Pi = (P_jk * ci_Pi).multiply_by_constant(dI)
+                # rot_H += (Pi_Pkl + Pjk_Pi)
+                if not commutation_check[i, j]:  # ci_Pi.commutes(P_rot)
+                    ci_dj_PjkPi = P_jk * ci_Pi
+                    rot_H += ci_dj_PjkPi.multiply_by_constant(two_dI)
+
+                for l, P_lk in enumerate(non_I_terms[(j + 1):]):
+                    # P_jk_Pi_P_kl = P_jk * ci_Pi * P_lk.conjugate
+                    # P_lk_Pi_P_kj = P_lk * ci_Pi * P_jk.conjugate
+                    # rot_H += (P_jk_Pi_P_kl + P_lk_Pi_P_kj)
+                    l_ind = l + (j + 1)
+                    if (commutation_check[i, j] and (not commutation_check[i, l_ind])):
+                        Pi_Pjk_Pkl = ci_Pi * P_jk * P_lk.conjugate
+                        rot_H += Pi_Pjk_Pkl.multiply_by_constant(2)
+
+                    elif ((not commutation_check[i, j]) and (commutation_check[i, l_ind])):
+                        Pi_Pkl_Pjk = ci_Pi * P_lk.conjugate * P_jk
+                        rot_H += Pi_Pkl_Pjk.multiply_by_constant(2)
+    return rot_H
