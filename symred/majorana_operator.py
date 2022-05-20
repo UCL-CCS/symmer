@@ -412,7 +412,7 @@ class majorana_rotations():
 
         self.used_indices = None
         self.maj_rotations = None
-        self.rotated_basis = []
+        self.rotated_basis = None
 
     def _delete_reduced_rows(self, maj_op):
         z_term_check = np.logical_and(maj_op.symp_matrix[:, maj_op.even_inds],
@@ -443,6 +443,7 @@ class majorana_rotations():
     def get_rotations(self):
         self.used_indices = []
         self.maj_rotations = []
+        self.rotated_basis = []
 
         maj_basis = self.majorana_basis.cleanup().copy()
 
@@ -454,6 +455,8 @@ class majorana_rotations():
         self.used_indices = set(maj_z_pair_indices)
 
         final_terms = self._recursively_rotate(maj_basis)
+        if final_terms.n_terms!=0:
+            raise ValueError('not fully reduced')
 
         return self.rotated_basis, self.maj_rotations
 
