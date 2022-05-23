@@ -7,6 +7,8 @@ from cached_property import cached_property
 from scipy.sparse import csr_matrix
 from symred.utils import gf2_gaus_elim, norm, random_symplectic_matrix
 from openfermion import QubitOperator
+from qiskit.quantum_info import Pauli
+from qiskit.opflow import PauliOp, PauliSumOp
 import warnings
 warnings.simplefilter('always', UserWarning)
 
@@ -392,18 +394,24 @@ class PauliwordOp:
             PwordOp = mul_obj.state_op
         else:
             PwordOp = mul_obj
+
         assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
+
+        # the individual right-hand Pauli multiplications are appended to a list
         list_of_multiplications = []
         for term in PwordOp:
             self_X_term = self._multiply_single_Pword(term)
             list_of_multiplications.append(self_X_term)
 
-        self_X_PwordOp = reduce(lambda x,y: x+y, list_of_multiplications)
+        # stack all the individual Pauli multiplications for cleanup - faster than intermediate cleanups!
+        symp_stack = np.vstack([mult.symp_matrix for mult in list_of_multiplications])
+        coef_stack = np.hstack([mult.coeff_vec   for mult in list_of_multiplications])
+        self_X_PwordOp = PauliwordOp(symp_stack, coef_stack).cleanup()
 
         if isinstance(mul_obj, QuantumState):
             coeff_vec = self_X_PwordOp.coeff_vec*(1j**self_X_PwordOp.Y_count)
             # need to run a separate cleanup since identities are all mapped to Z 
-            # i.e. ZZZZ==IIII in QuantumState
+            # i.e. IIII==ZZZZ in QuantumState
             return QuantumState(self_X_PwordOp.X_block, coeff_vec).cleanup()
         else:
             return self_X_PwordOp
@@ -586,6 +594,15 @@ class PauliwordOp:
             OF_string = ' '.join([Pi+str(i) for i,Pi in enumerate(P_string) if Pi!='I'])
             OF_list.append(QubitOperator(OF_string, coeff_single))
         return OF_list
+
+    @cached_property
+    def to_PauliSumOp(self) -> PauliSumOp:
+        """ convert to Qiskit Pauli operator representation
+        """
+        pauli_terms = []
+        for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
+            pauli_terms.append(PauliOp(primitive=Pauli(symplectic_to_string(symp_vec)), coeff=coeff))
+        return sum(pauli_terms)
 
     @cached_property
     def to_dictionary(self) -> Dict[str, complex]:
