@@ -278,8 +278,7 @@ class PauliwordOp:
 
         # counts ZX mismatches for sign flip
         assert(Pword.n_terms==1), 'not single Pauliword'
-        num_sign_flips = np.sum(np.bitwise_and(self.X_block, Pword.Z_block),
-                               axis=1)
+        num_sign_flips = np.einsum('ij->i', np.bitwise_and(self.X_block, Pword.Z_block))
         sign_change = (-1) ** num_sign_flips
 
         # mapping from sigma to tau representation
