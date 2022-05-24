@@ -15,7 +15,8 @@ from openfermion import (
 )
 
 
-def convert_openF_fermionic_op_to_maj_op(fermionic_op: FermionOperator) -> "MajoranaOp":
+def convert_openF_fermionic_op_to_maj_op(fermionic_op: FermionOperator,
+                                         phase_factors_included:bool=True,) -> "MajoranaOp":
     """
     Function wraps inbuilt functions in OpenFermion and returns symred form.
 
@@ -43,7 +44,7 @@ def convert_openF_fermionic_op_to_maj_op(fermionic_op: FermionOperator) -> "Majo
         majorana[ind, term_coeff[0]] = 1
         coeffs[ind] = term_coeff[1]
 
-    op_out = MajoranaOp(majorana, coeffs).cleanup()
+    op_out = MajoranaOp(majorana, coeffs, phase_factors_included=phase_factors_included).cleanup()
 
     #     if op_out.to_OF_op() != get_majorana_operator(fermionic_op):
     #         # check using openF == comparison
@@ -135,10 +136,13 @@ class MajoranaOp:
 
         """
         if isinstance(input_term, np.ndarray):
-            if (len(input_term)==0)and (len(self.coeff_vec)==1):
+            if (len(input_term)==0) and (len(self.coeff_vec)==1):
                 self.n_sites = 2
                 self.symp_matrix = np.array([[0,0]], dtype=int)
             else:
+                if len(input_term.shape)==1:
+                    input_term = input_term.reshape([1,-1])
+
                 self.n_sites = input_term.shape[1]
                 assert(self.n_sites%2==0), 'not even moded'
                 self.symp_matrix = input_term.astype(int)
@@ -410,79 +414,80 @@ class majorana_rotations():
         self.maj_rotations = None
         self.rotated_basis = None
 
+    def _delete_reduced_rows(self, maj_op):
+        z_term_check = np.logical_and(maj_op.symp_matrix[:, maj_op.even_inds],
+                                      maj_op.symp_matrix[:, maj_op.odd_inds]).astype(int)
+
+        single_z_rows = np.intersect1d(np.where(np.einsum('ij->i', z_term_check) == 1)[0],
+                                       np.where(np.einsum('ij->i', maj_op.symp_matrix) == 2)[0])
+
+        maj_z_pair_indices = set(np.where(np.einsum('ij->j', maj_op.symp_matrix[single_z_rows]) == 1)[0])
+
+        singles_operator = None
+        if len(single_z_rows) > 0:
+            singles_operator = MajoranaOp(maj_op.symp_matrix[single_z_rows],
+                                          maj_op.coeff_vec[single_z_rows],
+                                          phase_factors_included=True)
+
+        reduced_maj = MajoranaOp(np.delete(maj_op.symp_matrix, single_z_rows, axis=0),
+                                 np.delete(maj_op.coeff_vec, single_z_rows, axis=0)
+                                 , phase_factors_included=True)
+
+        #         if (len(maj_z_pair_indices)%2)!=0:
+        #             print('OP:', maj_op)
+        #             print('Z inds', maj_z_pair_indices)
+        #             raise ValueError('not Z inds')
+
+        return set(maj_z_pair_indices), singles_operator, reduced_maj
+
     def get_rotations(self):
         self.used_indices = []
         self.maj_rotations = []
+        self.rotated_basis = []
 
-        ## remove any single terms
         maj_basis = self.majorana_basis.cleanup().copy()
 
-        z_term_check = np.logical_and(maj_basis.symp_matrix[:, maj_basis.even_inds],
-                                      maj_basis.symp_matrix[:, maj_basis.odd_inds]).astype(int)
+        ## find any alread single terms
+        maj_z_pair_indices, singles_operator, maj_basis = self._delete_reduced_rows(maj_basis)
+        if singles_operator:
+            self.rotated_basis.append(singles_operator)
 
-        single_z_inds = np.where(np.einsum('ij->i', z_term_check) == 1)[0]
-
-        self.used_indices = set(np.union1d(self.used_indices, single_z_inds).astype(int).tolist())
-
-        # append aleady single terms to rotated basis (that keeps tracks of single terms)
-        self.rotated_basis = [MajoranaOp([np.where(sym_vec)[0]], [sym_coeff], phase_factors_included=True) \
-                              for sym_vec, sym_coeff in
-                              zip(maj_basis.symp_matrix[single_z_inds], maj_basis.coeff_vec[single_z_inds])]
-
-        # remove single (Z like) terms then find rotaions
-        maj_basis = MajoranaOp(np.delete(maj_basis.symp_matrix, single_z_inds, axis=0),
-                               np.delete(maj_basis.coeff_vec, single_z_inds, axis=0)
-                               , phase_factors_included=True)
+        self.used_indices = set(maj_z_pair_indices)
 
         final_terms = self._recursively_rotate(maj_basis)
+        if final_terms.n_terms!=0:
+            raise ValueError('not fully reduced')
 
         return self.rotated_basis, self.maj_rotations
 
     def _recursively_rotate(self, maj_basis):
 
-        z_term_check = np.logical_and(maj_basis.symp_matrix[:, maj_basis.even_inds],
-                                      maj_basis.symp_matrix[:, maj_basis.odd_inds]).astype(int)
+        maj_z_pair_indices, singles_operator, maj_basis = self._delete_reduced_rows(maj_basis)
+        self.used_indices.update(maj_z_pair_indices)
 
-        single_z_inds = np.where(np.einsum('ij->i', z_term_check) == 1)[0]
-
-        if len(single_z_inds) == maj_basis.n_terms:
-            # all single qubit pauli Z's
-            # break out of recursion!
+        if maj_basis.n_terms == 0:
+            # no more terms left
             return maj_basis
 
-        # mask out single Z terms
-        maj_basis = MajoranaOp(np.delete(maj_basis.symp_matrix, single_z_inds, axis=0),
-                               np.delete(maj_basis.coeff_vec, single_z_inds, axis=0)
-                               , phase_factors_included=True)
-
-        seen_inds = np.union1d(list(self.used_indices), single_z_inds).astype(int).tolist()
-        self.used_indices.update(seen_inds)
-
-        #### NOW ROTATE ONTO SINGLE TERM!
-        mode_pairs = np.logical_or(maj_basis.symp_matrix[:, maj_basis.even_inds],
-                                   maj_basis.symp_matrix[:, maj_basis.odd_inds]
-                                   ).astype(int)
-
-        # sum along pairs of indices to find how large a given term is!
-        row_sum = np.einsum('ij->i', mode_pairs)
-
-        # sort by least dense majorana operators
-        sort_rows_by_weight = np.argsort(row_sum)
+        # sort by most dense majorana operator (as will have fewest terms)
+        sort_rows_by_weight = np.lexsort(maj_basis.symp_matrix.T)[::-1]
 
         # take first term (which is least dense)
         pivot_row = maj_basis.symp_matrix[sort_rows_by_weight][0]
 
         # get non identity positions (also ignores positions that have been rotated onto!)
-        non_I = np.setdiff1d(np.where(pivot_row)[0], np.array(self.used_indices))
+        inds = np.where(np.logical_or(pivot_row[maj_basis.even_inds], pivot_row[maj_basis.odd_inds]))[0]
+        indice_full = np.hstack((2 * inds, 2 * inds + 1))
+        non_I = np.setdiff1d(indice_full, np.array(self.used_indices))
 
-        # gives positions in whole operator where single mode terms terms occur
+        # gives number of times modes in each position occur
         col_sum = np.einsum('ij->j', maj_basis.symp_matrix)
 
         # pivot_row * col_sum : gives positions where pivot term and where other single mode terms occur
         support = pivot_row * col_sum
-
         # want to take lowest index support (as this will allow unique terms)
         pivot_point = non_I[np.argmin(support[non_I])]
+
         if pivot_point % 2 == 0:
             pivot_point_even = pivot_point
             pivot_point_odd = pivot_point_even + 1  # 2i+1 index!
@@ -492,27 +497,26 @@ class majorana_rotations():
 
         # take term we are rotating to single term
         rot_op = pivot_row.copy()
-        pivot_maj = MajoranaOp([np.where(pivot_row != 0)[0]], [1])
+        pivot_maj = MajoranaOp(pivot_row, [1])
 
         # check if pivot term is Pauli Z term... if so then rotate pivot position to something else!
-        Z_rot = False
         if (pivot_row[pivot_point_even] + pivot_row[pivot_point_odd]) == 2:
             Z_rot = True
             # apply op like Pauli X on pivot position
-            rot_op_inds = np.arange(0, pivot_point_odd)
-        elif rot_op[pivot_point_even] == rot_op[pivot_point_odd] == 0:
-            raise ValueError('pivot error')
+            rot_op_inds = list(range(0, pivot_point_odd))
 
-        if Z_rot:
+            # rotate Z onto different term
             maj_rot_op = MajoranaOp([[], rot_op_inds], [np.cos(np.pi / 4), 1j * np.sin(np.pi / 4)])
-
             rot_basis_out = (maj_rot_op * maj_basis * maj_rot_op.conjugate).cleanup()
             rot_piv = (maj_rot_op * pivot_maj * maj_rot_op.conjugate).cleanup()
-
             self.maj_rotations.append(maj_rot_op)
+
+        elif rot_op[pivot_point_even] == rot_op[pivot_point_odd] == 0:
+            raise ValueError('pivot error (identity term being used)')
         else:
-            rot_basis_out = maj_basis
-            rot_piv = pivot_maj
+            # no rotation needed!
+            rot_basis_out = maj_basis.copy()
+            rot_piv = pivot_maj.copy()
 
         rot_op2 = rot_piv.symp_matrix[0].copy()
         # pivot position is X or Y
@@ -520,48 +524,17 @@ class majorana_rotations():
         rot_op2[pivot_point_even] = (rot_op2[pivot_point_even] + 1) % 2
         rot_op2[pivot_point_odd] = (rot_op2[pivot_point_odd] + 1) % 2
 
-        rot_op2_inds = np.where(rot_op2 != 0)[0]
-        maj_rot_op2 = MajoranaOp([[], rot_op2_inds], [np.cos(np.pi / 4), 1j * np.sin(np.pi / 4)])
+        rot2_sym = np.zeros((2, len(pivot_row)))
+        rot2_sym[1] = rot_op2
+        maj_rot_op2 = MajoranaOp(rot2_sym, [np.cos(np.pi / 4), 1j * np.sin(np.pi / 4)])
 
-        rot_basis_out2 = (maj_rot_op2 * rot_basis_out * maj_rot_op2.conjugate).cleanup()
+        rot_basis_out2 = maj_rot_op2 * rot_basis_out * maj_rot_op2.conjugate  # .cleanup()
 
         self.maj_rotations.append(maj_rot_op2)
 
         rotated_term = (maj_rot_op2 * rot_piv * maj_rot_op2.conjugate).cleanup()
-        self.rotated_basis.append(rotated_term)
 
-        self.used_indices.update([pivot_point_even, pivot_point_odd])
+        self.rotated_basis.append(rotated_term)
 
         return self._recursively_rotate(rot_basis_out2)
 
-
-class QubitHamiltonian(PauliwordOp):
-    """
-    Qubit Hamiltonian made up as a linear combination of Pauliwords
-
-    """
-    def __init__(self,
-            operator: Union[List[str], Dict[str, float], np.array],
-            coeff_list=None):
-        super().__init__(operator, coeff_list)
-
-        self.eig_vals = None
-        self.eig_vecs = None
-    def Get_ground_state(self, n_eig_vals=1):
-        sparse_hamiltonian_mat = self.to_sparse_matrix
-        H_mat_shape = sparse_hamiltonian_mat.shape[0]
-        assert (n_eig_vals<=H_mat_shape), 'cannot have more eigenvalues than dimension of matrix'
-        if H_mat_shape<=64:
-            # dense eigh
-            eig_values, eig_vectors = np.linalg.eigh(sparse_hamiltonian_mat.todense())
-        else:
-            # sparse eigh
-            eig_values, eig_vectors = sp.sparse.linalg.eigsh(sparse_hamiltonian_mat,
-                                                     k=n_eig_vals,
-                                                     # v0=initial_guess,
-                                                     which='SA',
-                                                     maxiter=1e7)
-
-        order = np.argsort(eig_values)
-        self.eig_vals = eig_values[order]
-        self.eig_vecs = eig_vectors[:, order].T
