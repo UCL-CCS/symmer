@@ -1,6 +1,6 @@
 import numpy as np
 from typing import List, Tuple, Union
-from symred.symplectic import PauliwordOp, StabilizerOp
+from symmer.symplectic import PauliwordOp, StabilizerOp
 
 class S3_projection:
     """ Base class for enabling qubit reduction techniques derived from

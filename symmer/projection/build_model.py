@@ -8,9 +8,9 @@ from openfermion.circuits import ( uccsd_singlet_get_packed_amplitudes,
                                    uccsd_convert_amplitude_format)
 from openfermionpyscf import PyscfMolecularData
 from itertools import combinations
-from symred.projection import QubitTapering, CS_VQE
-from symred.symplectic import PauliwordOp, StabilizerOp
-from symred.utils import greedy_dfs, exact_gs_energy, QubitOperator_to_dict
+from symmer.projection import QubitTapering, CS_VQE
+from symmer.symplectic import PauliwordOp, StabilizerOp
+from symmer.utils import greedy_dfs, exact_gs_energy, QubitOperator_to_dict
 
 class build_molecule_for_projection(CS_VQE):
     """ Class for assessing various generator removal ordering heuristics

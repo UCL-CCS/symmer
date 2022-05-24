@@ -2,8 +2,8 @@ import numpy as np
 from copy import deepcopy
 from typing import Union
 from scipy.optimize import differential_evolution
-from symred.symplectic import PauliwordOp, StabilizerOp, find_symmetry_basis
-from symred.projection import QubitTapering, CS_VQE, CS_VQE_LW
+from symmer.symplectic import PauliwordOp, StabilizerOp, find_symmetry_basis
+from symmer.projection import QubitTapering, CS_VQE, CS_VQE_LW
 
 class ObservableBiasing:
     """ Class for re-weighting Hamiltonian terms based on some criteria, such as HOMO-LUMO bias

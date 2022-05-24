@@ -4,12 +4,12 @@ import warnings
 import numpy as np
 from functools import reduce
 from scipy.optimize import shgo, differential_evolution
-from symred.symplectic.base import symplectic_to_string
-from symred.symplectic.stabilizerop import find_symmetry_basis
-from symred.utils import unit_n_sphere_cartesian_coords, lp_norm
-from symred.symplectic import PauliwordOp, StabilizerOp
-from symred.projection import S3_projection
-from symred.unitary_partitioning import AntiCommutingOp
+from symmer.symplectic.base import symplectic_to_string
+from symmer.symplectic.stabilizerop import find_symmetry_basis
+from symmer.utils import unit_n_sphere_cartesian_coords, lp_norm
+from symmer.symplectic import PauliwordOp, StabilizerOp
+from symmer.projection import S3_projection
+from symmer.unitary_partitioning import AntiCommutingOp
 
 class CS_VQE(S3_projection):
     """
@@ -91,22 +91,21 @@ class CS_VQE(S3_projection):
 
         TODO graph-based approach, currently uses legacy implementation
         """
+        # start with all the diagonal terms
+        mask_diag = np.where(~np.any(self.operator.X_block, axis=1))
+        noncontextual_operator = PauliwordOp(
+            self.operator.symp_matrix[mask_diag],
+            self.operator.coeff_vec[mask_diag])
+        
         if self.noncontextual_form == 'diag':
-            # mask diagonal terms of the operator
-            mask_diag = np.where(~np.any(self.operator.X_block, axis=1))
-            noncontextual_operator = PauliwordOp(
-                self.operator.symp_matrix[mask_diag],
-                self.operator.coeff_vec[mask_diag]
-            )
-        elif self.noncontextual_form == 'legacy':
-            # order the operator terms by coefficient magnitude
-            check_ops = self.operator.sort(key='magnitude')
-            # initialise as identity with 0 coefficient
-            I_symp = np.zeros(2*self.operator.n_qubits, dtype=int)
-            noncontextual_operator = PauliwordOp(I_symp, [0])
-            for i in range(check_ops.n_terms):
-                if (noncontextual_operator+check_ops[i]).is_noncontextual:
-                    noncontextual_operator+=check_ops[i]
+            pass
+        elif self.noncontextual_form == 'legacy':            
+            # order the remaining terms by coefficient magnitude
+            off_diag_terms = (self.operator - noncontextual_operator).sort(key='magnitude')
+            # append terms that do not make the noncontextual_operator contextual!
+            for term in off_diag_terms:
+                if (noncontextual_operator+term).is_noncontextual:
+                    noncontextual_operator+=term
         else:
             raise ValueError('noncontextual_form not recognised: must be one of diag or legacy.')
             
