@@ -104,33 +104,35 @@ class StabilizerOp(PauliwordOp):
         This is only possible when the basis is mutually commuting! Else, such rotations do
         not exist (there is a check for this in generate_stabilizer_rotations, that wraps this method).
         """
-        if basis.n_terms == 0:
+        # drop any term(s) that are single-qubit Pauli operators
+        non_sqp = np.where(np.einsum('ij->i', basis.symp_matrix)!=1)
+        basis_non_sqp = StabilizerOp(basis.symp_matrix[non_sqp], basis.coeff_vec[non_sqp])
+        sqp_indices = np.where((basis - basis_non_sqp).symp_matrix)[1]%self.n_qubits
+        self.used_indices += np.append(sqp_indices, sqp_indices+self.n_qubits).tolist()
+    
+        if basis_non_sqp.n_terms == 0:
             # once the basis has been fully rotated onto single-qubit Paulis, return the rotations
             return None
         else:
             # identify the lowest-weight Pauli operator from the commuting basis
-            row_sum = np.einsum('ij->i',basis.symp_matrix)
+            row_sum = np.einsum('ij->i',basis_non_sqp.symp_matrix)
             sort_rows_by_weight = np.argsort(row_sum)
-            pivot_row = basis.symp_matrix[sort_rows_by_weight][0]
+            pivot_row = basis_non_sqp.symp_matrix[sort_rows_by_weight][0]
             non_I = np.setdiff1d(np.where(pivot_row)[0], np.array(self.used_indices))
             # once a Pauli operator has been selected, the least-supported qubit is chosen as pivot
-            col_sum = np.einsum('ij->j',basis.symp_matrix)
+            col_sum = np.einsum('ij->j',basis_non_sqp.symp_matrix)
             support = pivot_row*col_sum
             pivot_point = non_I[np.argmin(support[non_I])]
             # define (in the symplectic form) the single-qubit Pauli we aim to rotate onto
             target = np.zeros(2*self.n_qubits, dtype=int)
             target[pivot_point+self.n_qubits*(-1)**(pivot_point//self.n_qubits)]=1
-            self.used_indices+=[pivot_point%self.n_qubits, pivot_point%self.n_qubits+self.n_qubits]
             # the rotation mapping onto the target Pauli is given by (target + pivot_row)%2...
             # this is identicial to performing a bitwise XOR operation
             pivot_rotation = PauliwordOp(np.bitwise_xor(target, pivot_row), [1])
             self.stabilizer_rotations.append((pivot_rotation, None))
             # perform the rotation on the full basis (the ordering of rotations is important because of this!)
-            rotated_basis = basis._rotate_by_single_Pword(pivot_rotation)
-            # drop the term(s) that are now single-qubit Pauli operators and repeat on the reduced basis
-            non_sqp = np.where(np.einsum('ij->i', rotated_basis.symp_matrix)!=1)
-            basis_non_sqp = StabilizerOp(rotated_basis.symp_matrix[non_sqp], rotated_basis.coeff_vec[non_sqp])
-            return self._recursive_rotations(basis_non_sqp)
+            rotated_basis = basis_non_sqp._rotate_by_single_Pword(pivot_rotation)
+            return self._recursive_rotations(rotated_basis)
         
     def generate_stabilizer_rotations(self):
         """ Find the full list of pi/2 Pauli rotations (Clifford operations) mapping this StabilizerOp 
