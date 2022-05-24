@@ -2,8 +2,8 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
-from symred.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
-from symred.symplectic import PauliwordOp, ObservableGraph, symplectic_to_string
+from symmer.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
+from symmer.symplectic import PauliwordOp, ObservableGraph, symplectic_to_string
 
 def find_symmetry_basis(operator, commuting_override=False):
     """ Find an independent symmetry basis for the input operator,

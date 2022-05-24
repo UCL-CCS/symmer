@@ -4,12 +4,12 @@ import warnings
 import numpy as np
 from functools import reduce
 from scipy.optimize import shgo, differential_evolution
-from symred.symplectic.base import symplectic_to_string
-from symred.symplectic.stabilizerop import find_symmetry_basis
-from symred.utils import unit_n_sphere_cartesian_coords, lp_norm
-from symred.symplectic import PauliwordOp, StabilizerOp
-from symred.projection import S3_projection
-from symred.unitary_partitioning import AntiCommutingOp
+from symmer.symplectic.base import symplectic_to_string
+from symmer.symplectic.stabilizerop import find_symmetry_basis
+from symmer.utils import unit_n_sphere_cartesian_coords, lp_norm
+from symmer.symplectic import PauliwordOp, StabilizerOp
+from symmer.projection import S3_projection
+from symmer.unitary_partitioning import AntiCommutingOp
 
 class CS_VQE(S3_projection):
     """

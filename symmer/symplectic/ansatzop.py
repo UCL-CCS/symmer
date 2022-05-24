@@ -2,8 +2,8 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
-from symred.symplectic import PauliwordOp
-from symred.utils import ZX_calculus_reduction
+from symmer.symplectic import PauliwordOp
+from symmer.utils import ZX_calculus_reduction
 from qiskit.circuit import QuantumCircuit, ParameterVector
 
 class AnsatzOp(PauliwordOp):

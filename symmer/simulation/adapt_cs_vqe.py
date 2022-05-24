@@ -1,5 +1,5 @@
-from symred.projection import CS_VQE
-from symred.symplectic import PauliwordOp, ObservableOp, AnsatzOp
+from symmer.projection import CS_VQE
+from symmer.symplectic import PauliwordOp, ObservableOp, AnsatzOp
 import numpy as np
 from typing import List, Dict, Tuple, Union
 from itertools import combinations
@@ -7,7 +7,7 @@ import operator as op
 from functools import reduce
 import json
 
-from symred.utils import exact_gs_energy
+from symmer.utils import exact_gs_energy
 
 def ncr(n, r):
     r = min(r, n-r)

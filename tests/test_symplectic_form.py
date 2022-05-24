@@ -1,4 +1,4 @@
-from symred.symplectic import symplectic_to_string
+from symmer.symplectic import symplectic_to_string
 import numpy as np
 
 def test_symplectic_to_string():

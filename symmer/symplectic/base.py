@@ -5,7 +5,7 @@ from functools import reduce
 from typing import Dict, List, Tuple, Union
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
-from symred.utils import gf2_gaus_elim, norm, random_symplectic_matrix
+from symmer.utils import gf2_gaus_elim, norm, random_symplectic_matrix
 from openfermion import QubitOperator
 from qiskit.quantum_info import Pauli
 from qiskit.opflow import PauliOp, PauliSumOp

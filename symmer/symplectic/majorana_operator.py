@@ -1,7 +1,7 @@
 import numpy as np
 from copy import deepcopy
 from typing import Dict, List, Tuple, Union
-from symred.symplectic import PauliwordOp
+from symmer.symplectic import PauliwordOp
 from scipy.sparse import csr_matrix
 import scipy as sp
 import warnings

@@ -6,7 +6,7 @@ from scipy.optimize import minimize
 import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from symred.symplectic import PauliwordOp, QuantumState, AnsatzOp, symplectic_to_string
+from symmer.symplectic import PauliwordOp, QuantumState, AnsatzOp, symplectic_to_string
 from qiskit.opflow import CircuitStateFn
 from qiskit import BasicAer, execute
 
