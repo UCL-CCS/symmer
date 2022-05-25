@@ -1,3 +1,4 @@
+from cirq import StabilizerSampler
 import numpy as np
 from copy import deepcopy
 from itertools import product
@@ -818,6 +819,14 @@ class QuantumState:
             clean_state_op.coeff_vec, 
             vec_type=self.vec_type
         )
+
+    def sectors_present(self, symmetry):
+        """ return the sectors present within the QuantumState w.r.t. a StabilizerOp
+        """
+        symmetry_copy = symmetry.copy()
+        symmetry_copy.coeff_vec = np.ones(symmetry.n_terms)
+        sector = np.array([self.conjugate*S*self for S in symmetry_copy])
+        return sector
 
     @cached_property
     def normalize(self):
