@@ -4,14 +4,11 @@ import os
 import numpy as np
 from scipy.special import comb
 from cached_property import cached_property
-from openfermion import InteractionOperator, get_sparse_operator, FermionOperator
+from openfermion import InteractionOperator, get_sparse_operator, FermionOperator, count_qubits
 from openfermion.chem.molecular_data import spinorb_from_spatial
 from openfermion.ops.representations import get_active_space_integrals
 from pyscf import ao2mo, gto, scf, mp, ci, cc, fci
 from pyscf.lib import StreamObject
-from openfermion.chem.pubchem import geometry_from_pubchem
-import py3Dmol
-from pyscf.tools import cubegen
 from pyscf.cc.addons import spatial2spin
 import warnings
 
@@ -38,7 +35,7 @@ class FermionicHamilt:
         self.n_electrons = self.scf_method.mol.nelectron
         self.n_qubits = 2*self.scf_method.mol.nao
 
-    @property
+    @cached_property
     def _one_body_integrals(self) -> np.ndarray:
         """Get the one electron integrals: An N by N array storing h_{pq}
         Note N is number of orbitals"""
@@ -51,10 +48,10 @@ class FermionicHamilt:
         )
         return one_body_integrals
 
-    @property
+    @cached_property
     def _two_body_integrals(self) -> np.ndarray:
         """Get the two electron integrals: An N by N by N by N array storing h_{pqrs}
-        Note N is number of orbitals"""
+        Note N is number of orbitals. Note indexing in physist notation!"""
         c_matrix = self.scf_method.mo_coeff
         n_orbs = c_matrix.shape[1]
 
@@ -67,7 +64,101 @@ class FermionicHamilt:
         two_body_integrals = np.asarray(eri.transpose(0, 2, 3, 1), order="C")
         return two_body_integrals
 
-    def build_operator(self, occupied_indices=None, active_indices=None) -> None:
+    @cached_property
+    def fermionic_fock_operator(self):
+        """
+        (Hartree-Fock Hamiltonian!)
+
+        Szabo pg 351
+        """
+        n_spin_orbs = self.eri_spin_basis.shape[0]
+
+        ib_jb = np.einsum('ibjb->ij', self.eri_spin_basis[:, :self.n_electrons, :, :self.n_electrons])
+        ib_bj = np.einsum('ibbj->ij', self.eri_spin_basis[:, :self.n_electrons, :self.n_electrons, :])
+        V_hf = ib_jb - ib_bj
+
+        FOCK = FermionOperator((), 0)
+        for p in range(n_spin_orbs):
+            for q in range(n_spin_orbs):
+                h_pq = self.core_h_spin_basis[p, q]
+                v_hf_pq = V_hf[p, q]
+
+                coeff = h_pq + v_hf_pq
+                if not np.isclose(coeff,0):
+                    FOCK += FermionOperator(f'{p}^ {q}', coeff)
+
+        return FOCK
+
+    @property
+    def core_h_spin_basis(self):
+        """
+        Convert spatial-MO basis integrals into spin-MO basis!
+        Returns:
+
+        """
+        n_spatial_orbs = self.scf_method.mol.nao
+        n_spin_orbs = 2 * n_spatial_orbs
+        h_core_mo_basis_spin = np.zeros((n_spin_orbs, n_spin_orbs))
+        for p in range(n_spatial_orbs):
+            for q in range(n_spatial_orbs):
+                # populate 1-body terms (must have same spin, otherwise orthogonal)
+                ## pg 82 Szabo
+                h_core_mo_basis_spin[2 * p, 2 * q] = self._one_body_integrals[p, q]  # spin UP
+                h_core_mo_basis_spin[(2 * p + 1), (2 * q + 1)] = self._one_body_integrals[p, q]  # spin DOWN
+        return h_core_mo_basis_spin
+
+    @cached_property
+    def eri_spin_basis(self):
+        n_spatial_orbs = self.scf_method.mol.nao
+        n_spin_orbs = 2 * n_spatial_orbs
+        ERI_mo_basis_spin = np.zeros((n_spin_orbs, n_spin_orbs, n_spin_orbs, n_spin_orbs))
+
+        two_body_integrals = np.einsum('ijkl -> ikjl', ao2mo.restore(1,  ao2mo.kernel(self.scf_method.mol,
+                                                                                      self.scf_method.mo_coeff),
+                                                                     self.scf_method.mo_coeff.shape[1]))
+
+        for p in range(n_spatial_orbs):
+            for q in range(n_spatial_orbs):
+                for r in range(n_spatial_orbs):
+                    for s in range(n_spatial_orbs):
+                        AO_term = two_body_integrals[p, q, r, s]
+                        # up,up,up,up
+                        ERI_mo_basis_spin[2 * p, 2 * q, 2 * r, 2 * s] = AO_term
+                        # down,down, down, down
+                        ERI_mo_basis_spin[2 * p + 1, 2 * q + 1, 2 * r + 1, 2 * s + 1] = AO_term
+
+                        ## pg 82 Szabo
+                        #  up down up down (physics notation)
+                        ERI_mo_basis_spin[2 * p, 2 * q + 1,
+                                          2 * r, 2 * s + 1] = AO_term
+                        # down up down up  (physics notation)
+                        ERI_mo_basis_spin[2 * p + 1, 2 * q,
+                                          2 * r + 1, 2 * s] = AO_term
+
+        return ERI_mo_basis_spin
+
+    def get_perturbation_correlation_potential(self):
+        """
+        V = H_full - H_Hartree-Fock
+
+        Szabo pg 350 and 351
+
+        Returns:
+            V_fermionic = perturbation correlation potential
+
+        """
+        if self.fermionic_molecular_hamiltonian is None:
+            raise ValueError('please generate fermionic molecular H first')
+
+        # commented out as not working due to interaction op - fermionic op
+        # V_fermionic = self.fermionic_molecular_hamiltonian - self.fermionic_fock_operator
+
+        n_qu = count_qubits(self.fermionic_molecular_hamiltonian)
+        V_fermionic_mat = (get_sparse_operator(self.fermionic_molecular_hamiltonian, n_qubits=n_qu) -
+                           get_sparse_operator(self.fermionic_fock_operator, n_qubits=n_qu))
+        return V_fermionic_mat
+
+    def build_fermionic_hamiltonian_operator(self, occupied_indices=None, active_indices=None) -> None:
         """Build fermionic Hamiltonian"""
 
         # nuclear energy
@@ -93,20 +184,107 @@ class FermionicHamilt:
                                                               one_body_coefficients,
                                                               0.5 * two_body_coefficients)
 
+    def manual_fermionic_hamiltonian_operator(self) -> None:
+        """Build fermionic Hamiltonian"""
 
-    @property
+        # nuclear energy
+        fermionic_molecular_hamiltonian = FermionOperator((), self.scf_method.energy_nuc())
+
+        for p in range(self.n_qubits):
+            for q in range(self.n_qubits):
+
+                h_pq = self.core_h_spin_basis[p, q]
+                fermionic_molecular_hamiltonian += FermionOperator(f'{p}^ {q}', h_pq)
+                for r in range(self.n_qubits):
+                    for s in range(self.n_qubits):
+                        ## note pyscf:  ⟨01|23⟩ ==> ⟨02|31⟩
+                        g_pqrs = self.eri_spin_basis[p, q, r, s]
+                        fermionic_molecular_hamiltonian += 0.5 * FermionOperator(f'{p}^ {r}^ {s} {q}', g_pqrs)
+
+        return fermionic_molecular_hamiltonian
+
+    @cached_property
+    def fock_spin_mo_basis(self):
+
+        # note this is in chemist notation (look at slices!)
+
+        pm_qm = np.einsum('pmqm->pq', self.eri_spin_basis[:, :self.n_electrons,
+                                                               :, :self.n_electrons])
+        pm_mq = np.einsum('pmmq->pq', self.eri_spin_basis[:, :self.n_electrons,
+                                                               :self.n_electrons, :])
+
+        Fock_spin_mo = self.core_h_spin_basis + (pm_qm - pm_mq)
+        return Fock_spin_mo
+
+
+    def manual_T2_mp2(self) -> FermionOperator:
+        """
+        Get T2 mp2 fermionic operator
+
+        T2 = 1/4 * t_{ijab} a†_{a} a†_{b} a_{i} a_{j}
+
+        Returns:
+            T2_phys (FermionOperator): mp2 fermionic doubles excitation operator
+
+        """
+        #TODO fix bg
+        warnings.warn('currently note woring as well as taking t2 amps from pyscf object')
+
+        # phys order
+        e_orbs_occ = np.diag(self.fock_spin_mo_basis)[:self.n_electrons]
+
+        e_i = e_orbs_occ.reshape(-1, 1, 1, 1)
+        e_j = e_orbs_occ.reshape(1, -1, 1, 1)
+
+        e_orbs_vir = np.diag(self.fock_spin_mo_basis)[self.n_electrons:]
+        e_a = e_orbs_vir.reshape(1, 1, -1, 1)
+        e_b = e_orbs_vir.reshape(1, 1, 1, -1)
+
+        ij_ab = self.eri_spin_basis[:self.n_electrons, :self.n_electrons,
+                                     self.n_electrons:, self.n_electrons:]
+        ij_ba = np.einsum('ijab -> ijba', ij_ab)
+
+        # mp2 amplitudes
+        self.t_ijab_phy = (ij_ba-ij_ab) / (e_i + e_j - e_a - e_b)
+
+        T2_phys = FermionOperator((),0)
+        for i in range(self.t_ijab_phy.shape[0]):
+            for j in range(self.t_ijab_phy.shape[1]):
+
+                for a in range(self.t_ijab_phy.shape[2]):
+                    for b in range(self.t_ijab_phy.shape[3]):
+
+                        t_ijab = self.t_ijab_phy[i, j, a, b]
+                        # t_ijab = self.t_ijab_phy[i, j, b, a]
+
+                        # if not np.isclose(t_ijab, 0):
+                        virt_a = a + self.n_electrons
+                        virt_b = b + self.n_electrons
+                        T2_phys += FermionOperator(f'{virt_a}^ {virt_b}^ {i} {j}', t_ijab / 4)
+
+        return T2_phys
+
+
+    @cached_property
     def hf_comp_basis_state(self):
         hf_comp_basis_state = np.zeros(self.n_qubits, dtype=int)
         hf_comp_basis_state[:self.n_electrons] = 1
         return hf_comp_basis_state
 
 
-    @property
+    @cached_property
     def hf_ket(self):
         binary_int_list = 1 << np.arange(self.n_qubits)[::-1]
         hf_ket = np.zeros(2 ** self.n_qubits, dtype=int)
         hf_ket[self.hf_comp_basis_state @ binary_int_list] = 1
         return hf_ket
+
+
+    def mp2_ket(self, pyscf_mp2_t2_amps):
+        T2_mp2_mat = get_sparse_operator(self.get_T2_mp2(pyscf_mp2_t2_amps), n_qubits=self.n_qubits)
+        mp2_state = T2_mp2_mat @ self.hf_ket
+        return mp2_state
+
 
     def get_sparse_ham(self):
         if self.fermionic_molecular_hamiltonian is None:
@@ -114,24 +292,30 @@ class FermionicHamilt:
         return get_sparse_operator(self.fermionic_molecular_hamiltonian)
 
 
-def xyz_from_pubchem(molecule_name):
-    geometry_pubchem = geometry_from_pubchem(molecule_name, structure="3d")
+def get_T2_mp2(pyscf_mp2_t2_amps) -> FermionOperator:
+    t2 = spatial2spin(pyscf_mp2_t2_amps)
+    no, nv = t2.shape[1:3]
+    nmo = no + nv
+    double_amps = np.zeros((nmo, nmo, nmo, nmo))
+    double_amps[no:, :no, no:, :no] = .25 * t2.transpose(2, 0, 3, 1)
 
-    if geometry_pubchem is None:
-        geometry_pubchem = geometry_from_pubchem(molecule_name, structure="2d")
-        if geometry_pubchem is None:
-            raise ValueError(
-                f"""Could not find geometry of {molecule_name} on PubChem...
-                     make sure molecule input is a correct path to an xyz file or real molecule
-                                """)
+    double_amplitudes_list = []
+    double_amplitudes = double_amps
+    for i, j, k, l in zip(*double_amplitudes.nonzero()):
+        if not np.isclose(double_amplitudes[i, j, k, l], 0):
+            double_amplitudes_list.append([[i, j, k, l],
+                                           double_amplitudes[i, j, k, l]])
 
-    n_atoms = len(geometry_pubchem)
-    xyz_file = f"{n_atoms}"
-    xyz_file += "\n \n"
-    for atom, xyz in geometry_pubchem:
-            xyz_file += f"{atom}\t{xyz[0]}\t{xyz[1]}\t{xyz[2]}\n"
+    generator = FermionOperator((), 0)
+    # Add double excitations
+    for (i, j, k, l), t_ijkl in double_amplitudes_list:
+        i, j, k, l = int(i), int(j), int(k), int(l)
+        generator += FermionOperator(((i, 1), (j, 0), (k, 1), (l, 0)), t_ijkl)
+    #     if anti_hermitian:
+    #         generator += FermionOperator(((l, 1), (k, 0), (j, 1), (i, 0)),
+    #                                      -t_ijkl)
+    return generator
 
-    return xyz_file
 
 class FermioniCC:
     """ Class for calculating Coupled-Cluster amplitudes 
@@ -201,6 +385,7 @@ class FermioniCC:
         T2 = self._double_amplitudes
         self.fermionic_cc_operator = T1 + 0.5 * T2
 
+
 class PySCFDriver:
     """Function run PySCF chemistry calc.
 
@@ -236,6 +421,8 @@ class PySCFDriver:
         run_ccsd: Optional[bool] = False,
         run_fci: Optional[bool] = False,
     ):
+        if convergence>1e-2:
+            warnings.warn('note scf convergence threshold not very low')
 
         self.geometry = geometry
         self.basis = basis.lower()
@@ -341,97 +528,3 @@ class PySCFDriver:
             if self.pyscf_fci.converged is False:
                 warnings.warn("FCI calc not converged")
 
-
-def Draw_molecule(
-    xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
-) -> py3Dmol.view:
-    """Draw molecule from xyz string.
-
-    Note if molecule has unrealistic bonds, then style should be sphere. Otherwise stick style can be used
-    which shows bonds.
-
-    TODO: more styles at http://3dmol.csb.pitt.edu/doc/$3Dmol.GLViewer.html
-
-    Args:
-        xyz_string (str): xyz string of molecule
-        width (int): width of image
-        height (int): Height of image
-        style (str): py3Dmol style ('sphere' or 'stick')
-
-    Returns:
-        view (py3dmol.view object). Run view.show() method to print molecule.
-    """
-    view = py3Dmol.view(width=width, height=height)
-    view.addModel(xyz_string, "xyz")
-    if style == "sphere":
-        view.setStyle({'sphere': {"radius": 0.2}})
-    elif style == "stick":
-        view.setStyle({'stick': {}})
-    else:
-        raise ValueError(f"unknown py3dmol style: {style}")
-
-    view.zoomTo()
-    return view
-
-
-def Draw_cube_orbital(
-    PySCF_mol_obj: gto.Mole,
-    xyz_string: str,
-    C_matrix: np.ndarray,
-    index_list: List[int],
-    width: int = 400,
-    height: int = 400,
-    style: str = "sphere",
-) -> List:
-    """Draw orbials given a C_matrix and xyz string of molecule.
-
-    This function writes orbitals to temporary cube files then deletes them.
-    For standard use the C_matrix input should be C_matrix optimized by a self consistent field (SCF) run.
-
-    Note if molecule has unrealistic bonds, then style should be set to sphere
-
-    Args:
-        PySCF_mol_obj (pyscf.mol): PySCF mol object. Required for pyscf.tools.cubegen function
-        xyz_string (str): xyz string of molecule
-        C_matrix (np.array): Numpy array of molecular orbitals (columns are MO).
-        index_list (List): List of MO indices to plot
-        width (int): width of image
-        height (int): Height of image
-        style (str): py3Dmol style ('sphere' or 'stick')
-
-    Returns:
-        plotted_orbitals (List): List of plotted orbitals (py3Dmol.view) ordered the same way as in index_list
-    """
-
-    if not set(index_list).issubset(set(range(C_matrix.shape[1]))):
-        raise ValueError(
-            "list of MO indices to plot is outside of C_matrix column indices"
-        )
-
-    plotted_orbitals = []
-    for index in index_list:
-        File_name = f"temp_MO_orbital_index{index}.cube"
-        cubegen.orbital(PySCF_mol_obj, File_name, C_matrix[:, index])
-
-        view = py3Dmol.view(width=width, height=height)
-        view.addModel(xyz_string, "xyz")
-        if style == "sphere":
-            view.setStyle({"sphere": {"radius": 0.2}})
-        elif style == "stick":
-            view.setStyle({"stick": {}})
-        else:
-            raise ValueError(f"unknown py3dmol style: {style}")
-
-        with open(File_name, "r") as f:
-            view.addVolumetricData(
-                f.read(), "cube", {"isoval": -0.02, "color": "red", "opacity": 0.75}
-            )
-        with open(File_name, "r") as f2:
-            view.addVolumetricData(
-                f2.read(), "cube", {"isoval": 0.02, "color": "blue", "opacity": 0.75}
-            )
-
-        plotted_orbitals.append(view.zoomTo())
-        os.remove(File_name)  # delete file once orbital is drawn
-
-    return plotted_orbitals

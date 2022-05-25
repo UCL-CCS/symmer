@@ -41,7 +41,7 @@ class MoleculeBuilder:
         # build the fermionic hamiltonian/CC operator
         self.H_fermion = FermionicHamilt(self.pyscf_obj.pyscf_hf)
         self.T_fermion = FermioniCC(self.pyscf_obj.pyscf_ccsd)
-        self.H_fermion.build_operator()
+        self.H_fermion.build_fermionic_hamiltonian_operator()
         self.T_fermion.build_operator()
 
         self.n_qubits = self.H_fermion.n_qubits

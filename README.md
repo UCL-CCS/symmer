@@ -1,4 +1,4 @@
-# SymRed
+# Symmer
 Tools required to taper the Z2 symmetries of a given qubit Hamiltonian
 
 ## Install
