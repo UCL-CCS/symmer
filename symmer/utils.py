@@ -9,17 +9,21 @@ def symplectic_cleanup(symp_matrix, coeff_vec):
     """ Remove duplicated rows of symplectic matrix terms, whilst summing
     the corresponding coefficients of the deleted rows in coeff_vec
     """
-    n_terms = symp_matrix.shape[0]
-    # order lexicographically
-    term_ordering = np.lexsort(symp_matrix.T)
-    sorted_terms = symp_matrix[term_ordering]
-    sorted_coeff = coeff_vec[term_ordering]
+    # order lexicographically using a fast void view implementation...
+    # this scales to large numbers of qubits more favourably than np.lexsort
+    symp_matrix_view = np.ascontiguousarray(symp_matrix).view(
+        np.dtype((np.void, symp_matrix.dtype.itemsize * symp_matrix.shape[1]))
+    )
+    re_order_indices = np.argsort(symp_matrix_view.ravel())
+    # sort the symplectic matrix and vector of coefficients accordingly
+    sorted_terms = symp_matrix[re_order_indices]
+    sorted_coeff = coeff_vec[re_order_indices]
     # unique terms are those with non-zero entries in the adjacent row difference array
     diff_adjacent = np.diff(sorted_terms, axis=0)
-    mask_unique_terms = np.array([True]+np.any(diff_adjacent, axis=1).tolist()) #faster than np.append!
+    mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
     reduced_symp_matrix = sorted_terms[mask_unique_terms]
     # mask the term indices such that those which are skipped are summed under np.reduceat
-    summing_indices = np.arange(n_terms)[mask_unique_terms]
+    summing_indices = np.arange(symp_matrix.shape[0])[mask_unique_terms]
     reduced_coeff_vec = np.add.reduceat(sorted_coeff, summing_indices, axis=0)
     
     return reduced_symp_matrix, reduced_coeff_vec
