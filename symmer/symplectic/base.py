@@ -362,15 +362,14 @@ class PauliwordOp:
             *[self._mul_symplectic(symp_vec=symp_vec, coeff=coeff, Y_count_in=Y_count+self.Y_count) 
             for symp_vec, coeff, Y_count in zip(PwordOp.symp_matrix, PwordOp.coeff_vec, PwordOp.Y_count)]
         )
-        self_times_PwordOp = PauliwordOp(np.vstack(symp_stack), np.hstack(coeff_stack)).cleanup()
-
+        pauli_mult_out = PauliwordOp(*symplectic_cleanup(np.vstack(symp_stack), np.hstack(coeff_stack)))
+        
         if isinstance(mul_obj, QuantumState):
-            coeff_vec = self_times_PwordOp.coeff_vec*(1j**self_times_PwordOp.Y_count)
-            # need to run a separate cleanup since identities are all mapped to Z 
-            # i.e. IIII==ZZZZ in QuantumState
-            return QuantumState(self_times_PwordOp.X_block, coeff_vec).cleanup()
+            coeff_vec = pauli_mult_out.coeff_vec*(1j**pauli_mult_out.Y_count)
+            # need to run a separate cleanup since identities are all mapped to Z, i.e. II==ZZ in QuantumState
+            return QuantumState(pauli_mult_out.X_block, coeff_vec).cleanup()
         else:
-            return self_times_PwordOp
+            return pauli_mult_out
 
     def __imul__(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
         """ in-place multiplication behaviour
