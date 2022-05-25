@@ -1,3 +1,4 @@
+from cirq import StabilizerSampler
 import numpy as np
 from copy import deepcopy
 from itertools import product
@@ -5,7 +6,7 @@ from functools import reduce
 from typing import Dict, List, Tuple, Union
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
-from symmer.utils import gf2_gaus_elim, norm, random_symplectic_matrix
+from symmer.utils import gf2_gaus_elim, norm, random_symplectic_matrix, symplectic_cleanup
 from openfermion import QubitOperator
 from qiskit.quantum_info import Pauli
 from qiskit.opflow import PauliOp, PauliSumOp
@@ -257,74 +258,17 @@ class PauliwordOp:
         Returns:
             numpy array of Y counts over terms of PauliwordOp
         """
-        Y_coords = np.bitwise_and(self.X_block, self.Z_block)
-        return np.einsum('ij->i', Y_coords)
-
-    def _multiply_single_Pword_phaseless(self,
-            Pword:"PauliwordOp"
-        ) -> np.array:
-        """ performs *phaseless* Pauli multiplication via binary summation 
-        of the symplectic matrix. Phase requires additional operations that
-        are computed in _multiply_single_Pword.
-        """
-        pauli_mult_phaseless = np.bitwise_xor(self.symp_matrix, Pword.symp_matrix)
-        return PauliwordOp(pauli_mult_phaseless, np.ones(self.n_terms))
-    
-    def _multiply_single_Pword(self, 
-            Pword:"PauliwordOp"
-        ) -> "PauliwordOp":
-        """ performs Pauli multiplication with phases. The phase compensation 
-        is implemented as per https://doi.org/10.1103/PhysRevA.68.042318
-        """
-        phaseless_prod_Pword = self._multiply_single_Pword_phaseless(Pword)
-
-        # counts ZX mismatches for sign flip
-        assert(Pword.n_terms==1), 'not single Pauliword'
-        num_sign_flips = np.einsum('ij->i', np.bitwise_and(self.X_block, Pword.Z_block))
-        sign_change = (-1) ** num_sign_flips
-
-        # mapping from sigma to tau representation
-        full_Y_count = self.Y_count + Pword.Y_count
-        sigma_tau_compensation = (-1j) ** full_Y_count
-
-        # back from tau to sigma (note uses output Pword)
-        tau_sigma_compensation = (1j) ** phaseless_prod_Pword.Y_count
-
-        # the full phase modification
-        phase_mod = sign_change * sigma_tau_compensation * tau_sigma_compensation
-        phaseless_prod_Pword.coeff_vec = phase_mod * self.coeff_vec * Pword.coeff_vec
-
-        return phaseless_prod_Pword
-
-    def _cleanup(self) -> "PauliwordOp":
-        """ Remove duplicated rows of symplectic matrix terms, whilst summing
-        the corresponding coefficients of the deleted rows in coeff
-        """
-        if self.n_qubits == 0:
-            return PauliwordOp([], [np.sum(self.coeff_vec)])
-        elif self.n_terms == 0:
-            return PauliwordOp(np.zeros((1, self.symp_matrix.shape[1]), dtype=int), [0])
-
-        # order lexicographically
-        term_ordering = np.lexsort(self.symp_matrix.T)
-        sorted_terms = self.symp_matrix[term_ordering]
-        sorted_coeff = self.coeff_vec[term_ordering]
-        # unique terms are those with non-zero entries in the adjacent row difference array
-        diff_adjacent = np.diff(sorted_terms, axis=0)
-        mask_unique_terms = np.array([True]+np.any(diff_adjacent, axis=1).tolist()) #faster than np.append!
-        reduced_symp_matrix = sorted_terms[mask_unique_terms]
-        # mask the term indices such that those which are skipped are summed under np.reduceat
-        summing_indices = np.arange(self.n_terms)[mask_unique_terms]
-        reduced_coeff_vec = np.add.reduceat(sorted_coeff, summing_indices, axis=0)
-
-        return PauliwordOp(reduced_symp_matrix, reduced_coeff_vec)
+        return np.einsum('ij->i', np.bitwise_and(self.X_block, self.Z_block))
 
     def cleanup(self, zero_threshold=1e-15):
-        """ 
-        Delete terms with zero coefficient - this is not included in the cleanup method
-        as one may wish to allow zero coefficients (e.g. as an Ansatz parameter angle)
+        """ Apply symplectic_cleanup and delete terms with negligible coefficients
         """
-        clean_operator = self._cleanup()
+        if self.n_qubits == 0:
+            clean_operator =  PauliwordOp([], [np.sum(self.coeff_vec)])
+        elif self.n_terms == 0:
+            clean_operator =  PauliwordOp(np.zeros((1, self.symp_matrix.shape[1]), dtype=int), [0])
+        else:
+            clean_operator = PauliwordOp(*symplectic_cleanup(self.symp_matrix, self.coeff_vec))
         mask_nonzero = np.where(abs(clean_operator.coeff_vec)>zero_threshold)
         return PauliwordOp(
             clean_operator.symp_matrix[mask_nonzero], 
@@ -381,40 +325,62 @@ class PauliwordOp:
         
         return self+op_copy
 
+    def _mul_symplectic(self, 
+            symp_vec: np.array, 
+            coeff: complex, 
+            Y_count_in: np.array
+        ) -> Tuple[np.array, np.array]:
+        """ performs Pauli multiplication with phases at the level of the symplectic 
+        matrices to avoid superfluous PauliwordOp initializations. The phase compensation 
+        is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
+        """
+        # phaseless multiplication is binary addition in symplectic representation
+        phaseless_prod = np.bitwise_xor(self.symp_matrix, symp_vec)
+        # phase is determined by Y counts plus additional sign flip
+        Y_count_out = np.einsum('ij->i', np.bitwise_and(*np.hsplit(phaseless_prod,2)))
+        sign_change = (-1) ** np.einsum('ij->i', np.bitwise_and(self.X_block, np.hsplit(symp_vec,2)[1]))
+        # final phase modification
+        phase_mod = sign_change * (1j) ** (3*Y_count_in + Y_count_out)
+        coeff_vec = phase_mod * self.coeff_vec * coeff
+        return phaseless_prod, coeff_vec
+
     def __mul__(self, 
             mul_obj: Union["PauliwordOp", "QuantumState"]
         ) -> "PauliwordOp":
-        """ Right-multiplication of this PauliwordOp by another PauliwordOp.
-        The phaseless multiplication is achieved via binary summation of the
-        symplectic matrix in _multiply_single_Pword_phaseless whilst the phase
-        compensation is introduced in _multiply_single_Pword.
+        """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
         """
         if isinstance(mul_obj, QuantumState):
+            # allows one to apply PauliwordOps to QuantumStates
+            # (corresponds with multipcation of the underlying state_op)
             assert(mul_obj.vec_type == 'ket'), 'cannot multiply a bra from the left'
             PwordOp = mul_obj.state_op
         else:
             PwordOp = mul_obj
-
         assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
 
-        # the individual right-hand Pauli multiplications are appended to a list
-        list_of_multiplications = []
-        for term in PwordOp:
-            self_X_term = self._multiply_single_Pword(term)
-            list_of_multiplications.append(self_X_term)
-
-        # stack all the individual Pauli multiplications for cleanup - faster than intermediate cleanups!
-        symp_stack = np.vstack([mult.symp_matrix for mult in list_of_multiplications])
-        coef_stack = np.hstack([mult.coeff_vec   for mult in list_of_multiplications])
-        self_X_PwordOp = PauliwordOp(symp_stack, coef_stack).cleanup()
-
+        # multiplication is performed at the symplectic level, before being stacked and cleaned
+        symp_stack, coeff_stack = zip(
+            *[self._mul_symplectic(symp_vec=symp_vec, coeff=coeff, Y_count_in=Y_count+self.Y_count) 
+            for symp_vec, coeff, Y_count in zip(PwordOp.symp_matrix, PwordOp.coeff_vec, PwordOp.Y_count)]
+        )
+        pauli_mult_out = PauliwordOp(*symplectic_cleanup(np.vstack(symp_stack), np.hstack(coeff_stack)))
+        
         if isinstance(mul_obj, QuantumState):
-            coeff_vec = self_X_PwordOp.coeff_vec*(1j**self_X_PwordOp.Y_count)
-            # need to run a separate cleanup since identities are all mapped to Z 
-            # i.e. IIII==ZZZZ in QuantumState
-            return QuantumState(self_X_PwordOp.X_block, coeff_vec).cleanup()
+            coeff_vec = pauli_mult_out.coeff_vec*(1j**pauli_mult_out.Y_count)
+            # need to run a separate cleanup since identities are all mapped to Z, i.e. II==ZZ in QuantumState
+            return QuantumState(pauli_mult_out.X_block, coeff_vec).cleanup()
         else:
-            return self_X_PwordOp
+            return pauli_mult_out
+
+    def __imul__(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
+        """ in-place multiplication behaviour
+        """
+        return self.__mul__(PwordOp)
+
+    def __pow__(self, exponent:int) -> "PauliwordOp":
+        assert(isinstance(exponent, int)), 'the exponent is not an integer'
+        factors = [self.copy()]*exponent
+        return reduce(lambda x,y:x*y, factors)
 
     def __getitem__(self, key: Union[slice, int]) -> "PauliwordOp":
         """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
@@ -591,9 +557,21 @@ class PauliwordOp:
         OF_list = []
         for Pvec_single, coeff_single in zip(self.symp_matrix, self.coeff_vec):
             P_string = symplectic_to_string(Pvec_single)
-            OF_string = ' '.join([Pi+str(i) for i,Pi in enumerate(P_string) if Pi!='I'])
+            OF_string = ' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(Pvec_single)) if Pi!='I'])
             OF_list.append(QubitOperator(OF_string, coeff_single))
         return OF_list
+
+    @cached_property
+    def to_QubitOperator(self) -> QubitOperator:
+        """ convert to OpenFermion Pauli operator representation
+        """
+        pauli_terms = []
+        for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
+            pauli_terms.append(
+                QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(symp_vec)) if Pi!='I']), 
+                coeff)
+            )
+        return sum(pauli_terms)
 
     @cached_property
     def to_PauliSumOp(self) -> PauliSumOp:
@@ -841,6 +819,14 @@ class QuantumState:
             clean_state_op.coeff_vec, 
             vec_type=self.vec_type
         )
+
+    def sectors_present(self, symmetry):
+        """ return the sectors present within the QuantumState w.r.t. a StabilizerOp
+        """
+        symmetry_copy = symmetry.copy()
+        symmetry_copy.coeff_vec = np.ones(symmetry.n_terms)
+        sector = np.array([self.conjugate*S*self for S in symmetry_copy])
+        return sector
 
     @cached_property
     def normalize(self):
