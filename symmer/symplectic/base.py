@@ -329,7 +329,7 @@ class PauliwordOp:
             coeff: complex, 
             Y_count_in: np.array
         ) -> Tuple[np.array, np.array]:
-        """ performs Pauli multiplication with phases on the level of the symplectic 
+        """ performs Pauli multiplication with phases at the level of the symplectic 
         matrices to avoid superfluous PauliwordOp initializations. The phase compensation 
         is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
         """
@@ -375,6 +375,11 @@ class PauliwordOp:
         """ in-place multiplication behaviour
         """
         return self.__mul__(PwordOp)
+
+    def __pow__(self, exponent:int) -> "PauliwordOp":
+        assert(isinstance(exponent, int)), 'the exponent is not an integer'
+        factors = [self.copy()]*exponent
+        return reduce(lambda x,y:x*y, factors)
 
     def __getitem__(self, key: Union[slice, int]) -> "PauliwordOp":
         """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
@@ -551,9 +556,21 @@ class PauliwordOp:
         OF_list = []
         for Pvec_single, coeff_single in zip(self.symp_matrix, self.coeff_vec):
             P_string = symplectic_to_string(Pvec_single)
-            OF_string = ' '.join([Pi+str(i) for i,Pi in enumerate(P_string) if Pi!='I'])
+            OF_string = ' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(Pvec_single)) if Pi!='I'])
             OF_list.append(QubitOperator(OF_string, coeff_single))
         return OF_list
+
+    @cached_property
+    def to_QubitOperator(self) -> QubitOperator:
+        """ convert to OpenFermion Pauli operator representation
+        """
+        pauli_terms = []
+        for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
+            pauli_terms.append(
+                QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(symp_vec)) if Pi!='I']), 
+                coeff)
+            )
+        return sum(pauli_terms)
 
     @cached_property
     def to_PauliSumOp(self) -> PauliSumOp:
