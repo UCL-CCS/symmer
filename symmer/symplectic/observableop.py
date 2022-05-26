@@ -3,7 +3,9 @@ from typing import Dict, List, Union
 from functools import reduce
 from cached_property import cached_property
 from scipy.optimize import minimize
+from scipy.sparse.linalg import expm
 import networkx as nx
+import multiprocessing as mp
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from symmer.symplectic import PauliwordOp, QuantumState, AnsatzOp, symplectic_to_string
@@ -183,10 +185,10 @@ class ObservableOp(PauliwordOp):
         """ Exact expectation value - expensive! Trotterizes the ansatz operator and applies the terms as
         Pauli rotations to the observable operator, resulting in an exponential increase in the number of terms
         """
-        pauli_rotations = [symplectic_to_string(row) for row in ansatz_op.symp_matrix]*self.trotter_number
+        pauli_rotations = [PauliwordOp(row, [1]) for row in ansatz_op.symp_matrix]*self.trotter_number
         angles = -2*np.tile(ansatz_op.coeff_vec, self.trotter_number)/self.trotter_number
 
-        trotterized_observable = self.recursive_rotate_by_Pword(zip(pauli_rotations[::-1], angles[::-1]))
+        trotterized_observable = self.perform_rotations(zip(pauli_rotations[::-1], angles[::-1]))
         trotterized_observable = ObservableOp(trotterized_observable.symp_matrix, trotterized_observable.coeff_vec)
 
         return trotterized_observable.Z_basis_expectation(ref_state)
@@ -322,11 +324,15 @@ class ObservableOp(PauliwordOp):
         ansatz_op: AnsatzOp,
         ref_state: np.array
         ) -> np.array:
+        """ multiprocessing allows partial gradients to be computed simultaneously
+
+        TODO does not work with sampled expectation values due to nested (daemonic) multiprocesses!
+        Possbile workaround using ThreadPool, but is slower than standard Pool
         """
-        """
-        return np.array(
-            [self.parameter_shift_at_index(i, ansatz_op, ref_state) 
-                for i in range(ansatz_op.n_terms)]
+        pool = mp.Pool(mp.cpu_count())
+        return pool.starmap(
+            self.parameter_shift_at_index, 
+            [(i, ansatz_op, ref_state) for i in range(ansatz_op.n_terms)]
         )
 
     def VQE(self,
