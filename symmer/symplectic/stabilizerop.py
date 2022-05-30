@@ -38,8 +38,8 @@ class StabilizerOp(PauliwordOp):
         """
         """
         super().__init__(operator, coeff_vec)
-        self._check_stab()
-        self.coeff_vec = self.coeff_vec.real.astype(int)
+        #self._check_stab()
+        #self.coeff_vec = self.coeff_vec.real.astype(int)
         self._check_independent()
         if target_sqp in ['X', 'Z', 'Y']:
             self.target_sqp = target_sqp
