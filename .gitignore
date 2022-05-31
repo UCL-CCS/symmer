@@ -665,6 +665,7 @@ notebooks/data/*
 !notebooks/data/score_data_2.json
 !notebooks/data/score_vs_energy.json
 !notebooks/data/stabilizer_identification_comparision.json
+!notebooks/data/stabilizer_identification_comparision_qlm.json
 !notebooks/data/molecule_data.json
 notebooks/plots/*
 notebooks/sandbox.ipynb
