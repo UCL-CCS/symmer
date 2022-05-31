@@ -97,7 +97,11 @@ def symplectic_to_sparse_matrix(symp_vec, coeff) -> csr_matrix:
     global_phase = (-1j) ** Y_number
 
     # reverse order to match bitstring int valu of each bit in binary: [..., 32, 16, 8, 4, 2, 1]
-    binary_int_array = 1 << np.arange(n_qubits-1, -1, -1)
+    if n_qubits > 64:
+        # numpy cannot handle ints over int64s (2**64) therefore use python objects
+        binary_int_array = 1 << np.arange(n_qubits - 1, -1, -1).astype(object)
+    else:
+        binary_int_array = 1 << np.arange(n_qubits - 1, -1, -1)
 
     x_int = X_block @ binary_int_array
     z_int = Z_block @ binary_int_array
@@ -600,19 +604,53 @@ class PauliwordOp:
     @cached_property
     def to_sparse_matrix(self) -> csr_matrix:
         """
-        Function to get (2**n, 2**n) matrix of operator acting in Hilbert space
+        Returns (2**n x 2**n) matrix of PauliwordOp where each Pauli operator has been kronector producted together
 
+        This follows because tensor products of Pauli operators are one-sparse: they each have only
+        one nonzero entry in each row and column
+
+        Returns:
+            sparse_matrix (csr_matrix): sparse matrix of PauliOp
         """
-        if self.n_qubits == 0:
-            return csr_matrix([self.coeff_vec[0]])
-        
-        out_matrix = csr_matrix( ([],([],[])),
-                                  shape=(2**self.n_qubits,2**self.n_qubits)
-                                  )
-        for Pvec_single, coeff_single in zip(self.symp_matrix, self.coeff_vec):
-            out_matrix += symplectic_to_sparse_matrix(Pvec_single, coeff_single)
+        ### old method
+        # if self.n_qubits == 0:
+        #     return csr_matrix([self.coeff_vec[0]])
+        #
+        # sparse_matrix = csr_matrix( ([],([],[])),
+        #                           shape=(2**self.n_qubits,2**self.n_qubits)
+        #                           )
+        # for Pvec_single, coeff_single in zip(self.symp_matrix, self.coeff_vec):
+        #     sparse_matrix += symplectic_to_sparse_matrix(Pvec_single, coeff_single)
 
-        return out_matrix
+        ### new method
+        if self.n_qubits > 64:
+            # numpy cannot handle ints over int64s (2**64) therefore use python objects
+            binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1).astype(object)
+        else:
+            binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1)
+
+        x_int = (self.X_block @ binary_int_array).reshape(-1, 1)
+        z_int = (self.Z_block @ binary_int_array).reshape(-1, 1)
+
+        Y_number = np.sum(np.bitwise_and(self.X_block, self.Z_block).astype(int), axis=1)
+        global_phase = (-1j) ** Y_number
+
+        dimension = 2 ** self.n_qubits
+        row_ind = np.repeat(np.arange(dimension).reshape(1, -1), self.X_block.shape[0], axis=0)
+        col_ind = np.bitwise_xor(row_ind, x_int)
+
+        row_inds_and_Zint = np.bitwise_and(row_ind, z_int)
+        vals = global_phase.reshape(-1, 1) * (-1) ** (
+                    count1_in_int_bitstring(row_inds_and_Zint) % 2)  # .astype(complex))
+
+        values_and_coeff = np.einsum('ij,i->ij', vals, self.coeff_vec)
+
+        sparse_matrix = csr_matrix(
+            (values_and_coeff.flatten(), (row_ind.flatten(), col_ind.flatten())),
+            shape=(dimension, dimension),
+            dtype=complex
+        )
+        return sparse_matrix
 
     def qwc_single_Pword(self,
             Pword: "PauliwordOp"
