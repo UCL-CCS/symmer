@@ -3,12 +3,12 @@ import os
 import numpy as np
 from pyscf import gto
 from openfermion.chem.pubchem import geometry_from_pubchem
-import py3Dmol
+#import py3Dmol
 from pyscf.tools import cubegen
 
 def Draw_molecule(
     xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
-) -> py3Dmol.view:
+):
     """Draw molecule from xyz string.
 
     Note if molecule has unrealistic bonds, then style should be sphere. Otherwise stick style can be used

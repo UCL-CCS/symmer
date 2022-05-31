@@ -2,7 +2,7 @@ import numpy as np
 import scipy as sp
 from typing import Tuple
 from qiskit import QuantumCircuit
-import pyzx as zx
+#import pyzx as zx
 import openfermion as of
 
 def symplectic_cleanup(symp_matrix, coeff_vec):

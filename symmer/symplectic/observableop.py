@@ -9,7 +9,7 @@ import multiprocessing as mp
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from symmer.symplectic import PauliwordOp, QuantumState, AnsatzOp, symplectic_to_string
-from qiskit.opflow import CircuitStateFn
+#from qiskit.opflow import CircuitStateFn
 from qiskit import BasicAer, execute
 
 class ObservableGraph(PauliwordOp):

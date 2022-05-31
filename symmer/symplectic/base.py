@@ -9,7 +9,7 @@ from scipy.sparse import csr_matrix
 from symmer.utils import gf2_gaus_elim, norm, random_symplectic_matrix, symplectic_cleanup
 from openfermion import QubitOperator
 from qiskit.quantum_info import Pauli
-from qiskit.opflow import PauliOp, PauliSumOp
+#from qiskit.opflow import PauliOp, PauliSumOp
 import warnings
 warnings.simplefilter('always', UserWarning)
 
@@ -573,14 +573,14 @@ class PauliwordOp:
             )
         return sum(pauli_terms)
 
-    @cached_property
-    def to_PauliSumOp(self) -> PauliSumOp:
-        """ convert to Qiskit Pauli operator representation
-        """
-        pauli_terms = []
-        for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
-            pauli_terms.append(PauliOp(primitive=Pauli(symplectic_to_string(symp_vec)), coeff=coeff))
-        return sum(pauli_terms)
+    #@cached_property
+    #def to_PauliSumOp(self) -> PauliSumOp:
+    #    """ convert to Qiskit Pauli operator representation
+    #    """
+    #    pauli_terms = []
+    #    for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
+    #        pauli_terms.append(PauliOp(primitive=Pauli(symplectic_to_string(symp_vec)), coeff=coeff))
+    #    return sum(pauli_terms)
 
     @cached_property
     def to_dictionary(self) -> Dict[str, complex]:
