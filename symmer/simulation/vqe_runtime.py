@@ -12,12 +12,15 @@ class VQE_Runtime:
     maxiter     = 10
     optimizer   = 'SLSQP'
     init_params = None
-
+    n_groups    = 5
+    grouping_scheme = 'classical_shadows'
+    
     def __init__(self,
         backend,
         user_messenger,
         ansatz: QuantumCircuit,
-        operator_groups: List[Union[PauliSumOp, PauliOp]]
+        operator: PauliSumOp = None,
+        operator_groups: List[Union[PauliSumOp, PauliOp]] = None
     ) -> None:
         """
         """
@@ -25,10 +28,19 @@ class VQE_Runtime:
         self.user_messenger = user_messenger
         self.ansatz = ansatz
         self.n_params = ansatz.num_parameters
+        self.n_qubits = ansatz.num_qubits
+        self.operator = operator
         self.operator_groups = operator_groups
-        self.circuits, self.group_data = self.prepare_measurement_groups()
-
-    def prepare_measurement_groups(self):
+        if self.grouping_scheme == 'classical_shadows':
+            assert(self.operator is not None), 'No operator specified for classical shadow tomography'
+            self.prepare_classical_shadows_measurement_groups()
+        elif self.grouping_scheme == 'qubitwise_commuting':
+            assert(self.operator_groups is not None), 'No qubitwise commuting operator_groups specified'
+            self.prepare_qubitwise_commuting_measurement_groups()
+        else:
+            raise ValueError('Unrecognised grouping_scheme value, must be one of classical_shadows or qubitwise_commuting')
+    
+    def prepare_qubitwise_commuting_measurement_groups(self):
         """
         """
         circuits = []
@@ -55,7 +67,45 @@ class VQE_Runtime:
 
         circuits = transpile(circuits, self.backend)
 
-        return circuits, group_data
+        self.circuits = circuits
+        self.group_data = group_data
+
+    def QWC_terms(self, basis_symp_vec):
+        X_basis, Z_basis = np.hsplit(basis_symp_vec, 2)
+        X_block, Z_block = np.hsplit(self.operator.primitive.table.array, 2)
+
+        non_I = (X_block | Z_block) & (X_basis | Z_basis)
+        X_match = np.all((X_block & non_I) == (X_basis & non_I), axis=1)
+        Z_match = np.all((Z_block & non_I) == (Z_basis & non_I), axis=1)
+
+        QWC_mask = X_match & Z_match
+
+        return self.operator[QWC_mask]
+
+    def prepare_classical_shadows_measurement_groups(self):
+        """
+        """
+        circuits=[]
+        group_data=[]
+        random_bases = np.random.randint(0,2,(self.n_groups,2*self.n_qubits), dtype=bool)
+        for basis_symp_vec in random_bases:
+
+            operator_QWC = self.QWC_terms(basis_symp_vec)
+            X_block, Z_block = np.hsplit(operator_QWC.primitive.table.array.astype(int), 2)
+            coeff_vec = operator_QWC.coeffs
+            new_Z_block = (X_block | Z_block)[:,::-1]  
+            group_data.append([new_Z_block, coeff_vec])
+
+            cob_group = PauliTable(basis_symp_vec).to_labels()[0]
+            cob_gates, target = PauliBasisChange().get_cob_circuit(Pauli(cob_group))
+            qc = self.ansatz.compose(cob_gates.to_circuit())
+            qc.measure_all()
+            circuits.append(qc)
+
+        circuits = transpile(circuits, self.backend)
+
+        self.circuits = circuits
+        self.group_data = group_data
 
     def get_counts(self, bound_circuits):
         """
@@ -152,18 +202,31 @@ def main(backend, user_messenger, **kwargs):
     """ The main runtime program entry-point.
     All of the heavy-lifting is handled by the VQE_Runtime class
     """
-    ansatz          = kwargs.pop("ansatz", 1)
-    operator_groups = kwargs.pop("operator_groups", 1)
+    ansatz          = kwargs.pop("ansatz", None)
+    operator        = kwargs.pop("operator", None)
+    operator_groups = kwargs.pop("operator_groups", None)
     
     vqe = VQE_Runtime(
         backend=backend,
         user_messenger = user_messenger,
-        ansatz=ansatz, 
+        ansatz=ansatz,
+        operator=operator,
         operator_groups=operator_groups
     )
-    vqe.n_shots     = kwargs.pop("n_shots", 1)
-    vqe.maxiter     = kwargs.pop("maxiter", 1)
-    vqe.optimizer   = kwargs.pop("optimizer", 1)
-    vqe.init_params = kwargs.pop("init_params", 1)
+    vqe.n_shots     = kwargs.pop("n_shots", None)
+    vqe.maxiter     = kwargs.pop("maxiter", None)
+    vqe.optimizer   = kwargs.pop("optimizer", None)
+    vqe.init_params = kwargs.pop("init_params", None)
+    vqe.n_groups    = kwargs.pop("n_groups", None)
+    vqe.grouping_scheme = kwargs.pop("grouping_scheme", None)
+    
+    if vqe.grouping_scheme == 'classical_shadows':
+        assert(vqe.operator is not None), 'No operator specified for classical shadow tomography'
+        vqe.prepare_classical_shadows_measurement_groups()
+    elif vqe.grouping_scheme == 'qubitwise_commuting':
+        assert(vqe.operator_groups is not None), 'No qubitwise commuting operator_groups specified'
+        vqe.prepare_qubitwise_commuting_measurement_groups()
+    else:
+        raise ValueError('Unrecognised grouping_scheme value, must be one of classical_shadows or qubitwise_commuting')
     
     return vqe.run()
