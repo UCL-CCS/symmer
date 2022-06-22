@@ -383,8 +383,11 @@ class PauliwordOp:
 
     def __pow__(self, exponent:int) -> "PauliwordOp":
         assert(isinstance(exponent, int)), 'the exponent is not an integer'
-        factors = [self.copy()]*exponent
-        return reduce(lambda x,y:x*y, factors)
+        if exponent == 0:
+            return PauliwordOp(['I'*self.n_qubits],[1])
+        else:
+            factors = [self.copy()]*exponent
+            return reduce(lambda x,y:x*y, factors)
 
     def __getitem__(self, key: Union[slice, int]) -> "PauliwordOp":
         """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed

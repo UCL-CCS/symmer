@@ -84,6 +84,20 @@ def gf2_gaus_elim(gf2_matrix: np.array) -> np.array:
     Returns:
         gf2_matrix_rref (np.array): reduced row echelon form of M
     """
+    #gf2_matrix_rref = gf2_matrix.copy()
+    ## iterate over rows of array
+    #for i, row_i in enumerate(gf2_matrix_rref):
+    #    # if not a row of zeros
+    #    if np.any(row_i):
+    #        # find the first non-zero entry of row i
+    #        pivot = np.where(row_i)[0][0]
+    #        # find the non-zero entries in column i
+    #        update_set = np.setdiff1d(np.where(gf2_matrix_rref[:, pivot]), i)
+    #        # XOR the rows containing non-zero entries in column i with row i
+    #        gf2_matrix_rref[update_set] = np.bitwise_xor(gf2_matrix_rref[update_set], row_i)
+    #        # the rows below i will now be zeroed out in the pivot column
+    #return gf2_matrix_rref
+    
     gf2_matrix_rref = gf2_matrix.copy()
     m_rows, n_cols = gf2_matrix_rref.shape
 
