@@ -33,10 +33,11 @@ class VQE_Runtime:
     output, in addition to the interim energy, parameter and gradient values.
     """
     n_shots     = 2**12
+    n_realize   = 1
+    n_groups    = 5
     maxiter     = 10
     optimizer   = 'SLSQP'
     init_params = None
-    n_groups    = 5
     
     def __init__(self,
         backend,
@@ -213,8 +214,12 @@ class VQE_Runtime:
         """ Wraps the _estimate method, calling get_counts to submit
         the circuit jobs parametrized by the input array x
         """
-        countset = self.get_counts([x])
-        return self._estimate(countset)
+        samples = []
+        for sample in range(self.n_realize):
+            countset = self.get_counts([x])
+            energy = self._estimate(countset)
+            samples.append(energy)
+        return sum(samples)/self.n_realize
         
     def gradient(self, x):
         """ Implementation of the parameter shif rule of https://arxiv.org/abs/1906.08728 (eq.15).
@@ -320,6 +325,7 @@ def main(backend, user_messenger, **kwargs):
         observable_groups=observable_groups
     )
     vqe.n_shots     = kwargs.pop("n_shots", 2**12)
+    vqe.n_realize   = kwargs.pop("n_realize", 1)
     vqe.maxiter     = kwargs.pop("maxiter", 10)
     vqe.optimizer   = kwargs.pop("optimizer", 'SLSQP')
     vqe.init_params = kwargs.pop("init_params", None)
