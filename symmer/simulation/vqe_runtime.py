@@ -5,6 +5,7 @@ from scipy.optimize import minimize
 from qiskit.quantum_info import Pauli, PauliTable
 from qiskit.opflow import PauliSumOp, PauliOp, PauliBasisChange
 from qiskit import QuantumCircuit, transpile
+import mthree
 
 class VQE_Runtime:
     """ Runtime program for performing VQE routines.
@@ -38,6 +39,7 @@ class VQE_Runtime:
     maxiter     = 10
     optimizer   = 'SLSQP'
     init_params = None
+    mitigate_errors = True
     
     def __init__(self,
         backend,
@@ -75,6 +77,11 @@ class VQE_Runtime:
 
         self.circuits,self.group_data = self.prepare_qubitwise_commuting_measurement_groups()
 
+        #if self.mitigate_errors:
+        #    maps = mthree.utils.final_measurement_mapping(self.circuits)
+        #    mit  = mthree.M3Mitigation(self.backend)
+        #    mit.cals_from_system(maps)
+            
     def QWC_terms(self, basis_symp_vec):
         """ Given the symplectic representation of a measurement basis,
         determines which operator terms may be measured in this basis
@@ -168,7 +175,7 @@ class VQE_Runtime:
             qc.measure_all()
             circuits.append(qc)
 
-        circuits = transpile(circuits, self.backend)
+        circuits = transpile(circuits, self.backend, optimization_level=3)
 
         return circuits, group_data
    
@@ -330,5 +337,6 @@ def main(backend, user_messenger, **kwargs):
     vqe.optimizer   = kwargs.pop("optimizer", 'SLSQP')
     vqe.init_params = kwargs.pop("init_params", None)
     vqe.n_groups    = kwargs.pop("n_groups", 5)
+    vqe.mitigate_errors = kwargs.pop("mitigate_errors", False)
     
     return vqe.run()
