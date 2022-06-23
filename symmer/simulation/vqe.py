@@ -25,7 +25,7 @@ def VQE(
 
     runtime_input = {
         "ansatz": ansatz,
-        "operator_groups": [op.to_PauliSumOp for op in QWC_decomposition],
+        "observable_groups": [op.to_PauliSumOp for op in QWC_decomposition],
         "init_params": init_params,
         "optimizer": optimizer,
         "maxiter": maxiter,
