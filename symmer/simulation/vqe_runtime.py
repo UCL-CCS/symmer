@@ -39,6 +39,7 @@ class VQE_Runtime:
     maxiter     = 10
     optimizer   = 'SLSQP'
     init_params = None
+    opt_setting = {'maxiter':10}
     mitigate_errors = True
     
     def __init__(self,
@@ -291,7 +292,10 @@ class VQE_Runtime:
             return energy
 
         def jac(x):
+            countnum = interim_values['count']
             Delta = self.gradient(x)
+            grad_norm = np.sqrt(np.sum(np.square(Delta)))
+            self.user_messenger.publish(f'Optimization step #{countnum}: gradient norm = {grad_norm}')
             interim_values['gradients'].append((interim_values['count'], Delta))
             return Delta
             
@@ -302,7 +306,7 @@ class VQE_Runtime:
             x0=self.init_params,
             method=self.optimizer,
             #tol=opt_tol
-            options={'maxiter':self.maxiter}
+            options=self.opt_setting
         )
         vqe_result.success = bool(vqe_result.success) # to ensure serializable
         self.user_messenger.publish('VQE complete')
@@ -331,12 +335,12 @@ def main(backend, user_messenger, **kwargs):
         observable=observable,
         observable_groups=observable_groups
     )
+    vqe.n_groups    = kwargs.pop("n_groups", 5)
     vqe.n_shots     = kwargs.pop("n_shots", 2**12)
     vqe.n_realize   = kwargs.pop("n_realize", 1)
-    vqe.maxiter     = kwargs.pop("maxiter", 10)
     vqe.optimizer   = kwargs.pop("optimizer", 'SLSQP')
+    vqe.opt_setting = kwargs.pop("opt_setting", {'maxiter':10})
     vqe.init_params = kwargs.pop("init_params", None)
-    vqe.n_groups    = kwargs.pop("n_groups", 5)
     vqe.mitigate_errors = kwargs.pop("mitigate_errors", False)
-    
+
     return vqe.run()
