@@ -78,10 +78,10 @@ class VQE_Runtime:
 
         self.circuits,self.group_data = self.prepare_qubitwise_commuting_measurement_groups()
 
-        #if self.mitigate_errors:
-        #    maps = mthree.utils.final_measurement_mapping(self.circuits)
-        #    mit  = mthree.M3Mitigation(self.backend)
-        #    mit.cals_from_system(maps)
+        if self.mitigate_errors:
+            #self.maps = mthree.utils.final_measurement_mapping(self.circuits)
+            self.m3   = mthree.M3Mitigation(self.backend)
+            self.m3.cals_from_system(range(self.n_qubits))
             
     def QWC_terms(self, basis_symp_vec):
         """ Given the symplectic representation of a measurement basis,
@@ -192,13 +192,20 @@ class VQE_Runtime:
         bound_circuits = []
         for params in param_list:
             bound_circuits+=[qc.bind_parameters(params) for qc in self.circuits]
-        # implement measurement error mitigation!
+        
         job = self.backend.run(
             circuits = bound_circuits,
             shots=self.n_shots
         )
         result = job.result()
-        return result.get_counts()
+        raw_counts = result.get_counts()
+        
+        if self.mitigate_errors:
+            quasis = self.m3.apply_correction(raw_counts, range(self.n_qubits))
+            return quasis.nearest_probability_distribution()
+        else:
+            return [{binstr:freq/self.n_shots for binstr,freq in counts.items()} 
+                    for counts in raw_counts] 
 
     def _estimate(self, countset):
         """ Given the measurment outcomes retrieved from the the backend, calculate
@@ -211,8 +218,7 @@ class VQE_Runtime:
         assert(len(countset)==len(self.group_data)), 'Incompatible number of counts and observables'
         expval = 0
         for (group_Z_block, coeff_vec), measurements in zip(self.group_data, countset):
-            for binstr, freq in measurements.items():
-                weight = freq/self.n_shots
+            for binstr, weight in measurements.items():
                 binarr = np.array([int(i) for i in binstr])
                 signed = (-1)**np.einsum('ij->i', np.bitwise_and(binarr, group_Z_block))
                 expval += weight*np.sum(signed*coeff_vec)
