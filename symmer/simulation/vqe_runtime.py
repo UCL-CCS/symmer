@@ -36,7 +36,6 @@ class VQE_Runtime:
     n_shots     = 2**12
     n_realize   = 1
     n_groups    = 5
-    maxiter     = 10
     optimizer   = 'SLSQP'
     init_params = None
     opt_setting = {'maxiter':10}
@@ -233,7 +232,7 @@ class VQE_Runtime:
             countset = self.get_counts([x])
             energy = self._estimate(countset)
             samples.append(energy)
-        return sum(samples)/self.n_realize
+        return np.mean(samples), np.std(samples)
         
     def gradient(self, x):
         """ Implementation of the parameter shif rule of https://arxiv.org/abs/1906.08728 (eq.15).
@@ -283,7 +282,7 @@ class VQE_Runtime:
             - interim_values (Dict[str,List[Union[float, array]]]):
                 The interim energy, parameter and gradient values
         """
-        interim_values = {'values':[], 'params':[], 'gradients':[], 'count':0}
+        interim_values = {'values':[], 'stddev':[], 'params':[], 'gradients':[], 'count':0}
 
         if self.init_params is None:
             self.init_params = np.zeros(self.n_params)
@@ -291,10 +290,11 @@ class VQE_Runtime:
         def fun(x):
             interim_values['count']+=1
             countnum = interim_values['count']
-            energy = self.estimate(x)
+            energy, stddev = self.estimate(x)
             self.user_messenger.publish(f'Optimization step #{countnum}: energy = {energy}')
             interim_values['params'].append((interim_values['count'], x))
             interim_values['values'].append((interim_values['count'], energy))
+            interim_values['stddev'].append((interim_values['count'], stddev))
             return energy
 
         def jac(x):
