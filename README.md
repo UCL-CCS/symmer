@@ -1,7 +1,8 @@
 # Symmer
 Tools required to
 - taper the Z2 symmetries of a given qubit Hamiltonian
-- perform CS-VQE algorithm from a supplied qubit Hamiltonian 
+- perform Contextual Subspace VQE algorithm on a supplied qubit Hamiltonian 
+  - updated approach to [ContextualSubspaceVQE](https://github.com/wmkirby1/ContextualSubspaceVQE) 
 
 ## Installation
 To install from the root of the project run:
