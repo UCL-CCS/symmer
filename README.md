@@ -1,23 +1,10 @@
 # Symmer
-Tools required to taper the Z2 symmetries of a given qubit Hamiltonian
-
-## Install
-From the root of the project:
-```
-pip install poetry
-poetry install
-```
-
-## Add a dependency
-```
-poetry add <dependency>
-```
-
-optionally add the `-D` flag if the dependency is a development dependency (e.g. testing, linting or documentation tools.)
+Tools required to
+- taper the Z2 symmetries of a given qubit Hamiltonian
+- perform CS-VQE algorithm from a supplied qubit Hamiltonian 
 
 ## Installation
-
-To install required packages and library run:
+To install from the root of the project run:
 
 ```
 pip install .
@@ -25,12 +12,4 @@ pip install .
 
 ## Basic usage
 
-The basic usage:
-
-```
-TODO
-```
-
-## Developer guide
-
-TODO
+For basic usage see [notebooks](https://github.com/UCL-CCS/symmer/tree/main/notebooks)
