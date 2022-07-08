@@ -1,7 +1,7 @@
 from symmer.symplectic import PauliwordOp
 from symmer.utils import QubitOperator_to_dict
 from symmer.chem import FermionicHamilt, FermioniCC, PySCFDriver
-from openfermion import get_fermion_operator, jordan_wigner, FermionOperator
+from openfermion import get_fermion_operator, jordan_wigner, FermionOperator, hermitian_conjugated
 from typing import Tuple, List
 
 def list_to_xyz(geometry: List[Tuple[str, Tuple[float, float, float]]]) -> str:
@@ -59,8 +59,14 @@ class MoleculeBuilder:
 
         # convert to PauliwordOp
         self.H_q = PauliwordOp(QubitOperator_to_dict(self.H_jw, self.n_qubits))
-        self.T_q = PauliwordOp(QubitOperator_to_dict(self.T_jw, self.n_qubits))
-        self.T_q.coeff_vec = self.T_q.coeff_vec.imag
+        
+        self.UCC_q = PauliwordOp(
+            QubitOperator_to_dict(
+                self.T_jw - hermitian_conjugated(self.T_jw), 
+                self.n_qubits
+            )
+        )
+        self.UCC_q.coeff_vec = self.UCC_q.coeff_vec.imag
         self.SOR_q = self.second_order_response()
 
     def calculate(self,
