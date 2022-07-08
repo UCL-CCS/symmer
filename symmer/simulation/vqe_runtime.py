@@ -572,14 +572,16 @@ def main(backend, user_messenger, **kwargs):
     """
     observable        = kwargs.pop("observable", None)
     observable_groups = kwargs.pop("observable_groups", None)
-    ansatz_circuit    = kwargs.pop("ansatz_circuit", None)
-    ansatz_pool       = kwargs.pop("ansatz_pool", None),
     reference_state   = kwargs.pop("reference_state", None)
-
+    ansatz_circuit    = kwargs.pop("ansatz_circuit", None)
+    ansatz_pool       = kwargs.pop("ansatz_pool", None)
+    if ansatz_pool is not None:
+        ansatz_pool = sum(ansatz_pool) # Required due to how qiskit serializes PauliSumOps
+    
     vqe = VQE_Runtime(
         backend=backend,
         user_messenger = user_messenger,
-        ansatz_pool=sum(ansatz_pool[0]), #Required due to how qiskit serializes PauliSumOps
+        ansatz_pool=ansatz_pool,
         observable=observable,
         observable_groups=observable_groups,
         reference_state=reference_state
