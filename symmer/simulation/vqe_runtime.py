@@ -1,4 +1,6 @@
+from posixpath import split
 import numpy as np
+from math import ceil
 from typing import List, Union, Tuple, Dict
 from functools import reduce, cached_property
 from scipy.optimize import minimize
@@ -84,13 +86,14 @@ class VQE_Runtime:
 
     Also included is an implementation of ADAPT-VQE.
     """
-    n_shots     = 2**12
-    n_realize   = 1
-    n_groups    = 5
-    optimizer   = 'SLSQP'
-    init_params = None
-    opt_setting = {'maxiter':10}
-    mitigate_errors = True
+    n_circs     = 100 # number of experiments allowed per circuit batch
+    n_shots     = 2**12 # number of circuit shots per job
+    n_realize   = 1 # number of expectation value samples
+    n_groups    = 5 # number of QWC groups for classical shadow tomography
+    optimizer   = 'SLSQP' # classical optimizer for VQE routine
+    init_params = None # initial point for optimization
+    opt_setting = {'maxiter':10} # classical optimizer settings
+    mitigate_errors = True # flag indicating whether error mitigation is to be performed 
     
     def __init__(self,
         backend,
@@ -274,6 +277,8 @@ class VQE_Runtime:
    
     def get_counts(self, param_list: List[np.array]) -> List[Dict[str, float]]:
         """ Given a list of parametrizations, bind the circuits and submit to the backend
+
+        Divides the circuit jobs into smaller batches to circumvent backend limitations
         
         Returns:
             - result (List[Dict[str:int]]):
@@ -281,23 +286,37 @@ class VQE_Runtime:
                 their values the frequency of said measurement outcome 
 
         """
+        # bind the given parameters to the stored circuits
         bound_circuits = []
         for params in param_list:
             bound_circuits+=[qc.bind_parameters(params) for qc in self.circuits]
         
-        job = self.backend.run(
-            circuits = bound_circuits,
-            shots=self.n_shots
-        )
-        result = job.result()
-        raw_counts = result.get_counts()
+        # if the number of circuits exceeds backend.max_experiments split into smaller batches
+        n_batches = ceil(len(bound_circuits) / self.n_circs)
+        batches = split_list(bound_circuits, n_batches)
+        merged_results = []
         
-        if self.mitigate_errors:
-            quasis = self.m3.apply_correction(raw_counts, range(self.n_qubits))
-            return quasis.nearest_probability_distribution()
-        else:
-            return [{binstr:freq/self.n_shots for binstr,freq in counts.items()} 
-                    for counts in raw_counts] 
+        for batch in batches:
+            # submit circuit batch to the QPU
+            job = self.backend.run(
+                circuits = batch,
+                shots=self.n_shots
+            )
+            result = job.result()
+            raw_counts = result.get_counts()
+            
+            # extract measurement outcome probability distribution
+            if self.mitigate_errors:
+                quasis = self.m3.apply_correction(raw_counts, range(self.n_qubits))
+                p_dist = quasis.nearest_probability_distribution()
+            else:
+                p_dist = [{binstr:freq/self.n_shots for binstr,freq in counts.items()} 
+                        for counts in raw_counts]
+            
+            # collect all the batch results together
+            merged_results += p_dist
+
+        return merged_results
 
     def _estimate(self, countset: List[Dict[str, float]]) -> float:
         """ Given the measurment outcomes retrieved from the the backend, calculate
@@ -578,6 +597,7 @@ def main(backend, user_messenger, **kwargs):
     if ansatz_pool is not None:
         ansatz_pool = sum(ansatz_pool) # Required due to how qiskit serializes PauliSumOps
     
+    print(help(backend))
     vqe = VQE_Runtime(
         backend=backend,
         user_messenger = user_messenger,
@@ -586,8 +606,9 @@ def main(backend, user_messenger, **kwargs):
         observable_groups=observable_groups,
         reference_state=reference_state
     )
-    vqe.n_groups    = kwargs.pop("n_groups", 5)
+    vqe.n_circs     = backend.configuration().max_experiments
     vqe.n_shots     = kwargs.pop("n_shots", 2**12)
+    vqe.n_groups    = kwargs.pop("n_groups", 5)
     vqe.n_realize   = kwargs.pop("n_realize", 1)
     vqe.optimizer   = kwargs.pop("optimizer", 'SLSQP')
     vqe.opt_setting = kwargs.pop("opt_setting", {'maxiter':10})
