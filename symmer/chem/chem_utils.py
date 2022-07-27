@@ -1,6 +1,8 @@
-from typing import List #,List, Tuple, Union
+from symmer.symplectic import array_to_QuantumState
+from typing import List, Tuple
 import os
 import numpy as np
+import scipy as sp
 from pyscf import gto
 from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
@@ -119,3 +121,36 @@ def xyz_from_pubchem(molecule_name):
             xyz_file += f"{atom}\t{xyz[0]}\t{xyz[1]}\t{xyz[2]}\n"
 
     return xyz_file
+
+def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, n_eigs=6) -> Tuple[float, np.array]:
+    """ Return the ground state energy and corresponding ground statevector for the input operator
+    Specifying a particle number will restrict to eigenvectors of that Hamming weight
+    """
+    # Note the eigenvectors are stored column-wise so need to transpose
+    if sparse_matrix.shape[0] > 2**5:
+        eigvals, eigvecs = sp.sparse.linalg.eigsh(
+            sparse_matrix,k=n_eigs,v0=initial_guess,which='SA',maxiter=1e7
+        )
+    else:
+        # for small matrices the dense representation can be more efficient than sparse!
+        eigvals, eigvecs = np.linalg.eigh(sparse_matrix.toarray())
+    
+    # order the eigenvalues by increasing size
+    order = np.argsort(eigvals)
+    eigvals, eigvecs = eigvals[order], eigvecs[:, order]
+    
+    if n_particles is None:
+        # if no particle number is specified then return the smallest eigenvalue
+        return eigvals[0], eigvecs[0]
+    else:
+        # otherwise, search through the first n_eig eigenvalues and check the Hamming weight
+        # of the the corresponding eigenvector - return the first match with n_particles
+        for evl, evc in zip(eigvals, eigvecs.T):
+            psi = array_to_QuantumState(evc).cleanup(zero_threshold=1e-5)
+            hamming = np.einsum('ij->i', psi.state_matrix)
+            # for non chemistry Hamiltonians the particle number might not be preserved:
+            assert(np.all(hamming == hamming[0])), 'Particle number is not preserved, try setting n_particles=None'
+            if hamming[0] == n_particles:
+                return evl, evc
+        # if a solution is not found within the first n_eig eigenvalues then error
+        raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
