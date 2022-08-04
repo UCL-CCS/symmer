@@ -141,7 +141,7 @@ def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, n_eigs=
     
     if n_particles is None:
         # if no particle number is specified then return the smallest eigenvalue
-        return eigvals[0], eigvecs[0]
+        return eigvals[0], eigvecs.T[0]
     else:
         # otherwise, search through the first n_eig eigenvalues and check the Hamming weight
         # of the the corresponding eigenvector - return the first match with n_particles
