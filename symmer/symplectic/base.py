@@ -398,9 +398,7 @@ class PauliwordOp:
                 # allow negative subscript
                 key+=self.n_terms
             assert(key<self.n_terms), 'Index out of range'
-            symp_index = self.symp_matrix[key]
-            coef_index = self.coeff_vec[key]
-            return PauliwordOp(symp_index, [coef_index])
+            mask = [key]
         elif isinstance(key, slice):
             start, stop = key.start, key.stop
             if start is None:
@@ -408,9 +406,10 @@ class PauliwordOp:
             if stop is None:
                 stop=self.n_terms
             mask = np.arange(start, stop, key.step)
-            symp_index = self.symp_matrix[mask]
-            coef_index = self.coeff_vec[mask]
-            return PauliwordOp(symp_index, coef_index)
+        
+        symp_items = self.symp_matrix[mask]
+        coeff_items = self.coeff_vec[mask]
+        return PauliwordOp(symp_items, coeff_items)
 
     def __iter__(self):
         """ Makes a PauliwordOp instance iterable
@@ -744,6 +743,8 @@ class QuantumState:
     QuantumState is defined in base.py to avoid circular imports since multiplication
     behaviour is defined between QuantumState and PauliwordOp
     """
+    sigfig = '.3f'
+
     def __init__(self, 
             state_matrix: Union[List[List[int]], np.array], 
             coeff_vector: Union[List[complex], np.array] = None,
@@ -789,12 +790,15 @@ class QuantumState:
         for basis_vec, coeff in zip(self.state_matrix, self.coeff_vector):
             basis_string = ''.join([str(i) for i in basis_vec])
             if self.vec_type == 'ket':
-                out_string += (f'{coeff: .10f} |{basis_string}> +\n')
+                out_string += (f'{format(coeff, self.sigfig)} |{basis_string}> +\n')
             elif self.vec_type == 'bra':
-                out_string += (f'{coeff: .10f} <{basis_string}| +\n')
+                out_string += (f'{format(coeff, self.sigfig)} <{basis_string}| +\n')
             else:
                 raise ValueError('Invalid vec_type, must be bra or ket')
         return out_string[:-3]
+
+    def __repr__(self):
+        return str(self)
     
     def __add__(self, 
             Qstate: "QuantumState"
@@ -850,6 +854,33 @@ class QuantumState:
 
         else:
             raise ValueError('Trying to multiply QuantumState by unrecognised object - must be another Quantum state or PauliwordOp')   
+    
+    def __getitem__(self, key: Union[slice, int]) -> "QuantumState":
+        """ Makes the QuantumState subscriptable - returns a QuantumState 
+        constructed from the indexed rows and coefficients of the state matrix 
+        """
+        if isinstance(key, int):
+            if key<0:
+                # allow negative subscript
+                key+=self.n_terms
+            assert(key<self.n_terms), 'Index out of range'
+            mask = [key]
+        elif isinstance(key, slice):
+            start, stop = key.start, key.stop
+            if start is None:
+                start=0
+            if stop is None:
+                stop=self.n_terms
+            mask = np.arange(start, stop, key.step)
+        
+        state_items = self.state_matrix[mask]
+        coeff_items = self.coeff_vector[mask]
+        return QuantumState(state_items, coeff_items)
+
+    def __iter__(self):
+        """ Makes a QuantumState instance iterable
+        """
+        return iter([self[i] for i in range(self.n_terms)])
 
     def cleanup(self, zero_threshold=1e-15) -> "QuantumState":
         """ Combines duplicate basis states, summing their coefficients
@@ -860,6 +891,22 @@ class QuantumState:
             clean_state_op.coeff_vec, 
             vec_type=self.vec_type
         )
+
+    def sort(self, by='decreasing', key='magnitude') -> "QuantumState":
+        """
+        Sort the terms by some key, either magnitude, weight X, Y or Z
+        """
+        if key=='magnitude':
+            sort_order = np.argsort(-abs(self.coeff_vector))
+        elif key=='support':
+            sort_order = np.argsort(-np.einsum('ij->i', self.state_matrix))
+        else:
+            raise ValueError('Only permitted sort key values are magnitude or support')
+        if by=='increasing':
+            sort_order = sort_order[::-1]
+        elif by!='decreasing':
+            raise ValueError('Only permitted sort by values are increasing or decreasing')
+        return QuantumState(self.state_matrix[sort_order], self.coeff_vector[sort_order])
 
     def sectors_present(self, symmetry):
         """ return the sectors present within the QuantumState w.r.t. a StabilizerOp

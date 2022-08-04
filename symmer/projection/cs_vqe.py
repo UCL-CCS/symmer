@@ -252,8 +252,8 @@ class CS_VQE(S3_projection):
             )
         
     def project_onto_subspace(self,
-            stabilizers: StabilizerOp,
-            enforce_clique_operator=False,
+            stabilizers: StabilizerOp = None,
+            enforce_clique_operator   = False,
             aux_operator: PauliwordOp = None
         ) -> PauliwordOp:
         """ input a list of independent operators one wishes to map onto single-qubit 
@@ -264,40 +264,47 @@ class CS_VQE(S3_projection):
             operator_to_project = aux_operator.copy()
         else:
             operator_to_project = self.operator.copy()
-        
-        if self.n_cliques > 0:
-            # only allow stabilizers that commute with the cliques, else behaviour is unpredictable
-            valid_stab_indices = np.where(
-                np.all(stabilizers.commutes_termwise(self.clique_operator), axis=1))[0]
-            # raise a warning if any stabilizers are discarded due to anticommutation with a clique
-            if len(valid_stab_indices) < stabilizers.n_terms:
-                invalid_stab_indices = np.setdiff1d(np.arange(stabilizers.n_terms), valid_stab_indices).tolist()
-                removed = [symplectic_to_string(stabilizers[i].symp_matrix[0]) for i in invalid_stab_indices]
-                warnings.warn(
-                    'Specified a clique element in the stabilizer set!\n' +
-                    f'The term(s) {removed} were discarded, but note that the number of ' +
-                    'qubits in the stabilizer subspace will be greater than expected.'
-                )   
-        else:
-            valid_stab_indices = np.arange(stabilizers.n_terms)
-        
-        # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
-        fix_stabilizers = StabilizerOp(
-            stabilizers.symp_matrix[valid_stab_indices],
-            stabilizers.coeff_vec[valid_stab_indices],
-            target_sqp=self.target_sqp
-        )
-        # update the eigenvalue assignments to the specified stabilizers 
-        # in accordance with the noncontextual ground state
-        self.update_eigenvalues(fix_stabilizers)
-        
-        # if the clique operator is to be enforced, perform unitary partitioning:
-        insert_rotations=[]
-        if enforce_clique_operator and self.n_cliques > 0:
-            # if any stabilizers in the list contain more than one term then apply unitary partitioning
-            fix_stabilizers += self.C0
-            insert_rotations = self.unitary_partitioning_rotations
+
+        if stabilizers is not None:    
+            if self.n_cliques > 0:
+                # only allow stabilizers that commute with the cliques, else behaviour is unpredictable
+                valid_stab_indices = np.where(
+                    np.all(stabilizers.commutes_termwise(self.clique_operator), axis=1))[0]
+                # raise a warning if any stabilizers are discarded due to anticommutation with a clique
+                if len(valid_stab_indices) < stabilizers.n_terms:
+                    invalid_stab_indices = np.setdiff1d(np.arange(stabilizers.n_terms), valid_stab_indices).tolist()
+                    removed = [symplectic_to_string(stabilizers[i].symp_matrix[0]) for i in invalid_stab_indices]
+                    warnings.warn(
+                        'Specified a clique element in the stabilizer set!\n' +
+                        f'The term(s) {removed} were discarded, but note that the number of ' +
+                        'qubits in the stabilizer subspace will be greater than expected.'
+                    )   
+            else:
+                valid_stab_indices = np.arange(stabilizers.n_terms)
             
+            # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
+            fix_stabilizers = StabilizerOp(
+                stabilizers.symp_matrix[valid_stab_indices],
+                stabilizers.coeff_vec[valid_stab_indices],
+                target_sqp=self.target_sqp
+            )
+            # update the eigenvalue assignments to the specified stabilizers 
+            # in accordance with the noncontextual ground state
+            self.update_eigenvalues(fix_stabilizers)
+            
+            # if the clique operator is to be enforced, perform unitary partitioning:
+            insert_rotations=[]
+            if enforce_clique_operator and self.n_cliques > 0:
+                # if any stabilizers in the list contain more than one term then apply unitary partitioning
+                fix_stabilizers += self.C0
+                insert_rotations = self.unitary_partitioning_rotations
+        elif enforce_clique_operator and self.n_cliques > 0:
+            fix_stabilizers = StabilizerOp(self.C0.symp_matrix, self.C0.coeff_vec)
+            insert_rotations = self.unitary_partitioning_rotations
+        else:
+            warnings.warn('No stabilizers were specifed so the operator was returned')
+            return operator_to_project
+
         # instantiate the parent S3_projection class with the stabilizers we are enforcing
         super().__init__(fix_stabilizers)
 
