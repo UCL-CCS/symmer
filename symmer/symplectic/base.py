@@ -1,4 +1,5 @@
 import numpy as np
+import networkx as nx
 from copy import deepcopy
 from itertools import product
 from functools import reduce
@@ -125,7 +126,7 @@ class PauliwordOp:
     """ 
     A class thats represents an operator defined over the Pauli group in the symplectic representation.
     """
-    sigfig = '.3f'
+    sigfig = 3 # specifies the number of significant figures for printing
     
     def __init__(self, 
             operator:   Union[List[str], Dict[str, float], np.array], 
@@ -188,10 +189,10 @@ class PauliwordOp:
             out_string = ''
             for pauli_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
                 p_string = symplectic_to_string(pauli_vec)
-                out_string += (f'{format(coeff, self.sigfig)} {p_string} +\n')
+                out_string += (f'{coeff: .{self.sigfig}f} {p_string} +\n')
             return out_string[:-3]
         else: 
-            return f'{format(self.coeff_vec[0], self.sigfig)}'
+            return f'{self.coeff_vec[0]: .{self.sigfig}f}'
 
     def __repr__(self):
         return str(self)
@@ -442,6 +443,30 @@ class PauliwordOp:
         Omega_PwordOp_symp = np.hstack((PwordOp.Z_block,  PwordOp.X_block)).T
         return (self.symp_matrix @ Omega_PwordOp_symp) % 2 == 0
 
+    def qubitwise_commutes_termwise(self,
+        PwordOp: "PauliwordOp"
+        ) -> np.array:
+        """ Given the symplectic representation of a single Pauli operator,
+        determines which operator terms of the internal PauliwordOp qubitwise commute
+
+        Returns:  
+            QWC_mask (PauliSumOp): 
+                an array whose elements are True if the corresponding term
+                qubitwise commutes with the input PwordOp
+        """
+        assert(PwordOp.n_terms==1), 'Can only check qubitwise commutativity termwise with a single Pauli operator'
+        #TODO accept PwordOp with more than 1 term, like in commutes_termwise above
+        X_basis, Z_basis = np.hsplit(PwordOp.symp_matrix, 2)
+        X_block, Z_block = np.hsplit(self.symp_matrix, 2)
+        # identify the qubit positions on which there is at least one non-identity operation
+        non_I = (X_block | Z_block) & (X_basis | Z_basis)
+        # identift matches between the operator and basis, these indicate qubitwise commutation
+        X_match = np.all((X_block & non_I) == (X_basis & non_I), axis=1)
+        Z_match = np.all((Z_block & non_I) == (Z_basis & non_I), axis=1)
+        # mask the terms of self.observable that qubitwise commute with the basis
+        QWC_mask = X_match & Z_match
+        return QWC_mask
+
     def commutator(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
         """ Computes the commutator [A, B] = AB - BA
         """
@@ -464,6 +489,13 @@ class PauliwordOp:
         """ Checks which terms of self commute within itself
         """
         return self.commutes_termwise(self)
+
+    @cached_property
+    def adjacency_matrix_qwc(self):
+        """ Checks which terms of self qubitwise commute within itself
+        """
+        adjmat = [self.qubitwise_commutes_termwise(term) for term in self]
+        return np.vstack(adjmat)
 
     @cached_property
     def is_noncontextual(self):
@@ -556,17 +588,6 @@ class PauliwordOp:
         return Pword_conj
 
     @cached_property
-    def PauliwordOp_to_OF(self) -> List[QubitOperator]:
-        """ TODO Interface with converter.py (replace with to_dictionary method)
-        """
-        OF_list = []
-        for Pvec_single, coeff_single in zip(self.symp_matrix, self.coeff_vec):
-            P_string = symplectic_to_string(Pvec_single)
-            OF_string = ' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(Pvec_single)) if Pi!='I'])
-            OF_list.append(QubitOperator(OF_string, coeff_single))
-        return OF_list
-
-    @cached_property
     def to_QubitOperator(self) -> QubitOperator:
         """ convert to OpenFermion Pauli operator representation
         """
@@ -610,17 +631,6 @@ class PauliwordOp:
         Returns:
             sparse_matrix (csr_matrix): sparse matrix of PauliOp
         """
-        ### old method
-        # if self.n_qubits == 0:
-        #     return csr_matrix([self.coeff_vec[0]])
-        #
-        # sparse_matrix = csr_matrix( ([],([],[])),
-        #                           shape=(2**self.n_qubits,2**self.n_qubits)
-        #                           )
-        # for Pvec_single, coeff_single in zip(self.symp_matrix, self.coeff_vec):
-        #     sparse_matrix += symplectic_to_sparse_matrix(Pvec_single, coeff_single)
-
-        ### new method
         if self.n_qubits > 64:
             # numpy cannot handle ints over int64s (2**64) therefore use python objects
             binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1).astype(object)
@@ -650,33 +660,50 @@ class PauliwordOp:
         )
         return sparse_matrix
 
-    def qwc_single_Pword(self,
-            Pword: "PauliwordOp"
-        ) -> bool:
-        """ Checks self qubit wise commute (QWC) with another single Pauliword
+    def clique_cover(self, 
+        edge_relation = 'C', 
+        colouring_strategy='random_sequential', 
+        colouring_interchange=False
+        ) -> Dict[int, "PauliwordOp"]:
+        """ Build a graph based on edge relation C (commuting), AC (anticommuting) or
+        QWC (qubitwise commuting) and perform a graph colouring to identify cliques
+
+        ------------------------
+        | colouring strategies |
+        ------------------------
+        'largest_first'
+        'random_sequential'
+        'smallest_last'
+        'independent_set'
+        'connected_sequential_bfs'
+        'connected_sequential_dfs'
+        'connected_sequential' #(alias for the previous strategy)
+        'saturation_largest_first'
+        'DSATUR' #(alias for the previous strategy)
+
         """
-        assert (self.n_terms == 1), 'self operator must be a single Pauliword'
-        assert (Pword.n_terms == 1), 'Pword must be a single Pauliword'
-
-        # NOT identity locations (used for mask)
-        self_I = np.bitwise_or(self.X_block, self.Z_block).astype(bool)
-        Pword_I = np.bitwise_or(Pword.X_block, Pword.Z_block).astype(bool)
-
-        # Get the positions where neither self nor Pword have I acting on them
-        unique_non_I_locations = np.bitwise_and(self_I, Pword_I)
-
-        # check non I operators are the same!
-        same_Xs = np.bitwise_not(
-            np.bitwise_xor(self.X_block[unique_non_I_locations], Pword.X_block[unique_non_I_locations]).astype(
-                bool))
-        same_Zs = np.bitwise_not(
-            np.bitwise_xor(self.Z_block[unique_non_I_locations], Pword.Z_block[unique_non_I_locations]).astype(
-                bool))
-
-        if np.all(same_Xs) and np.all(same_Zs):
-            return True
+        # build the adjacency matrix for the chosen edge relation
+        if edge_relation == 'AC':
+            adjmat = ~self.adjacency_matrix
+        elif edge_relation == 'C':
+            adjmat = self.adjacency_matrix
+        elif edge_relation == 'QWC':
+            adjmat = self.adjacency_matrix_qwc
         else:
-            return False
+            raise TypeError('Unrecognised edge relation, must be one of C (commuting), AC (anticommuting) or QWC (qubitwise commuting).')
+        np.fill_diagonal(adjmat,False) # avoids self-adjacency
+        # convert to a networkx graph and perform colouring on complement
+        graph = nx.from_numpy_matrix(adjmat)
+        inverted_graph = nx.complement(graph)
+        col_map = nx.greedy_color(inverted_graph, strategy=colouring_strategy, interchange=colouring_interchange)
+        # invert the resulting colour map to identify cliques
+        cliques = {}
+        for p_index, colour in col_map.items():
+            cliques[colour] = cliques.get(
+                colour, 
+                PauliwordOp(['I'*self.n_qubits],[0])
+            ) + self[p_index]
+        return cliques
 
 
 def random_PauliwordOp(n_qubits, n_terms, diagonal=False, complex_coeffs=True):
@@ -742,8 +769,8 @@ class QuantumState:
     QuantumState is defined in base.py to avoid circular imports since multiplication
     behaviour is defined between QuantumState and PauliwordOp
     """
-    sigfig = '.3f'
-
+    sigfig = 3 # specifies the number of significant figures for printing
+    
     def __init__(self, 
             state_matrix: Union[List[List[int]], np.array], 
             coeff_vector: Union[List[complex], np.array] = None,
@@ -789,9 +816,9 @@ class QuantumState:
         for basis_vec, coeff in zip(self.state_matrix, self.coeff_vector):
             basis_string = ''.join([str(i) for i in basis_vec])
             if self.vec_type == 'ket':
-                out_string += (f'{format(coeff, self.sigfig)} |{basis_string}> +\n')
+                out_string += (f'{coeff: .{self.sigfig}f} |{basis_string}> +\n')
             elif self.vec_type == 'bra':
-                out_string += (f'{format(coeff, self.sigfig)} <{basis_string}| +\n')
+                out_string += (f'{coeff: .{self.sigfig}f} <{basis_string}| +\n')
             else:
                 raise ValueError('Invalid vec_type, must be bra or ket')
         return out_string[:-3]
