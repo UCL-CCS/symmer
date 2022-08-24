@@ -1,9 +1,6 @@
 import numpy as np
 from copy import deepcopy
 from typing import Dict, List, Tuple, Union
-from symmer.symplectic import PauliwordOp
-from scipy.sparse import csr_matrix
-import scipy as sp
 import warnings
 warnings.simplefilter('always', UserWarning)
 
