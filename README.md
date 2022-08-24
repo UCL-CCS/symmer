@@ -1,6 +1,6 @@
 # Symmer
 
-A package for reducing the quantum resource requirement of your problems, making them more NISQ-friendly!
+A Python package for reducing the quantum resource requirement of your problems, making them more NISQ-friendly!
 
 ## Installation
 To install from the root of the project run:
