@@ -1,4 +1,3 @@
-from cirq import StabilizerSampler
 import numpy as np
 from copy import deepcopy
 from itertools import product
