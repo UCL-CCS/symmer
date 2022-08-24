@@ -1,6 +1,6 @@
 from symmer.symplectic import PauliwordOp
 from symmer.utils import QubitOperator_to_dict
-from symmer.chem import FermionicHamilt, FermioniCC, PySCFDriver
+from symmer.chemistry import FermionicHamilt, FermioniCC, PySCFDriver
 from openfermion import get_fermion_operator, jordan_wigner, FermionOperator, hermitian_conjugated
 from typing import Tuple, List
 
