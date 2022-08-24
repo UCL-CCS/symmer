@@ -1,6 +1,6 @@
 from symmer.symplectic import PauliwordOp
 from symmer.utils import QubitOperator_to_dict
-from symmer.chemistry import FermionicHamilt, FermioniCC, PySCFDriver
+from symmer.chemistry import FermionicHamiltonian, FermioniCC, PySCFDriver
 from openfermion import get_fermion_operator, jordan_wigner, FermionOperator, hermitian_conjugated
 from typing import Tuple, List
 
@@ -39,7 +39,7 @@ class MoleculeBuilder:
         self.calculate(run_fci=run_fci)
 
         # build the fermionic hamiltonian/CC operator
-        self.H_fermion = FermionicHamilt(self.pyscf_obj.pyscf_hf)
+        self.H_fermion = FermionicHamiltonian(self.pyscf_obj.pyscf_hf)
         self.T_fermion = FermioniCC(self.pyscf_obj.pyscf_ccsd)
         self.H_fermion.build_fermionic_hamiltonian_operator()
         self.T_fermion.build_operator()

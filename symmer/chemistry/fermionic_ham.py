@@ -12,7 +12,7 @@ from pyscf.lib import StreamObject
 from pyscf.cc.addons import spatial2spin
 import warnings
 
-class FermionicHamilt:
+class FermionicHamiltonian:
     """Class to build Fermionic molecular hamiltonians.
 
       Holds fermionic operators + integrals
