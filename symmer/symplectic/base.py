@@ -456,13 +456,11 @@ class PauliwordOp:
         """
         assert(PwordOp.n_terms==1), 'Can only check qubitwise commutativity termwise with a single Pauli operator'
         #TODO accept PwordOp with more than 1 term, like in commutes_termwise above
-        X_basis, Z_basis = np.hsplit(PwordOp.symp_matrix, 2)
-        X_block, Z_block = np.hsplit(self.symp_matrix, 2)
         # identify the qubit positions on which there is at least one non-identity operation
-        non_I = (X_block | Z_block) & (X_basis | Z_basis)
+        non_I = (self.X_block | self.Z_block) & (PwordOp.X_block | PwordOp.Z_block)
         # identift matches between the operator and basis, these indicate qubitwise commutation
-        X_match = np.all((X_block & non_I) == (X_basis & non_I), axis=1)
-        Z_match = np.all((Z_block & non_I) == (Z_basis & non_I), axis=1)
+        X_match = np.all((self.X_block & non_I) == (PwordOp.X_block & non_I), axis=1)
+        Z_match = np.all((self.Z_block & non_I) == (PwordOp.Z_block & non_I), axis=1)
         # mask the terms of self.observable that qubitwise commute with the basis
         QWC_mask = X_match & Z_match
         return QWC_mask
