@@ -450,20 +450,20 @@ class PauliwordOp:
         determines which operator terms of the internal PauliwordOp qubitwise commute
 
         Returns:  
-            QWC_mask (PauliSumOp): 
+            QWC_matrix (np.array): 
                 an array whose elements are True if the corresponding term
                 qubitwise commutes with the input PwordOp
         """
-        assert(PwordOp.n_terms==1), 'Can only check qubitwise commutativity termwise with a single Pauli operator'
-        #TODO accept PwordOp with more than 1 term, like in commutes_termwise above
-        # identify the qubit positions on which there is at least one non-identity operation
-        non_I = (self.X_block | self.Z_block) & (PwordOp.X_block | PwordOp.Z_block)
-        # identift matches between the operator and basis, these indicate qubitwise commutation
-        X_match = np.all((self.X_block & non_I) == (PwordOp.X_block & non_I), axis=1)
-        Z_match = np.all((self.Z_block & non_I) == (PwordOp.Z_block & non_I), axis=1)
-        # mask the terms of self.observable that qubitwise commute with the basis
-        QWC_mask = X_match & Z_match
-        return QWC_mask
+        QWC_matrix = []
+        for X_term, Z_term in zip(PwordOp.X_block, PwordOp.Z_block):
+            # identify the qubit positions on which there is at least one non-identity operation
+            non_I = (self.X_block | self.Z_block) & (X_term | Z_term)
+            # identify matches between the operator and term of PwordOp - these indicate qubitwise commutation
+            X_match = np.all((self.X_block & non_I) == (X_term & non_I), axis=1)
+            Z_match = np.all((self.Z_block & non_I) == (Z_term & non_I), axis=1)
+            # mask the terms of self.observable that qubitwise commute with the PwordOp term
+            QWC_matrix.append((X_match & Z_match).reshape(self.n_terms, 1))
+        return np.hstack(QWC_matrix)
 
     def commutator(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
         """ Computes the commutator [A, B] = AB - BA
@@ -492,8 +492,7 @@ class PauliwordOp:
     def adjacency_matrix_qwc(self):
         """ Checks which terms of self qubitwise commute within itself
         """
-        adjmat = [self.qubitwise_commutes_termwise(term) for term in self]
-        return np.vstack(adjmat)
+        return self.qubitwise_commutes_termwise(self)
 
     @cached_property
     def is_noncontextual(self):
@@ -682,11 +681,11 @@ class PauliwordOp:
         """
         # build the adjacency matrix for the chosen edge relation
         if edge_relation == 'AC':
-            adjmat = ~self.adjacency_matrix
+            adjmat = ~self.adjacency_matrix.copy()
         elif edge_relation == 'C':
-            adjmat = self.adjacency_matrix
+            adjmat = self.adjacency_matrix.copy()
         elif edge_relation == 'QWC':
-            adjmat = self.adjacency_matrix_qwc
+            adjmat = self.adjacency_matrix_qwc.copy()
         else:
             raise TypeError('Unrecognised edge relation, must be one of C (commuting), AC (anticommuting) or QWC (qubitwise commuting).')
         np.fill_diagonal(adjmat,False) # avoids self-adjacency
