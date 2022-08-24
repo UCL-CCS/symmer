@@ -1,6 +1,6 @@
 # Symmer
 
-A package for reducing the quantum resource requirement of your problems for NISQ devices.
+A package for reducing the quantum resource requirement of your problems, making them more NISQ-friendly!
 
 ## Installation
 To install from the root of the project run:
@@ -21,7 +21,7 @@ Qubit reduction techniques such as [tapering](https://arxiv.org/abs/1701.08213) 
 - [`ObservableOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/observable_op.py) for representing Hermitian operators, including expectation values and VQE functionality.
 - [`AnsatzOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/ansatz_op.py) is input into ObservableOp.VQE and contains a method for converting excitation terms to a quantum circuit.
 - [`StabilizerOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/stabilizer_op.py) represents algebraically independent sets of Pauli operators for stabilizer manipulation/projections.
-- [`AnticommutingOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/anticommuting_op.py) represents sets of anticommuting Pauli operators for the purposes of Unitary Partitioning and Linear Combination of Unitaries.
+- [`AnticommutingOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/anticommuting_op.py) represents sets of anticommuting Pauli operators for the purposes of Unitary Partitioning and Linear Combination of Unitaries as in [this](https://arxiv.org/abs/2207.03451) paper.
 - [`MajoranaOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/majorana_op.py) represents operators in the Majorana basis instead of Paulis, though the underlying symplectic structure is analogous.
 
 `.projection` contains stabilizer subspace projection classes (in resolution order):
