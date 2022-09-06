@@ -878,6 +878,14 @@ class QuantumState:
         else:
             raise ValueError('Trying to multiply QuantumState by unrecognised object - must be another Quantum state or PauliwordOp')   
     
+    def multiply_by_constant(self, 
+            const: complex
+        ) -> "QuantumState":
+        """
+        Multiply the QuantumState by a complex coefficient
+        """
+        return QuantumState(self.state_matrix, self.coeff_vector*const)
+
     def __getitem__(self, key: Union[slice, int]) -> "QuantumState":
         """ Makes the QuantumState subscriptable - returns a QuantumState 
         constructed from the indexed rows and coefficients of the state matrix 
@@ -978,6 +986,19 @@ class QuantumState:
             dtype=np.complex128
         )
         return sparse_Qstate
+
+def random_QuantumState(n_qubits, n_terms, complex_coeffs=True, normalized=True):
+    """ Generates a random QuantumState with uniformly distributed coefficients
+    """
+    state_matrix = np.random.randint(0,2,(n_terms, n_qubits))
+    coeff_vector = np.random.random(n_terms).astype(complex)
+    if complex_coeffs:
+        coeff_vector += 1j*np.random.random(n_terms)
+    psi = QuantumState(state_matrix, coeff_vector)
+    if normalized:
+        return psi.normalize
+    else:
+        return psi
 
 def array_to_QuantumState(statevector, threshold=1e-15):
     """ Given a vector of 2^N elements over N qubits, convert to a QuantumState object.
