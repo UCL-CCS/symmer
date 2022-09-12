@@ -1,4 +1,4 @@
-from typing import Optional, List #,List, Tuple, Union
+from typing import Optional, Tuple
 from pathlib import Path
 import os
 import numpy as np

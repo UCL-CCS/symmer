@@ -7,6 +7,8 @@ from pyscf import gto
 from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
 from pyscf.tools import cubegen
+from openfermion import FermionOperator
+
 
 def Draw_molecule(
     xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
@@ -122,6 +124,7 @@ def xyz_from_pubchem(molecule_name):
 
     return xyz_file
 
+
 def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, n_eigs=6) -> Tuple[float, np.array]:
     """ Return the ground state energy and corresponding ground statevector for the input operator
     Specifying a particle number will restrict to eigenvectors of that Hamming weight
@@ -154,3 +157,47 @@ def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, n_eigs=
                 return evl, evc
         # if a solution is not found within the first n_eig eigenvalues then error
         raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
+
+
+def get_fermionic_number_operator(N_qubits: int) -> FermionOperator:
+    """
+
+    Args:
+        N_qubits(int): number of qubits (or number of molecular spin orbitals)
+
+    Returns:
+        N_op (FermionOperator): number operator
+    """
+
+    N_op = FermionOperator()
+    for spin_orb_ind in range(N_qubits):
+        N_op += FermionOperator(f'{spin_orb_ind}^ {spin_orb_ind}', 1)
+
+    return N_op
+
+
+def get_fermionic_up_down_parity_operators(N_qubits: int) -> Tuple[FermionOperator, FermionOperator]:
+    """
+    note order is assumed to be spin up, spin down, spin up, spin down ... etc
+
+    each op is built as product of parities of individual sites!
+    https://arxiv.org/pdf/1008.4346.pdf
+
+    Args:
+        N_qubits (int): number of qubits (or molecular spin orbitals)
+
+    Returns:
+        parity_up (FermionOperator): parity operator of spin up fermions
+        parity_down (FermionOperator): parity operator of spin down fermions
+    """
+
+    parity_up = FermionOperator('', 1)
+    for spin_up_ind in np.arange(0, N_qubits, 2):
+        parity_up *= FermionOperator('', 1) - 2 * FermionOperator(f'{spin_up_ind}^ {spin_up_ind}', 1)  #
+
+    parity_down = FermionOperator('', 1)
+    for spin_down_ind in np.arange(1, N_qubits, 2):
+        parity_down *= FermionOperator('', 1) - 2 * FermionOperator(f'{spin_down_ind}^ {spin_down_ind}', 1)
+
+    return parity_up, parity_down
+
