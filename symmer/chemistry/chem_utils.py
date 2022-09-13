@@ -10,6 +10,7 @@ from pyscf.tools import cubegen
 from openfermion import FermionOperator, count_qubits
 from openfermion.transforms import jordan_wigner, bravyi_kitaev, parity_code
 from symmer.utils import QubitOperator_to_dict
+from symmer.symplectic import PauliwordOp
 
 def Draw_molecule(
     xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
@@ -126,7 +127,7 @@ def xyz_from_pubchem(molecule_name):
     return xyz_file
 
 
-def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, n_eigs=6) -> Tuple[float, np.array]:
+def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, number_operator=None, n_eigs=6) -> Tuple[float, np.array]:
     """ Return the ground state energy and corresponding ground statevector for the input operator
     Specifying a particle number will restrict to eigenvectors of that Hamming weight
     """
@@ -151,10 +152,16 @@ def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, n_eigs=
         # of the the corresponding eigenvector - return the first match with n_particles
         for evl, evc in zip(eigvals, eigvecs.T):
             psi = array_to_QuantumState(evc).cleanup(zero_threshold=1e-5)
-            hamming = np.einsum('ij->i', psi.state_matrix)
-            # for non chemistry Hamiltonians the particle number might not be preserved:
-            assert(np.all(hamming == hamming[0])), 'Particle number is not preserved, try setting n_particles=None'
-            if hamming[0] == n_particles:
+            assert(~np.any(number_operator.X_block)), 'Number operator not diagonal'
+            expval_n_particle = 0
+            for Z_symp, Z_coeff in zip(number_operator.Z_block, number_operator.coeff_vec):
+                sign = (-1) ** np.einsum('ij->i', 
+                    np.bitwise_and(
+                        Z_symp, psi.state_matrix
+                    )
+                )
+                expval_n_particle += Z_coeff * np.sum(sign * np.square(abs(psi.coeff_vector)))
+            if round(expval_n_particle) == n_particles:
                 return evl, evc
         # if a solution is not found within the first n_eig eigenvalues then error
         raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
@@ -236,4 +243,4 @@ def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
 
     # want to return PauliWordOp (but results in circular import!)
     ## aka PauliWordOp base class imports utils and so import here causes problems.
-    return q_op_dict
+    return PauliwordOp(q_op_dict)
