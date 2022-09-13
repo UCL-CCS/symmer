@@ -7,8 +7,9 @@ from pyscf import gto
 from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
 from pyscf.tools import cubegen
-from openfermion import FermionOperator
-
+from openfermion import FermionOperator, count_qubits
+from openfermion.transforms import jordan_wigner, bravyi_kitaev, parity_code
+from symmer.utils import QubitOperator_to_dict
 
 def Draw_molecule(
     xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
@@ -201,3 +202,38 @@ def get_fermionic_up_down_parity_operators(N_qubits: int) -> Tuple[FermionOperat
 
     return parity_up, parity_down
 
+
+def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
+                              qubit_mapping_str: str,
+                              N_qubits: int = None):
+    """
+    Function to convert from fermion operators to qubit operators.
+    Note see openfermion.transforms for different fermion to qubit mappings
+
+    Args:
+        Fermionic_operator(FermionOperator): any fermionic operator (openfermion)
+        qubit_mapping_str (str): fermion to qubit mapping
+        N_qubits (int): number of qubits (or spin orbitals)
+
+    Returns:
+        qubit_operator (PauliwordOp): qubit operator of fermonic operator (under certain mapping)
+    """
+    fermonic_to_qubit_map = {'jordan_wigner': jordan_wigner,
+                             'bravyi_kitaev': bravyi_kitaev,
+                             'parity_code': parity_code}
+
+    if qubit_mapping_str.lower() not in fermonic_to_qubit_map.keys():
+        print(f'valid qubit mappings : {list(fermonic_to_qubit_map.keys())}')
+        raise ValueError(f'unknown qubit mapping: {qubit_mapping_str}')
+
+    mapping = fermonic_to_qubit_map[qubit_mapping_str.lower()]
+    qubit_operator = mapping(Fermionic_operator)
+
+    if N_qubits is None:
+        N_qubits = count_qubits(qubit_operator)
+
+    q_op_dict = QubitOperator_to_dict(qubit_operator, N_qubits)
+
+    # want to return PauliWordOp (but results in circular import!)
+    ## aka PauliWordOp base class imports utils and so import here causes problems.
+    return q_op_dict
