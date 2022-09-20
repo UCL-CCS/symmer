@@ -3,6 +3,14 @@ import numpy as np
 from cached_property import cached_property
 
 class matrix_to_Pword():
+    """
+    Given any arbitrary matrix convert it into a linear combination of Pauli operators (PauliwordOp)
+
+    Note this decomposition builds a basis of size 4^{N_qubits} to decompose matrix into
+    this can be costly! (TODO: may be better way of chosing a basis to represent operator in! aka smaller than 4^N
+                               see jupyter notebook for further details)
+
+    """
     def __init__(self, matrix: np.array):
 
         self.n_qubits = None
@@ -30,12 +38,18 @@ class matrix_to_Pword():
             return mat
 
     @cached_property
-    def operator(self):
+    def operator(self) -> PauliwordOp:
+        """
+        Build Pauli operator representation of input matrix
+
+        Returns:
+            decomposition (PauliwordOp): linear combination of Pauli operators of defined matrix of object
+        """
 
         # XZ_block = np.eye(2*self.n_qubits, dtype=int)
 
         # fast method to build all binary assignments
-        int_list = np.arange(2 ** (2 * self.n_qubits))
+        int_list = np.arange(4 ** (self.n_qubits))
         XZ_block = (((int_list[:, None] & (1 << np.arange(2 * self.n_qubits))[::-1])) > 0).astype(int)
 
         operator_basis = PauliwordOp(XZ_block, np.ones(XZ_block.shape[0]))
