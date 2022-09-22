@@ -543,19 +543,23 @@ class PauliwordOp:
             Pword_copy = Pword
 
         commute_vec = self.commutes_termwise(Pword_copy).flatten()
-        # note ~commute_vec == not commutes, this indexes the anticommuting terms
-        commute_self = PauliwordOp(self.symp_matrix[commute_vec], self.coeff_vec[commute_vec])
-        anticom_self = PauliwordOp(self.symp_matrix[~commute_vec], self.coeff_vec[~commute_vec])
-
-        if angle is None:
-            # assumes pi/2 rotation so Clifford
-            anticom_part = (anticom_self*Pword_copy).multiply_by_constant(-1j)
+        if np.all(commute_vec):
+            # if Pword commutes with self then the rotation has identity action
+            return self
         else:
-            # if angle is specified, performs non-Clifford rotation
-            anticom_part = (anticom_self.multiply_by_constant(np.cos(angle)) + 
-                            (anticom_self*Pword_copy).multiply_by_constant(-1j*np.sin(angle)))
-        
-        return commute_self + anticom_part
+            # note ~commute_vec == not commutes, this indexes the anticommuting terms
+            commute_self = PauliwordOp(self.symp_matrix[commute_vec], self.coeff_vec[commute_vec])
+            anticom_self = PauliwordOp(self.symp_matrix[~commute_vec], self.coeff_vec[~commute_vec])
+
+            if angle is None:
+                # assumes pi/2 rotation so Clifford
+                anticom_part = (anticom_self*Pword_copy).multiply_by_constant(-1j)
+            else:
+                # if angle is specified, performs non-Clifford rotation
+                anticom_part = (anticom_self.multiply_by_constant(np.cos(angle)) + 
+                                (anticom_self*Pword_copy).multiply_by_constant(-1j*np.sin(angle)))
+            
+            return commute_self + anticom_part
 
     def perform_rotations(self, 
             rotations: List[Tuple["PauliwordOp", float]]

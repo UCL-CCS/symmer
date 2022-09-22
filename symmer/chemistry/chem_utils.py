@@ -7,6 +7,10 @@ from pyscf import gto
 from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
 from pyscf.tools import cubegen
+from openfermion import FermionOperator, count_qubits
+from openfermion.transforms import jordan_wigner, bravyi_kitaev, parity_code
+from symmer.utils import QubitOperator_to_dict
+from symmer.symplectic import PauliwordOp
 
 def Draw_molecule(
     xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
@@ -122,7 +126,8 @@ def xyz_from_pubchem(molecule_name):
 
     return xyz_file
 
-def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, n_eigs=6) -> Tuple[float, np.array]:
+
+def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, number_operator=None, n_eigs=6) -> Tuple[float, np.array]:
     """ Return the ground state energy and corresponding ground statevector for the input operator
     Specifying a particle number will restrict to eigenvectors of that Hamming weight
     """
@@ -147,10 +152,95 @@ def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, n_eigs=
         # of the the corresponding eigenvector - return the first match with n_particles
         for evl, evc in zip(eigvals, eigvecs.T):
             psi = array_to_QuantumState(evc).cleanup(zero_threshold=1e-5)
-            hamming = np.einsum('ij->i', psi.state_matrix)
-            # for non chemistry Hamiltonians the particle number might not be preserved:
-            assert(np.all(hamming == hamming[0])), 'Particle number is not preserved, try setting n_particles=None'
-            if hamming[0] == n_particles:
+            assert(~np.any(number_operator.X_block)), 'Number operator not diagonal'
+            expval_n_particle = 0
+            for Z_symp, Z_coeff in zip(number_operator.Z_block, number_operator.coeff_vec):
+                sign = (-1) ** np.einsum('ij->i', 
+                    np.bitwise_and(
+                        Z_symp, psi.state_matrix
+                    )
+                )
+                expval_n_particle += Z_coeff * np.sum(sign * np.square(abs(psi.coeff_vector)))
+            if round(expval_n_particle) == n_particles:
                 return evl, evc
         # if a solution is not found within the first n_eig eigenvalues then error
         raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
+
+
+def get_fermionic_number_operator(N_qubits: int) -> FermionOperator:
+    """
+
+    Args:
+        N_qubits(int): number of qubits (or number of molecular spin orbitals)
+
+    Returns:
+        N_op (FermionOperator): number operator
+    """
+
+    N_op = FermionOperator()
+    for spin_orb_ind in range(N_qubits):
+        N_op += FermionOperator(f'{spin_orb_ind}^ {spin_orb_ind}', 1)
+
+    return N_op
+
+
+def get_fermionic_up_down_parity_operators(N_qubits: int) -> Tuple[FermionOperator, FermionOperator]:
+    """
+    note order is assumed to be spin up, spin down, spin up, spin down ... etc
+
+    each op is built as product of parities of individual sites!
+    https://arxiv.org/pdf/1008.4346.pdf
+
+    Args:
+        N_qubits (int): number of qubits (or molecular spin orbitals)
+
+    Returns:
+        parity_up (FermionOperator): parity operator of spin up fermions
+        parity_down (FermionOperator): parity operator of spin down fermions
+    """
+
+    parity_up = FermionOperator('', 1)
+    for spin_up_ind in np.arange(0, N_qubits, 2):
+        parity_up *= FermionOperator('', 1) - 2 * FermionOperator(f'{spin_up_ind}^ {spin_up_ind}', 1)  #
+
+    parity_down = FermionOperator('', 1)
+    for spin_down_ind in np.arange(1, N_qubits, 2):
+        parity_down *= FermionOperator('', 1) - 2 * FermionOperator(f'{spin_down_ind}^ {spin_down_ind}', 1)
+
+    return parity_up, parity_down
+
+
+def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
+                              qubit_mapping_str: str,
+                              N_qubits: int = None):
+    """
+    Function to convert from fermion operators to qubit operators.
+    Note see openfermion.transforms for different fermion to qubit mappings
+
+    Args:
+        Fermionic_operator(FermionOperator): any fermionic operator (openfermion)
+        qubit_mapping_str (str): fermion to qubit mapping
+        N_qubits (int): number of qubits (or spin orbitals)
+
+    Returns:
+        qubit_operator (PauliwordOp): qubit operator of fermonic operator (under certain mapping)
+    """
+    fermonic_to_qubit_map = {'jordan_wigner': jordan_wigner,
+                             'bravyi_kitaev': bravyi_kitaev,
+                             'parity_code': parity_code}
+
+    if qubit_mapping_str.lower() not in fermonic_to_qubit_map.keys():
+        print(f'valid qubit mappings : {list(fermonic_to_qubit_map.keys())}')
+        raise ValueError(f'unknown qubit mapping: {qubit_mapping_str}')
+
+    mapping = fermonic_to_qubit_map[qubit_mapping_str.lower()]
+    qubit_operator = mapping(Fermionic_operator)
+
+    if N_qubits is None:
+        N_qubits = count_qubits(qubit_operator)
+
+    q_op_dict = QubitOperator_to_dict(qubit_operator, N_qubits)
+
+    # want to return PauliWordOp (but results in circular import!)
+    ## aka PauliWordOp base class imports utils and so import here causes problems.
+    return PauliwordOp(q_op_dict)

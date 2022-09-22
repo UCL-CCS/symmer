@@ -229,10 +229,12 @@ def QubitOperator_to_dict(op, num_qubits):
     terms = list(term_dict.keys())
 
     for t in terms:    
-        letters = ['I' for i in range(num_qubits)]
+        letters = ['I' for _ in range(num_qubits)]
         for i in t:
             letters[i[0]] = i[1]
         p_string = ''.join(letters)        
         op_dict[p_string] = term_dict[t]
          
     return op_dict
+
+
