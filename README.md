@@ -1,3 +1,4 @@
+[![Continuous_Integration](https://github.com/UCL-CCS/symmer/actions/workflows/pull_request.yaml/badge.svg)](https://github.com/UCL-CCS/symmer/actions/workflows/pull_request.yaml)
 # Symmer
 
 A Python package for reducing the quantum resource requirement of your problems, making them more NISQ-friendly!
