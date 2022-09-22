@@ -770,7 +770,7 @@ class PauliwordOp:
         for p_index, colour in col_map.items():
             cliques[colour] = cliques.get(
                 colour, 
-                PauliwordOp.from_dictionary(['I'*self.n_qubits],[0])
+                PauliwordOp.from_list(['I'*self.n_qubits],[0])
             ) + self[p_index]
         return cliques
 
