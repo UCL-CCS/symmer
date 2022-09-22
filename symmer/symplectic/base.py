@@ -619,12 +619,17 @@ class PauliwordOp:
             if angle is None:
                 # assumes pi/2 rotation so Clifford
                 anticom_part = (anticom_self*Pword_copy).multiply_by_constant(-1j)
+                # if rotation is Clifford cannot produce duplicate terms so cleanup not necessary
+                return PauliwordOp(
+                    np.vstack([anticom_part.symp_matrix, commute_self.symp_matrix]), 
+                    np.hstack([anticom_part.coeff_vec, commute_self.coeff_vec])
+                )
             else:
                 # if angle is specified, performs non-Clifford rotation
                 anticom_part = (anticom_self.multiply_by_constant(np.cos(angle)) + 
                                 (anticom_self*Pword_copy).multiply_by_constant(-1j*np.sin(angle)))
-            
-            return commute_self + anticom_part
+                return commute_self + anticom_part
+                
 
     def perform_rotations(self, 
             rotations: List[Tuple["PauliwordOp", float]]
