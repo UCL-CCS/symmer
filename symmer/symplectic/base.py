@@ -4,6 +4,7 @@ from copy import deepcopy
 from itertools import product
 from functools import reduce
 from typing import Dict, List, Tuple, Union
+from numbers import Number
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
 from symmer.utils import gf2_gaus_elim, norm, random_symplectic_matrix, symplectic_cleanup
@@ -129,7 +130,7 @@ class PauliwordOp:
     sigfig = 3 # specifies the number of significant figures for printing
     
     def __init__(self, 
-            operator:   Union[List[str], Dict[str, float], np.array], 
+            symp_matrix:   Union[List[str], Dict[str, float], np.array], 
             coeff_vec: Union[List[complex], np.array] = None
         ) -> None:
         """ 
@@ -140,20 +141,11 @@ class PauliwordOp:
         since it circumvents various conversions required - this is how the methods defined 
         below function.
         """
-        if isinstance(operator, np.ndarray): 
-            if len(operator.shape)==1:
-                operator = operator.reshape([1, len(operator)])
-            self.symp_matrix = operator
-            self.n_qubits = self.symp_matrix.shape[1]//2
-        else:
-            if isinstance(operator, dict):
-                operator, coeff_vec = zip(*operator.items())
-                operator = list(operator)
-            if isinstance(operator, list):
-                self._init_from_paulistring_list(operator)
-            else:
-                raise ValueError(f'unkown operator type: must be dict or np.array: {type(operator)}')
-        
+        symp_matrix = np.array(symp_matrix)
+        if len(symp_matrix.shape)==1:
+            symp_matrix = symp_matrix.reshape([1, len(symp_matrix)])
+        self.symp_matrix = symp_matrix
+        self.n_qubits = self.symp_matrix.shape[1]//2
         assert(coeff_vec is not None), 'A list of coefficients has not been supplied'
         self.coeff_vec = np.asarray(coeff_vec, dtype=complex)
         self.n_terms = self.symp_matrix.shape[0]
@@ -162,21 +154,91 @@ class PauliwordOp:
         self.X_block = self.symp_matrix[:, :self.n_qubits]
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
         
-    def _init_from_paulistring_list(self, 
-            operator_list: List[str]
-        ) -> None:
-        """
-        """
-        n_rows = len(operator_list)
-        if operator_list:
-            self.n_qubits = len(operator_list[0])
-            self.symp_matrix = np.zeros((n_rows, 2 * self.n_qubits), dtype=int)
-            for row_ind, pauli_str in enumerate(operator_list):
-                self.symp_matrix[row_ind] = string_to_symplectic(pauli_str, self.n_qubits)
-        else:
-            self.n_qubits = 0
-            self.symp_matrix = np.array([[]], dtype=int)
+    @classmethod
+    def empty(cls, n_qubits):
+        return cls.from_dictionary({'I'*n_qubits:0})
 
+    @classmethod
+    def from_dictionary(cls,
+            operator_dict: Dict[str, complex]
+        ) -> "PauliwordOp":
+        """ Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+        """
+        pauli_terms, coeff_vec = zip(*operator_dict.items())
+        pauli_terms = list(pauli_terms)
+        return cls.from_list(pauli_terms, coeff_vec)
+
+    @classmethod
+    def from_list(cls, 
+            pauli_terms :List[str], 
+            coeff_vec:   List[complex]
+        ) -> "PauliwordOp":
+        """ Initialize a PauliwordOp from its Pauli terms and coefficients stored as lists
+        """
+        n_rows = len(pauli_terms)
+        if pauli_terms:
+            n_qubits = len(pauli_terms[0])
+            symp_matrix = np.zeros((n_rows, 2 * n_qubits), dtype=int)
+            for row_ind, pauli_str in enumerate(pauli_terms):
+                symp_matrix[row_ind] = string_to_symplectic(pauli_str, n_qubits)
+        else:
+            n_qubits = 0
+            symp_matrix = np.array([[]], dtype=int)
+        return cls(symp_matrix, coeff_vec)
+
+    @classmethod
+    def from_matrix(cls, 
+            matrix: np.array, 
+            operator_basis: "PauliwordOp" = None
+        ) -> "PauliwordOp":
+        """
+        Given any arbitrary matrix convert it into a linear combination of Pauli operators (PauliwordOp)
+        Note this decomposition builds a basis of size 4^{N_qubits} to decompose matrix into
+        this can be costly! (TODO: may be better way of chosing a basis to represent operator in! aka smaller than 4^N
+                                see jupyter notebook for further details)
+
+        If user doesn't define an operator basis then builds the full 4^N Hilbert space.
+        The user can avoid this by specificying a reduced basis that targets a subspace; there is a check 
+        to assess whether the basis is sufficiently expressible to represent the input matrix in this case.
+        """
+        if isinstance(matrix, np.matrix):
+            # summing over numpy matrices does not function correctly
+            matrix = np.array(matrix)
+
+        n_qubits = int(np.ceil(np.log2(max(matrix.shape))))
+        if n_qubits > 64 and operator_basis is None:
+            # could change XZ_block builder to use numpy objects (allows above 64-bit integers) but very slow and matrix will be too large to build 
+            raise ValueError('Matrix too large! Integer to binary conversion not defined above 64-bits.')
+
+        if not (2**n_qubits, 2**n_qubits) == matrix.shape:
+            # padding matrix with zeros so correct size
+            temp_mat = np.zeros((2 ** n_qubits, 2 ** n_qubits))
+            temp_mat[:matrix.shape[0],
+                :matrix.shape[1]] = matrix
+            matrix = temp_mat
+
+        if operator_basis is None:
+            # fast method to build all binary assignments
+            int_list = np.arange(4 ** (n_qubits))
+            XZ_block = (((int_list[:, None] & (1 << np.arange(2 * n_qubits))[::-1])) > 0).astype(int)
+            op_basis = cls(XZ_block, np.ones(XZ_block.shape[0]))
+        else:
+            op_basis = operator_basis
+
+        denominator = 2 ** n_qubits
+        decomposition = cls.empty(n_qubits)
+        for op in op_basis:
+            const = sum((op.to_sparse_matrix @ matrix).diagonal()) / denominator
+            decomposition += op.multiply_by_constant(const)
+
+        operator_out = decomposition.cleanup()
+        if operator_basis is not None:
+            if not np.all(operator_out.to_sparse_matrix.toarray() == matrix):
+                raise ValueError('Basis not sufficiently expressive.')
+        
+        return operator_out
+        
+            
     def __str__(self) -> str:
         """ 
         Defines the print behaviour of PauliwordOp - 
@@ -329,6 +391,14 @@ class PauliwordOp:
         
         return self+op_copy
 
+    def multiply_by_constant(self, 
+            const: complex
+        ) -> "PauliwordOp":
+        """
+        Multiply the PauliwordOp by a complex coefficient
+        """
+        return PauliwordOp(self.symp_matrix, self.coeff_vec*const)
+
     def _mul_symplectic(self, 
             symp_vec: np.array, 
             coeff: complex, 
@@ -349,10 +419,13 @@ class PauliwordOp:
         return phaseless_prod, coeff_vec
 
     def __mul__(self, 
-            mul_obj: Union["PauliwordOp", "QuantumState"]
+            mul_obj: Union["PauliwordOp", "QuantumState", complex]
         ) -> "PauliwordOp":
         """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
         """
+        if isinstance(mul_obj, Number):
+            return self.multiply_by_constant(mul_obj)
+
         if isinstance(mul_obj, QuantumState):
             # allows one to apply PauliwordOps to QuantumStates
             # (corresponds with multipcation of the underlying state_op)
@@ -360,7 +433,7 @@ class PauliwordOp:
             PwordOp = mul_obj.state_op
         else:
             PwordOp = mul_obj
-        assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
+        assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
 
         # multiplication is performed at the symplectic level, before being stacked and cleaned
         symp_stack, coeff_stack = zip(
@@ -415,14 +488,6 @@ class PauliwordOp:
         """ Makes a PauliwordOp instance iterable
         """
         return iter([self[i] for i in range(self.n_terms)])
-
-    def multiply_by_constant(self, 
-            const: complex
-        ) -> "PauliwordOp":
-        """
-        Multiply the PauliwordOp by a complex coefficient
-        """
-        return PauliwordOp(self.symp_matrix, self.coeff_vec*const)
 
     def commutes_termwise(self, 
             PwordOp: "PauliwordOp"
@@ -583,13 +648,13 @@ class PauliwordOp:
             Pword_conj (PauliwordOp): The Hermitian conjugated operator
         """
         Pword_conj = PauliwordOp(
-            operator  = self.symp_matrix, 
-            coeff_vec = self.coeff_vec.conjugate()
+            symp_matrix = self.symp_matrix, 
+            coeff_vec   = self.coeff_vec.conjugate()
         )
         return Pword_conj
 
     @cached_property
-    def to_QubitOperator(self) -> QubitOperator:
+    def to_openfermion(self) -> QubitOperator:
         """ convert to OpenFermion Pauli operator representation
         """
         pauli_terms = []
@@ -601,7 +666,7 @@ class PauliwordOp:
         return sum(pauli_terms)
 
     @cached_property
-    def to_PauliSumOp(self) -> PauliSumOp:
+    def to_qiskit(self) -> PauliSumOp:
         """ convert to Qiskit Pauli operator representation
         """
         pauli_terms = []
@@ -632,6 +697,9 @@ class PauliwordOp:
         Returns:
             sparse_matrix (csr_matrix): sparse matrix of PauliOp
         """
+        if self.n_qubits == 0:
+            return csr_matrix(self.coeff_vec)
+
         if self.n_qubits > 64:
             # numpy cannot handle ints over int64s (2**64) therefore use python objects
             binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1).astype(object)
