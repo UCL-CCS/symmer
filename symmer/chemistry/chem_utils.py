@@ -148,6 +148,7 @@ def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, number_
         # if no particle number is specified then return the smallest eigenvalue
         return eigvals[0], eigvecs.T[0]
     else:
+        assert(number_operator is not None), 'Must specify the number operator.'
         # otherwise, search through the first n_eig eigenvalues and check the Hamming weight
         # of the the corresponding eigenvector - return the first match with n_particles
         for evl, evc in zip(eigvals, eigvecs.T):
@@ -243,4 +244,4 @@ def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
 
     # want to return PauliWordOp (but results in circular import!)
     ## aka PauliWordOp base class imports utils and so import here causes problems.
-    return PauliwordOp(q_op_dict)
+    return PauliwordOp.from_dictionary(q_op_dict)

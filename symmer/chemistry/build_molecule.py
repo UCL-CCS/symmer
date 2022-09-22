@@ -43,6 +43,7 @@ class MoleculeBuilder:
         self.qubit_mapping_str = qubit_mapping_str
         self.print_info = print_info
         self.calculate(run_fci=run_fci)
+        self.n_particles = self.pyscf_obj.pyscf_hf.mol.nelectron
 
         # build the fermionic hamiltonian/CC operator
         self.H_fermion = FermionicHamiltonian(self.pyscf_obj.pyscf_hf)
@@ -149,7 +150,7 @@ class MoleculeBuilder:
                 f_out += FermionOperator(H_a, I_a)
         f_out_jw = jordan_wigner(f_out)
         f_out_q = QubitOperator_to_dict(f_out_jw, self.n_qubits)
-        return PauliwordOp(f_out_q)
+        return PauliwordOp.from_dictionary(f_out_q)
     
     @cached_property
     def number_operator(self):
