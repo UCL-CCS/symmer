@@ -7,121 +7,12 @@ from typing import Dict, List, Tuple, Union
 from numbers import Number
 from cached_property import cached_property
 from scipy.sparse import csr_matrix
-from symmer.utils import gf2_gaus_elim, norm, random_symplectic_matrix, symplectic_cleanup
+from symmer.utils import *
 from openfermion import QubitOperator
 from qiskit.quantum_info import Pauli
 from qiskit.opflow import PauliOp, PauliSumOp
 import warnings
 warnings.simplefilter('always', UserWarning)
-
-def symplectic_to_string(symp_vec) -> str:
-    """
-    Returns string form of symplectic vector defined as (X | Z)
-
-    Args:
-        symp_vec (array): symplectic Pauliword array
-
-    Returns:
-        Pword_string (str): String version of symplectic array
-
-    """
-    n_qubits = len(symp_vec) // 2
-
-    X_block = symp_vec[:n_qubits]
-    Z_block = symp_vec[n_qubits:]
-
-    Y_loc = np.bitwise_and(X_block, Z_block).astype(bool)
-    X_loc = np.bitwise_xor(Y_loc, X_block).astype(bool)
-    Z_loc = np.bitwise_xor(Y_loc, Z_block).astype(bool)
-
-    char_aray = np.array(list('I' * n_qubits), dtype=str)
-
-    char_aray[Y_loc] = 'Y'
-    char_aray[X_loc] = 'X'
-    char_aray[Z_loc] = 'Z'
-
-    Pword_string = ''.join(char_aray)
-
-    return Pword_string
-
-def string_to_symplectic(pauli_str, n_qubits):
-    """
-    """
-    assert(len(pauli_str) == n_qubits), 'Number of qubits is incompatible with pauli string'
-    assert (set(pauli_str).issubset({'I', 'X', 'Y', 'Z'})), 'pauliword must only contain X,Y,Z,I terms'
-
-    char_aray = np.array(list(pauli_str), dtype=str)
-    X_loc = (char_aray == 'X')
-    Z_loc = (char_aray == 'Z')
-    Y_loc = (char_aray == 'Y')
-
-    symp_vec = np.zeros(2*n_qubits, dtype=int)
-    symp_vec[:n_qubits] += X_loc
-    symp_vec[n_qubits:] += Z_loc
-    symp_vec[:n_qubits] += Y_loc
-    symp_vec[n_qubits:] += Y_loc
-
-    return symp_vec
-
-def count1_in_int_bitstring(i):
-    """
-    Count number of "1" bits in integer i to be thought of in binary representation
-
-    https://stackoverflow.com/questions/109023/how-to-count-the-number-of-set-bits-in-a-32-bit-integer#109025
-    https://web.archive.org/web/20151229003112/http://blogs.msdn.com/b/jeuge/archive/2005/06/08/hakmem-bit-count.aspx
-    """
-    i = i - ((i >> 1) & 0x55555555)  # add pairs of bits
-    i = (i & 0x33333333) + ((i >> 2) & 0x33333333)  # quads
-    return (((i + (i >> 4) & 0xF0F0F0F) * 0x1010101) & 0xffffffff) >> 24
-
-def symplectic_to_sparse_matrix(symp_vec, coeff) -> csr_matrix:
-    """
-    Returns (2**n x 2**n) matrix of paulioperator kronector product together
-     defined from symplectic vector defined as (X | Z)
-
-    This follows because tensor products of Pauli operators are one-sparse: they each have only
-    one nonzero entry in each row and column
-
-    Args:
-        symp_vec (array): symplectic Pauliword array
-
-    Returns:
-        sparse_matrix (csr_matrix): sparse matrix of Pauliword
-
-    """
-    n_qubits = len(symp_vec) // 2
-
-    X_block = symp_vec[:n_qubits]
-    Z_block = symp_vec[n_qubits:]
-
-    Y_number = sum(np.bitwise_and(X_block, Z_block).astype(int))
-    global_phase = (-1j) ** Y_number
-
-    # reverse order to match bitstring int valu of each bit in binary: [..., 32, 16, 8, 4, 2, 1]
-    if n_qubits > 64:
-        # numpy cannot handle ints over int64s (2**64) therefore use python objects
-        binary_int_array = 1 << np.arange(n_qubits - 1, -1, -1).astype(object)
-    else:
-        binary_int_array = 1 << np.arange(n_qubits - 1, -1, -1)
-
-    x_int = X_block @ binary_int_array
-    z_int = Z_block @ binary_int_array
-
-    dimension = 2**n_qubits
-
-    row_ind = np.arange(dimension)
-    col_ind = np.bitwise_xor(row_ind, x_int)
-
-    row_inds_and_Zint = np.bitwise_and(row_ind, z_int)
-    vals = global_phase * (-1) ** (count1_in_int_bitstring(row_inds_and_Zint)%2)
-
-    sparse_matrix = csr_matrix(
-        (vals, (row_ind, col_ind)),
-        shape=(dimension, dimension),
-        dtype=complex
-            )
-
-    return coeff*sparse_matrix
 
 class PauliwordOp:
     """ 
