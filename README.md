@@ -1,4 +1,5 @@
 [![Continuous_Integration](https://github.com/UCL-CCS/symmer/actions/workflows/pull_request.yaml/badge.svg)](https://github.com/UCL-CCS/symmer/actions/workflows/pull_request.yaml)
+[![codecov](https://codecov.io/gh/UCL-CCS/symmer/branch/main/graph/badge.svg?token=PZzJNZuEEW)](https://codecov.io/gh/UCL-CCS/symmer)
 [![Unitary Fund](https://img.shields.io/badge/Supported%20By-UNITARY%20FUND-brightgreen.svg?style=for-the-badge)](http://unitary.fund)
 # Symmer
 
