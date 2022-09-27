@@ -164,3 +164,8 @@ def test_single_qubit_multiplication(
     P2   = PauliwordOp.from_dictionary(P2_dict)
     P1P2 = PauliwordOp.from_dictionary(P1P2_dict)
     assert P1 * P2 == P1P2
+
+def test_multiplication():
+    P1 = PauliwordOp.random(3, 10)
+    P2 = PauliwordOp.random(3, 10)
+    assert (P1 * P2).to_openfermion == P1.to_openfermion * P2.to_openfermion
