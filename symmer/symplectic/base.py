@@ -348,7 +348,7 @@ class PauliwordOp:
     def __pow__(self, exponent:int) -> "PauliwordOp":
         assert(isinstance(exponent, int)), 'the exponent is not an integer'
         if exponent == 0:
-            return PauliwordOp(['I'*self.n_qubits],[1])
+            return PauliwordOp.from_list(['I'*self.n_qubits],[1])
         else:
             factors = [self.copy()]*exponent
             return reduce(lambda x,y:x*y, factors)

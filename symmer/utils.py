@@ -329,3 +329,18 @@ def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
     cartesians = [np.prod(np.sin(angles[:i]))*np.cos(angles[i]) for i in range(len(angles))]
     cartesians.append(np.prod(np.sin(angles)))
     return np.array(cartesians)
+
+def QubitOperator_to_dict(op, num_qubits):
+    assert(type(op) == of.QubitOperator)
+    op_dict = {}
+    term_dict = op.terms
+    terms = list(term_dict.keys())
+
+    for t in terms:    
+        letters = ['I' for i in range(num_qubits)]
+        for i in t:
+            letters[i[0]] = i[1]
+        p_string = ''.join(letters)        
+        op_dict[p_string] = term_dict[t]
+         
+    return op_dict
