@@ -36,44 +36,115 @@ def test_empty():
     assert PauliwordOp.empty(3) == PauliwordOp([[0]*6], [0])
 
 @pytest.fixture
-def three_qubit_symp_matrix():
-    return [
+def symp_matrix_1():
+    return np.array([
         [0,0,0,0,0,0],
         [1,1,1,0,0,0],
         [1,1,1,1,1,1],
         [0,0,0,1,1,1]
-    ]
-@pytest.fixture  
-def three_qubit_pauli_list():
-    return ['III', 'XXX', 'YYY', 'ZZZ']
+    ])
 @pytest.fixture
-def coeff_vec():
+def symp_matrix_2():
+    return np.array([
+        [0,1,0,1,0,1],
+        [1,0,1,0,1,0],
+        [1,1,0,0,1,1],
+        [0,0,1,1,0,0]
+    ])
+@pytest.fixture  
+def pauli_list_1():
+    return ['III', 'XXX', 'YYY', 'ZZZ']
+@pytest.fixture  
+def pauli_list_2():
+    return ['ZXZ', 'XZX', 'XYZ', 'ZIX']
+@pytest.fixture
+def coeff_vec_1():
+    return np.random.random(4)
+@pytest.fixture
+def coeff_vec_2():
     return np.random.random(4)
     
 def test_from_list(
-        three_qubit_pauli_list, 
-        three_qubit_symp_matrix, 
-        coeff_vec
+        pauli_list_1, 
+        symp_matrix_1, 
+        coeff_vec_1
     ):
     assert (
-        PauliwordOp.from_list(three_qubit_pauli_list, coeff_vec) ==
-        PauliwordOp(three_qubit_symp_matrix, coeff_vec)
+        PauliwordOp.from_list(pauli_list_1, coeff_vec_1) ==
+        PauliwordOp(symp_matrix_1, coeff_vec_1)
     )
 
 def test_from_dictionary(
-        three_qubit_pauli_list, 
-        three_qubit_symp_matrix, 
-        coeff_vec
+        pauli_list_1, 
+        symp_matrix_1, 
+        coeff_vec_1
     ):
-    pauli_dict = dict(zip(three_qubit_pauli_list, coeff_vec))
+    pauli_dict = dict(zip(pauli_list_1, coeff_vec_1))
     assert (
         PauliwordOp.from_dictionary(pauli_dict) ==
-        PauliwordOp(three_qubit_symp_matrix, coeff_vec)
+        PauliwordOp(symp_matrix_1, coeff_vec_1)
     )
+
+def test_to_ditionary(
+    pauli_list_1, 
+    symp_matrix_1, 
+    coeff_vec_1
+    ):
+    pauli_dict = dict(zip(pauli_list_1, coeff_vec_1))
+    assert PauliwordOp.from_dictionary(
+        pauli_dict
+    ).to_dictionary == pauli_dict
 
 ##################################################
 # Testing algebraic manipulation of PauliwordOps #
 ##################################################
+
+def test_Y_count(
+        symp_matrix_1, 
+        coeff_vec_1
+    ):
+    P = PauliwordOp(symp_matrix_1, coeff_vec_1)
+    assert np.all(P.Y_count == np.array([0,0,3,0]))
+    
+def test_cleanup_zeros(symp_matrix_1):
+    P = PauliwordOp.random(3,10)
+    P.coeff_vec[:] = 0
+    assert P.cleanup().n_terms == 0
+
+def test_addition():
+    P = PauliwordOp.random(3, 10)
+    assert P + P == P * 2
+
+def test_subtraction():
+    P = PauliwordOp.random(3, 10)
+    assert (P-P).n_terms == 0
+
+def test_termwise_commutatvity(
+        pauli_list_1, pauli_list_2
+    ):
+    P1 = PauliwordOp.from_list(pauli_list_1, np.ones(4))
+    P2 = PauliwordOp.from_list(pauli_list_2, np.ones(4))
+    assert(
+        np.all(P1.commutes_termwise(P2) == np.array([
+            [True , True , True , True ],
+            [True , False, True , False],
+            [False, False, True , True ],
+            [False, True , True , False]
+        ]))
+    )
+
+def test_adjacency_matrix(
+    pauli_list_2
+    ):
+    P = PauliwordOp.from_list(pauli_list_2, np.ones(4))
+    assert(
+        np.all(P.adjacency_matrix == np.array([
+            [True , False, True , False],
+            [False, True , True , False],
+            [True , True , True , True ],
+            [False, False, True , True ]
+        ]))
+    )
 
 @pytest.mark.parametrize(
     "P1_dict,P2_dict,P1P2_dict", 
