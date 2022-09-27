@@ -21,8 +21,8 @@ class PauliwordOp:
     sigfig = 3 # specifies the number of significant figures for printing
     
     def __init__(self, 
-            symp_matrix:   Union[List[str], Dict[str, float], np.array], 
-            coeff_vec: Union[List[complex], np.array] = None
+            symp_matrix: Union[List[str], Dict[str, float], np.array], 
+            coeff_vec:   Union[List[complex], np.array]
         ) -> None:
         """ 
         PauliwordOp may be initialized from either a dictionary in the form {pauli:coeff, ...}, 
@@ -33,15 +33,15 @@ class PauliwordOp:
         below function.
         """
         symp_matrix = np.array(symp_matrix)
+        assert(symp_matrix.dtype == int), 'Symplectic matrix must be defined over integers'
+        assert(set(np.unique(symp_matrix)).issubset({0,1})), 'symplectic matrix not defined with 0 and 1 only'
         if len(symp_matrix.shape)==1:
             symp_matrix = symp_matrix.reshape([1, len(symp_matrix)])
         self.symp_matrix = symp_matrix
         self.n_qubits = self.symp_matrix.shape[1]//2
-        assert(coeff_vec is not None), 'A list of coefficients has not been supplied'
         self.coeff_vec = np.asarray(coeff_vec, dtype=complex)
         self.n_terms = self.symp_matrix.shape[0]
         assert(self.n_terms==len(self.coeff_vec)), 'coeff list and Pauliwords not same length'
-        assert(set(np.unique(self.symp_matrix)).issubset({0,1})), 'symplectic array not defined with 0 and 1 only'
         self.X_block = self.symp_matrix[:, :self.n_qubits]
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
         
