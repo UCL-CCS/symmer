@@ -1,4 +1,5 @@
 [![Continuous_Integration](https://github.com/UCL-CCS/symmer/actions/workflows/pull_request.yaml/badge.svg)](https://github.com/UCL-CCS/symmer/actions/workflows/pull_request.yaml)
+[![Unitary Fund](https://img.shields.io/badge/Supported%20By-UNITARY%20FUND-brightgreen.svg?style=for-the-badge)](http://unitary.fund)
 # Symmer
 
 A Python package for reducing the quantum resource requirement of your problems, making them more NISQ-friendly!

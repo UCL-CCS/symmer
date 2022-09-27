@@ -947,6 +947,7 @@ class QuantumState:
         )
         return sparse_Qstate
 
+
 def array_to_QuantumState(statevector, threshold=1e-15):
     """ Given a vector of 2^N elements over N qubits, convert to a QuantumState object.
     
