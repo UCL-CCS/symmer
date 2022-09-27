@@ -32,9 +32,12 @@ class PauliwordOp:
         since it circumvents various conversions required - this is how the methods defined 
         below function.
         """
-        symp_matrix = np.array(symp_matrix)
-        assert(symp_matrix.dtype == int), 'Symplectic matrix must be defined over integers'
-        assert(set(np.unique(symp_matrix)).issubset({0,1})), 'symplectic matrix not defined with 0 and 1 only'
+        symp_matrix = np.asarray(symp_matrix)
+        if symp_matrix.dtype == int:
+            # initialization is slow if not boolean array
+            assert(set(np.unique(symp_matrix)).issubset({0,1})), 'symplectic matrix not defined with 0 and 1 only'
+            symp_matrix = symp_matrix.astype(bool)
+        assert(symp_matrix.dtype == bool), 'Symplectic matrix must be defined over integers'
         if len(symp_matrix.shape)==1:
             symp_matrix = symp_matrix.reshape([1, len(symp_matrix)])
         self.symp_matrix = symp_matrix
@@ -46,18 +49,14 @@ class PauliwordOp:
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
         
     @classmethod
-    def empty(cls, n_qubits):
-        return cls.from_dictionary({'I'*n_qubits:0})
-
-    @classmethod
-    def from_dictionary(cls,
-            operator_dict: Dict[str, complex]
-        ) -> "PauliwordOp":
-        """ Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+    def random(cls, n_qubits, n_terms, diagonal=False, complex_coeffs=True):
+        """ Generate a random PauliwordOp with normally distributed coefficients
         """
-        pauli_terms, coeff_vec = zip(*operator_dict.items())
-        pauli_terms = list(pauli_terms)
-        return cls.from_list(pauli_terms, coeff_vec)
+        symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal)
+        coeff_vec = np.random.randn(n_terms).astype(complex)
+        if complex_coeffs:
+            coeff_vec += 1j * np.random.randn(n_terms)
+        return cls(symp_matrix, coeff_vec)
 
     @classmethod
     def from_list(cls, 
@@ -76,6 +75,20 @@ class PauliwordOp:
             n_qubits = 0
             symp_matrix = np.array([[]], dtype=int)
         return cls(symp_matrix, coeff_vec)
+
+    @classmethod
+    def from_dictionary(cls,
+            operator_dict: Dict[str, complex]
+        ) -> "PauliwordOp":
+        """ Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+        """
+        pauli_terms, coeff_vec = zip(*operator_dict.items())
+        pauli_terms = list(pauli_terms)
+        return cls.from_list(pauli_terms, coeff_vec)
+
+    @classmethod
+    def empty(cls, n_qubits):
+        return cls.from_dictionary({'I'*n_qubits:0})
 
     @classmethod
     def from_matrix(cls, 
@@ -163,13 +176,13 @@ class PauliwordOp:
         if key=='magnitude':
             sort_order = np.argsort(-abs(self.coeff_vec))
         elif key=='weight':
-            sort_order = np.argsort(-np.einsum('ij->i', self.symp_matrix))
+            sort_order = np.argsort(-np.sum(self.symp_matrix, axis=1))
         elif key=='Z':
-            sort_order = np.argsort(np.einsum('ij->i', (self.n_qubits+1)*self.X_block + self.Z_block))
+            sort_order = np.argsort(np.sum((self.n_qubits+1)*self.X_block + self.Z_block, axis=1))
         elif key=='X':
-            sort_order = np.argsort(np.einsum('ij->i', self.X_block + (self.n_qubits+1)*self.Z_block))
+            sort_order = np.argsort(np.sum(self.X_block + (self.n_qubits+1)*self.Z_block, axis=1))
         elif key=='Y':
-            sort_order = np.argsort(np.einsum('ij->i', abs(self.X_block - self.Z_block)))
+            sort_order = np.argsort(np.sum(abs(self.X_block - self.Z_block), axis=1))
         else:
             raise ValueError('Only permitted sort key values are magnitude, weight, X, Y or Z')
         if by=='increasing':
@@ -196,7 +209,7 @@ class PauliwordOp:
         reduced = gf2_gaus_elim(basis_op_stack.T)
 
         index_successfully_reconstructed = np.where(
-            np.einsum('ij->j', reduced[dim:,dim:])==0
+            np.sum(reduced[dim:,dim:], axis=0)==0
         )[0]
         #if index_unsuccessful_reconstruction:
         #    warnings.warn(f'Terms {index_unsuccessful_reconstruction} cannot be reconstructed.')
@@ -215,7 +228,7 @@ class PauliwordOp:
         Returns:
             numpy array of Y counts over terms of PauliwordOp
         """
-        return np.einsum('ij->i', np.bitwise_and(self.X_block, self.Z_block))
+        return np.sum(np.bitwise_and(self.X_block, self.Z_block), axis=1)
 
     def cleanup(self, zero_threshold=1e-15):
         """ Apply symplectic_cleanup and delete terms with negligible coefficients
@@ -245,7 +258,7 @@ class PauliwordOp:
             return False
         else:
             return (
-                not np.einsum('ij->', np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and 
+                not np.sum(np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and 
                 np.allclose(check_1.coeff_vec, check_2.coeff_vec)
             )
 
@@ -302,10 +315,12 @@ class PauliwordOp:
         # phaseless multiplication is binary addition in symplectic representation
         phaseless_prod = np.bitwise_xor(self.symp_matrix, symp_vec)
         # phase is determined by Y counts plus additional sign flip
-        Y_count_out = np.einsum('ij->i', np.bitwise_and(*np.hsplit(phaseless_prod,2)))
-        sign_change = (-1) ** np.einsum('ij->i', np.bitwise_and(self.X_block, np.hsplit(symp_vec,2)[1]))
+        Y_count_out = np.sum(np.bitwise_and(*np.hsplit(phaseless_prod,2)), axis=1)
+        sign_change = (-1) ** (
+            np.sum(np.bitwise_and(self.X_block, np.hsplit(symp_vec,2)[1]), axis=1) % 2
+        ) # mod 2 as only care about parity
         # final phase modification
-        phase_mod = sign_change * (1j) ** (3*Y_count_in + Y_count_out)
+        phase_mod = sign_change * (1j) ** ((3*Y_count_in + Y_count_out) % 4) # mod 4 as roots of unity
         coeff_vec = phase_mod * self.coeff_vec * coeff
         return phaseless_prod, coeff_vec
 
@@ -326,13 +341,22 @@ class PauliwordOp:
             PwordOp = mul_obj
         assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
 
-        # multiplication is performed at the symplectic level, before being stacked and cleaned
-        symp_stack, coeff_stack = zip(
-            *[self._mul_symplectic(symp_vec=symp_vec, coeff=coeff, Y_count_in=Y_count+self.Y_count) 
-            for symp_vec, coeff, Y_count in zip(PwordOp.symp_matrix, PwordOp.coeff_vec, PwordOp.Y_count)]
-        )
-        pauli_mult_out = PauliwordOp(*symplectic_cleanup(np.vstack(symp_stack), np.hstack(coeff_stack)))
-        
+        if PwordOp.n_terms == 1:
+            # no cleanup if multiplying by a single term (faster)
+            symp_stack, coeff_stack = self._mul_symplectic(
+                symp_vec=PwordOp.symp_matrix, 
+                coeff=PwordOp.coeff_vec, 
+                Y_count_in=self.Y_count+PwordOp.Y_count
+            )
+            pauli_mult_out = PauliwordOp(symp_stack, coeff_stack)
+        else:
+            # multiplication is performed at the symplectic level, before being stacked and cleaned
+            symp_stack, coeff_stack = zip(
+                *[self._mul_symplectic(symp_vec=symp_vec, coeff=coeff, Y_count_in=self.Y_count+Y_count) 
+                for symp_vec, coeff, Y_count in zip(PwordOp.symp_matrix, PwordOp.coeff_vec, PwordOp.Y_count)]
+            )
+            pauli_mult_out = PauliwordOp(*symplectic_cleanup(np.vstack(symp_stack), np.hstack(coeff_stack)))
+
         if isinstance(mul_obj, QuantumState):
             coeff_vec = pauli_mult_out.coeff_vec*(1j**pauli_mult_out.Y_count)
             # need to run a separate cleanup since identities are all mapped to Z, i.e. II==ZZ in QuantumState
@@ -396,8 +420,13 @@ class PauliwordOp:
                 )
         """
         assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
-        Omega_PwordOp_symp = np.hstack((PwordOp.Z_block,  PwordOp.X_block)).T
-        return (self.symp_matrix @ Omega_PwordOp_symp) % 2 == 0
+        Omega_PwordOp_symp = np.hstack((PwordOp.Z_block,  PwordOp.X_block)).astype(int)
+        return (self.symp_matrix @ Omega_PwordOp_symp.T) % 2 == 0
+
+    def anticommutes_termwise(self,
+            PwordOp: "PauliwordOp"
+        ) -> np.array:
+        return ~self.commutes_termwise(PwordOp)
 
     def qubitwise_commutes_termwise(self,
         PwordOp: "PauliwordOp"
@@ -565,10 +594,7 @@ class PauliwordOp:
     def to_qiskit(self) -> PauliSumOp:
         """ convert to Qiskit Pauli operator representation
         """
-        pauli_terms = []
-        for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
-            pauli_terms.append(PauliOp(primitive=Pauli(symplectic_to_string(symp_vec)), coeff=coeff))
-        return sum(pauli_terms)
+        return PauliSumOp.from_list(self.to_dictionary.items())
 
     @cached_property
     def to_dictionary(self) -> Dict[str, complex]:
@@ -616,7 +642,7 @@ class PauliwordOp:
         vals = global_phase.reshape(-1, 1) * (-1) ** (
                     count1_in_int_bitstring(row_inds_and_Zint) % 2)  # .astype(complex))
 
-        values_and_coeff = np.einsum('ij,i->ij', vals, self.coeff_vec)
+        values_and_coeff = np.einsum('ij,i->ij', vals, self.coeff_vec.astype(int))
 
         sparse_matrix = csr_matrix(
             (values_and_coeff.flatten(), (row_ind.flatten(), col_ind.flatten())),
@@ -671,17 +697,6 @@ class PauliwordOp:
         return cliques
 
 
-def random_PauliwordOp(n_qubits, n_terms, diagonal=False, complex_coeffs=True):
-    """ Generate a random PauliwordOp with normally distributed coefficients
-    """
-    symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal)
-    coeff_vec = np.random.randn(n_terms).astype(complex)
-    if complex_coeffs:
-        coeff_vec += 1j * np.random.randn(n_terms)
-
-    return PauliwordOp(symp_matrix, coeff_vec)
-
-
 def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_clifford=True):
     """ Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
         with normally distributed coefficients. Generates in structured way then uses Clifford rotation (default)
@@ -707,13 +722,13 @@ def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_cliffor
     # random rotations to get rid of structure
     if apply_clifford:
         for _ in range(10):
-            P_rand = random_PauliwordOp(n_qubits, 1, complex_coeffs=complex_coeff)
+            P_rand = PauliwordOp.random(n_qubits, 1, complex_coeffs=complex_coeff)
             P_rand.coeff_vec[0] = 1
             P_anticomm = P_anticomm._rotate_by_single_Pword(P_rand,
                                                             None)
 
     anti_comm_check = P_anticomm.adjacency_matrix.astype(int) - np.eye(P_anticomm.adjacency_matrix.shape[0])
-    assert (np.einsum('ij->', anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
+    assert(np.sum(anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
 
     return P_anticomm
 
@@ -890,7 +905,7 @@ class QuantumState:
         if key=='magnitude':
             sort_order = np.argsort(-abs(self.coeff_vector))
         elif key=='support':
-            sort_order = np.argsort(-np.einsum('ij->i', self.state_matrix))
+            sort_order = np.argsort(-np.sum(self.state_matrix, axis=1))
         else:
             raise ValueError('Only permitted sort key values are magnitude or support')
         if by=='increasing':
