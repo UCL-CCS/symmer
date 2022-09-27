@@ -46,18 +46,14 @@ class PauliwordOp:
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
         
     @classmethod
-    def empty(cls, n_qubits):
-        return cls.from_dictionary({'I'*n_qubits:0})
-
-    @classmethod
-    def from_dictionary(cls,
-            operator_dict: Dict[str, complex]
-        ) -> "PauliwordOp":
-        """ Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+    def random(cls, n_qubits, n_terms, diagonal=False, complex_coeffs=True):
+        """ Generate a random PauliwordOp with normally distributed coefficients
         """
-        pauli_terms, coeff_vec = zip(*operator_dict.items())
-        pauli_terms = list(pauli_terms)
-        return cls.from_list(pauli_terms, coeff_vec)
+        symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal)
+        coeff_vec = np.random.randn(n_terms).astype(complex)
+        if complex_coeffs:
+            coeff_vec += 1j * np.random.randn(n_terms)
+        return cls(symp_matrix, coeff_vec)
 
     @classmethod
     def from_list(cls, 
@@ -76,6 +72,20 @@ class PauliwordOp:
             n_qubits = 0
             symp_matrix = np.array([[]], dtype=int)
         return cls(symp_matrix, coeff_vec)
+
+    @classmethod
+    def from_dictionary(cls,
+            operator_dict: Dict[str, complex]
+        ) -> "PauliwordOp":
+        """ Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+        """
+        pauli_terms, coeff_vec = zip(*operator_dict.items())
+        pauli_terms = list(pauli_terms)
+        return cls.from_list(pauli_terms, coeff_vec)
+
+    @classmethod
+    def empty(cls, n_qubits):
+        return cls.from_dictionary({'I'*n_qubits:0})
 
     @classmethod
     def from_matrix(cls, 
@@ -671,17 +681,6 @@ class PauliwordOp:
         return cliques
 
 
-def random_PauliwordOp(n_qubits, n_terms, diagonal=False, complex_coeffs=True):
-    """ Generate a random PauliwordOp with normally distributed coefficients
-    """
-    symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal)
-    coeff_vec = np.random.randn(n_terms).astype(complex)
-    if complex_coeffs:
-        coeff_vec += 1j * np.random.randn(n_terms)
-
-    return PauliwordOp(symp_matrix, coeff_vec)
-
-
 def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_clifford=True):
     """ Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
         with normally distributed coefficients. Generates in structured way then uses Clifford rotation (default)
@@ -707,7 +706,7 @@ def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_cliffor
     # random rotations to get rid of structure
     if apply_clifford:
         for _ in range(10):
-            P_rand = random_PauliwordOp(n_qubits, 1, complex_coeffs=complex_coeff)
+            P_rand = PauliwordOp.random(n_qubits, 1, complex_coeffs=complex_coeff)
             P_rand.coeff_vec[0] = 1
             P_anticomm = P_anticomm._rotate_by_single_Pword(P_rand,
                                                             None)
