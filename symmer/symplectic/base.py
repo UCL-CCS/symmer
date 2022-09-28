@@ -673,7 +673,7 @@ class PauliwordOp:
         vals = global_phase.reshape(-1, 1) * (-1) ** (
                     count1_in_int_bitstring(row_inds_and_Zint) % 2)  # .astype(complex))
 
-        values_and_coeff = np.einsum('ij,i->ij', vals, self.coeff_vec.astype(int))
+        values_and_coeff = np.einsum('ij,i->ij', vals, self.coeff_vec)
 
         sparse_matrix = csr_matrix(
             (values_and_coeff.flatten(), (row_ind.flatten(), col_ind.flatten())),
