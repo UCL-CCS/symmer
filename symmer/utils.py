@@ -114,7 +114,11 @@ def symplectic_to_sparse_matrix(symp_vec, coeff) -> sp.sparse.csr_matrix:
 
     return coeff*sparse_matrix
 
-def symplectic_cleanup(symp_matrix, coeff_vec):
+def symplectic_cleanup(
+        symp_matrix:    np.array, 
+        coeff_vec:      np.array, 
+        zero_threshold: float = None
+    ) -> Tuple[np.array, np.array]:
     """ Remove duplicated rows of symplectic matrix terms, whilst summing
     the corresponding coefficients of the deleted rows in coeff_vec
     """
@@ -134,7 +138,12 @@ def symplectic_cleanup(symp_matrix, coeff_vec):
     # mask the term indices such that those which are skipped are summed under np.reduceat
     summing_indices = np.arange(symp_matrix.shape[0])[mask_unique_terms]
     reduced_coeff_vec = np.add.reduceat(sorted_coeff, summing_indices, axis=0)
-    
+    # if a zero threshold is specified terms with sufficiently small coefficient will be dropped
+    if zero_threshold is not None:
+        mask_nonzero = abs(reduced_coeff_vec)>zero_threshold
+        reduced_symp_matrix = reduced_symp_matrix[mask_nonzero]
+        reduced_coeff_vec = reduced_coeff_vec[mask_nonzero]
+
     return reduced_symp_matrix, reduced_coeff_vec
 
 def random_symplectic_matrix(n_qubits,n_terms, diagonal=False):
