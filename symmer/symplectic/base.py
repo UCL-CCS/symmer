@@ -49,7 +49,12 @@ class PauliwordOp:
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
         
     @classmethod
-    def random(cls, n_qubits, n_terms, diagonal=False, complex_coeffs=True):
+    def random(cls, 
+            n_qubits: int, 
+            n_terms:  int, 
+            diagonal: bool = False, 
+            complex_coeffs: bool = True
+        ) -> "PauliwordOp":
         """ Generate a random PauliwordOp with normally distributed coefficients
         """
         symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal)
@@ -87,7 +92,9 @@ class PauliwordOp:
         return cls.from_list(pauli_terms, coeff_vec)
 
     @classmethod
-    def empty(cls, n_qubits):
+    def empty(cls, 
+            n_qubits: int
+        ) -> "PauliwordOp":
         return cls.from_dictionary({'I'*n_qubits:0})
 
     @classmethod
@@ -141,8 +148,7 @@ class PauliwordOp:
                 raise ValueError('Basis not sufficiently expressive.')
         
         return operator_out
-        
-            
+                
     def __str__(self) -> str:
         """ 
         Defines the print behaviour of PauliwordOp - 
@@ -160,7 +166,7 @@ class PauliwordOp:
         else: 
             return f'{self.coeff_vec[0]: .{self.sigfig}f}'
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self)
 
     def copy(self) -> "PauliwordOp":
@@ -169,7 +175,10 @@ class PauliwordOp:
         """
         return deepcopy(self)
 
-    def sort(self, by='decreasing', key='magnitude') -> "PauliwordOp":
+    def sort(self, 
+            by: str = 'decreasing', 
+            key:str = 'magnitude'
+        ) -> "PauliwordOp":
         """
         Sort the terms by some key, either magnitude, weight X, Y or Z
         """
@@ -230,22 +239,25 @@ class PauliwordOp:
         """
         return np.sum(np.bitwise_and(self.X_block, self.Z_block), axis=1)
 
-    def cleanup(self, zero_threshold=1e-15):
+    def cleanup(self, 
+            zero_threshold:float=1e-15
+        ) -> "PauliwordOp":
         """ Apply symplectic_cleanup and delete terms with negligible coefficients
         """
         if self.n_qubits == 0:
-            clean_operator =  PauliwordOp([], [np.sum(self.coeff_vec)])
+            return PauliwordOp([], [np.sum(self.coeff_vec)])
         elif self.n_terms == 0:
-            clean_operator =  PauliwordOp(np.zeros((1, self.symp_matrix.shape[1]), dtype=int), [0])
+            return PauliwordOp(np.zeros((1, self.symp_matrix.shape[1]), dtype=bool), [0])
         else:
-            clean_operator = PauliwordOp(*symplectic_cleanup(self.symp_matrix, self.coeff_vec))
-        mask_nonzero = np.where(abs(clean_operator.coeff_vec)>zero_threshold)
-        return PauliwordOp(
-            clean_operator.symp_matrix[mask_nonzero], 
-            clean_operator.coeff_vec[mask_nonzero]
-        )
+            return PauliwordOp(
+                *symplectic_cleanup(
+                    self.symp_matrix, self.coeff_vec, zero_threshold=zero_threshold
+                )
+            )
 
-    def __eq__(self, Pword: "PauliwordOp") -> bool:
+    def __eq__(self, 
+            Pword: "PauliwordOp"
+        ) -> bool:
         """ In theory should use logical XNOR to check symplectic matrix match, however
         can use standard logical XOR and look for False indices instead (implementation
         skips an additional NOT operation) 
@@ -275,8 +287,9 @@ class PauliwordOp:
         # cleanup run to remove duplicate rows (Pauliwords)
         return PauliwordOp(P_symp_mat_new, P_new_coeffs).cleanup()
 
-    def __radd__(self,
-        add_obj: Union[int, "PauliwordOp"]) -> "PauliwordOp":
+    def __radd__(self, 
+            add_obj: Union[int, "PauliwordOp"]
+        ) -> "PauliwordOp":
         """ Allows use of sum() over a list of PauliwordOps
         """
         if add_obj == 0:
@@ -325,7 +338,8 @@ class PauliwordOp:
         return phaseless_prod, coeff_vec
 
     def __mul__(self, 
-            mul_obj: Union["PauliwordOp", "QuantumState", complex]
+            mul_obj: Union["PauliwordOp", "QuantumState", complex],
+            zero_threshold: float = 1e-15
         ) -> "PauliwordOp":
         """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
         """
@@ -355,7 +369,11 @@ class PauliwordOp:
                 *[self._mul_symplectic(symp_vec=symp_vec, coeff=coeff, Y_count_in=self.Y_count+Y_count) 
                 for symp_vec, coeff, Y_count in zip(PwordOp.symp_matrix, PwordOp.coeff_vec, PwordOp.Y_count)]
             )
-            pauli_mult_out = PauliwordOp(*symplectic_cleanup(np.vstack(symp_stack), np.hstack(coeff_stack)))
+            pauli_mult_out = PauliwordOp(
+                *symplectic_cleanup(
+                    np.vstack(symp_stack), np.hstack(coeff_stack), zero_threshold=zero_threshold
+                )
+            )
 
         if isinstance(mul_obj, QuantumState):
             coeff_vec = pauli_mult_out.coeff_vec*(1j**pauli_mult_out.Y_count)
@@ -364,12 +382,16 @@ class PauliwordOp:
         else:
             return pauli_mult_out
 
-    def __imul__(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
+    def __imul__(self, 
+            PwordOp: "PauliwordOp"
+        ) -> "PauliwordOp":
         """ in-place multiplication behaviour
         """
         return self.__mul__(PwordOp)
 
-    def __pow__(self, exponent:int) -> "PauliwordOp":
+    def __pow__(self, 
+            exponent:int
+        ) -> "PauliwordOp":
         assert(isinstance(exponent, int)), 'the exponent is not an integer'
         if exponent == 0:
             return PauliwordOp.from_list(['I'*self.n_qubits],[1])
@@ -377,7 +399,9 @@ class PauliwordOp:
             factors = [self.copy()]*exponent
             return reduce(lambda x,y:x*y, factors)
 
-    def __getitem__(self, key: Union[slice, int]) -> "PauliwordOp":
+    def __getitem__(self, 
+            key: Union[slice, int]
+        ) -> "PauliwordOp":
         """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
         from the indexed row and coefficient from the symplectic matrix 
         """
@@ -429,7 +453,7 @@ class PauliwordOp:
         return ~self.commutes_termwise(PwordOp)
 
     def qubitwise_commutes_termwise(self,
-        PwordOp: "PauliwordOp"
+            PwordOp: "PauliwordOp"
         ) -> np.array:
         """ Given the symplectic representation of a single Pauli operator,
         determines which operator terms of the internal PauliwordOp qubitwise commute
@@ -450,12 +474,16 @@ class PauliwordOp:
             QWC_matrix.append((X_match & Z_match).reshape(self.n_terms, 1))
         return np.hstack(QWC_matrix)
 
-    def commutator(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
+    def commutator(self, 
+            PwordOp: "PauliwordOp"
+        ) -> "PauliwordOp":
         """ Computes the commutator [A, B] = AB - BA
         """
         return self * PwordOp - PwordOp * self
 
-    def anticommutator(self, PwordOp: "PauliwordOp") -> "PauliwordOp":
+    def anticommutator(self, 
+            PwordOp: "PauliwordOp"
+        ) -> "PauliwordOp":
         """ Computes the anticommutator {A, B} = AB + BA
         """
         return self * PwordOp + PwordOp * self
@@ -468,19 +496,19 @@ class PauliwordOp:
         return self.commutator(PwordOp).n_terms == 0
     
     @cached_property
-    def adjacency_matrix(self):
+    def adjacency_matrix(self) -> np.array:
         """ Checks which terms of self commute within itself
         """
         return self.commutes_termwise(self)
 
     @cached_property
-    def adjacency_matrix_qwc(self):
+    def adjacency_matrix_qwc(self) -> np.array:
         """ Checks which terms of self qubitwise commute within itself
         """
         return self.qubitwise_commutes_termwise(self)
 
     @cached_property
-    def is_noncontextual(self):
+    def is_noncontextual(self) -> bool:
         """ Returns True if the operator is noncontextual, False if contextual
         Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
         Constructing the adjacency matrix is by far the most expensive part - very fast once that has been built.
@@ -588,7 +616,10 @@ class PauliwordOp:
                 QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(symp_vec)) if Pi!='I']), 
                 coeff)
             )
-        return sum(pauli_terms)
+        if len(pauli_terms) == 1:
+            return pauli_terms[0]
+        else:
+            return sum(pauli_terms)
 
     @cached_property
     def to_qiskit(self) -> PauliSumOp:
@@ -642,7 +673,7 @@ class PauliwordOp:
         vals = global_phase.reshape(-1, 1) * (-1) ** (
                     count1_in_int_bitstring(row_inds_and_Zint) % 2)  # .astype(complex))
 
-        values_and_coeff = np.einsum('ij,i->ij', vals, self.coeff_vec.astype(int))
+        values_and_coeff = np.einsum('ij,i->ij', vals, self.coeff_vec)
 
         sparse_matrix = csr_matrix(
             (values_and_coeff.flatten(), (row_ind.flatten(), col_ind.flatten())),
@@ -652,9 +683,9 @@ class PauliwordOp:
         return sparse_matrix
 
     def clique_cover(self, 
-        edge_relation = 'C', 
-        colouring_strategy='random_sequential', 
-        colouring_interchange=False
+            edge_relation = 'C', 
+            colouring_strategy='random_sequential', 
+            colouring_interchange=False
         ) -> Dict[int, "PauliwordOp"]:
         """ Build a graph based on edge relation C (commuting), AC (anticommuting) or
         QWC (qubitwise commuting) and perform a graph colouring to identify cliques

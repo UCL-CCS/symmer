@@ -165,7 +165,45 @@ def test_single_qubit_multiplication(
     P1P2 = PauliwordOp.from_dictionary(P1P2_dict)
     assert P1 * P2 == P1P2
 
-def test_multiplication():
+def test_multiplication_1():
+    """ Tests multiplication and the OpenFermion conversion
+    """
     P1 = PauliwordOp.random(3, 10)
     P2 = PauliwordOp.random(3, 10)
     assert (P1 * P2).to_openfermion == P1.to_openfermion * P2.to_openfermion
+
+def test_multiplication_2():
+    """ Tests multiplication and the Qiskit conversion
+    """
+    P1 = PauliwordOp.random(3, 10)
+    P2 = PauliwordOp.random(3, 10)
+    assert (P1 * P2).to_qiskit == P1.to_qiskit @ P2.to_qiskit
+
+def test_to_sparse_matrix_1():
+    """ Tests multiplication and the Qiskit conversion
+    """
+    P1 = PauliwordOp.random(3, 10)
+    P2 = PauliwordOp.random(3, 10)
+    assert np.all(
+        np.isclose(
+            (P1*P2).to_sparse_matrix.toarray(), 
+            P1.to_sparse_matrix.toarray() @ P2.to_sparse_matrix.toarray()
+            )
+    )
+
+@pytest.mark.parametrize(
+    "P_dict,P_array", 
+    [
+        ({'X':1}, np.array([[0,1],[1,0]])), 
+        ({'Y':1}, np.array([[0,-1j],[1j,0]])), 
+        ({'Z':1}, np.array([[1,0],[0,-1]])),
+        ({'XY':1}, np.array([[0,0,0,-1j],[0,0,1j,0],[0,-1j,0,0],[1j,0,0,0]])),
+        ({'ZY':1}, np.array([[0,-1j,0,0],[1j,0,0,0],[0,0,0,1j],[0,0,-1j,0]])),
+        ({'II':1, 'IX':1, 'XI':1, 'XX':1}, np.ones([4,4]))
+    ]
+)
+def test_to_sparse_matrix_2(
+        P_dict, P_array
+    ):
+    P = PauliwordOp.from_dictionary(P_dict)
+    assert np.all(P.to_sparse_matrix.toarray() == P_array)
