@@ -66,11 +66,13 @@ class PauliwordOp:
     @classmethod
     def from_list(cls, 
             pauli_terms :List[str], 
-            coeff_vec:   List[complex]
+            coeff_vec:   List[complex] = None
         ) -> "PauliwordOp":
         """ Initialize a PauliwordOp from its Pauli terms and coefficients stored as lists
         """
         n_rows = len(pauli_terms)
+        if coeff_vec is None:
+            coeff_vec = np.ones(n_rows)
         if pauli_terms:
             n_qubits = len(pauli_terms[0])
             symp_matrix = np.zeros((n_rows, 2 * n_qubits), dtype=int)
@@ -78,7 +80,7 @@ class PauliwordOp:
                 symp_matrix[row_ind] = string_to_symplectic(pauli_str, n_qubits)
         else:
             n_qubits = 0
-            symp_matrix = np.array([[]], dtype=int)
+            symp_matrix = np.array([[]], dtype=bool)
         return cls(symp_matrix, coeff_vec)
 
     @classmethod
