@@ -22,7 +22,7 @@ def list_to_xyz(geometry: List[Tuple[str, Tuple[float, float, float]]]) -> str:
 class MoleculeBuilder:
     def __init__(self, 
         geometry, 
-        charge=1, 
+        charge=0, 
         basis='STO-3G', 
         spin=0,
         run_fci = True,
