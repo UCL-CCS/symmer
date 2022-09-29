@@ -6,8 +6,7 @@ from functools import reduce
 from scipy.optimize import shgo, differential_evolution
 from symmer.utils import unit_n_sphere_cartesian_coords, lp_norm
 from symmer.symplectic import (
-    PauliwordOp, StabilizerOp, AntiCommutingOp, 
-    symplectic_to_string, find_symmetry_basis
+    PauliwordOp, StabilizerOp, AntiCommutingOp, symplectic_to_string
 )
 from symmer.projection import S3_projection
 
@@ -116,7 +115,7 @@ class CS_VQE(S3_projection):
         """
         self.decomposed = {}
         # identify a basis of universally commuting operators
-        symmetry_generators = find_symmetry_basis(self.noncontextual_operator)
+        symmetry_generators = StabilizerOp.symmetry_basis(self.noncontextual_operator)
         # try to reconstruct the noncontextual operator in this basis
         # not all terms can be decomposed in this basis, so check which can
         reconstructed_indices, succesfully_reconstructed = self.noncontextual_operator.basis_reconstruction(symmetry_generators)
@@ -124,7 +123,6 @@ class CS_VQE(S3_projection):
         universal_operator = PauliwordOp(self.noncontextual_operator.symp_matrix[succesfully_reconstructed],
                                          self.noncontextual_operator.coeff_vec[succesfully_reconstructed])
         self.decomposed['symmetry'] = universal_operator
-        
         # identify the anticommuting cliques
         clique_union = self.noncontextual_operator - universal_operator
         if clique_union.n_terms != 0:
