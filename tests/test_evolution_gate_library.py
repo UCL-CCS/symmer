@@ -22,8 +22,10 @@ from symmer.symplectic import QuantumState as qs
         (RX(1,0,np.pi/3), qs([[1]]), qs([[1],[0]], [np.cos(np.pi/6), 1j*np.sin(np.pi/6)])),
         (RY(1,0,np.pi/3), qs([[0]]), qs([[0],[1]], [np.cos(np.pi/6), -np.sin(np.pi/6)])),
         (RY(1,0,np.pi/3), qs([[1]]), qs([[1],[0]], [np.cos(np.pi/6), +np.sin(np.pi/6)])),
-        (RZ(1,0,np.pi/3), qs([[0]]), qs([[0]], [np.exp(1j*np.pi/6)])),
+        (RZ(1,0,np.pi/3), qs([[0]]), qs([[0]], [np.exp(+1j*np.pi/6)])),
         (RZ(1,0,np.pi/3), qs([[1]]), qs([[1]], [np.exp(-1j*np.pi/6)])),
+        (U1(1,0,np.pi/3), qs([[0]]), qs([[0]], [np.exp(+1j*np.pi/6)])*np.exp(1j*np.pi/6)),
+        (U1(1,0,np.pi/3), qs([[1]]), qs([[1]], [np.exp(-1j*np.pi/6)])*np.exp(1j*np.pi/6)),
     ]
 )
 def test_single_qubit_gates(gate, state_in, state_out):
