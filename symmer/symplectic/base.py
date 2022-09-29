@@ -225,7 +225,7 @@ class PauliwordOp:
             )
         )
         col_order = list(col_order) + list(set(range(reduced.shape[1])).difference(col_order))
-        index_successfully_reconstructed = np.where(~reduced[:, col_order][dim:,dim:])[0]
+        index_successfully_reconstructed = np.where(np.all(~reduced[:, col_order][dim:,dim:], axis=1))[0]
         op_reconstruction = reduced[:,col_order][dim:,:dim]
         return op_reconstruction, index_successfully_reconstructed
 
