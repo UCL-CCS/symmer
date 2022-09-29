@@ -77,7 +77,6 @@ class PauliwordOp:
             for row_ind, pauli_str in enumerate(pauli_terms):
                 symp_matrix[row_ind] = string_to_symplectic(pauli_str, n_qubits)
         else:
-            n_qubits = 0
             symp_matrix = np.array([[]], dtype=int)
         return cls(symp_matrix, coeff_vec)
 
@@ -998,6 +997,64 @@ class QuantumState:
             dtype=np.complex128
         )
         return sparse_Qstate
+
+    def sample_state(self, n_samples) -> dict:
+        """
+        Method to sample given quantum state in computational basis. Get an array of bitstrings and counts as output.
+
+        #TODO: could have change of operator added prior to sample
+
+        Args:
+            n_samples: how many bitstring samples to take
+
+        Returns:
+            self.state_matrix: matrix, where rows represent bitstrings
+            counter: number of times each row was sampled
+        """
+        counter = np.random.multinomial(n_samples, np.abs(self.state_op.coeff_vec)**2)
+        # approx_state = QuantumState(self.state_matrix, counter/sum(counter))
+        # return QuantumState(self.state_matrix, counter) ## gives counts as coefficients!
+        # TODO: could return approx state and then measure expect value using that to get sample expec val.
+
+        return self.state_matrix, counter
+
+    @classmethod
+    def from_array(cls,
+            statevector: Union[List[complex], np.array],
+            threshold: float =1e-15,
+        ) -> "QuantumState":
+        """ Initialize a QubitState from a vector of 2^N elements over N qubits
+        Args:
+            statevector (np.array): numpy array of quantum state (size 2^N by 1)
+            threshold (float): threshold to determine zero amplitudes (absolute value)
+        Returns:
+            Qstate (QuantumState): a QuantumState object
+
+        **example
+            statevector = array([0.57735027,0,0,0,0,0.81649658,0,0])
+            Qstate = QuantumState.from_array(statevector)
+            print(Qstate)
+            >>  0.5773502692 |000> +
+                0.8164965809 |101>
+        """
+        statevector = np.asarray(statevector).reshape([-1])
+        N = np.log2(statevector.shape[0])
+        assert (N - int(N) == 0), 'the statevector dimension is not a power of 2'
+
+        if not np.isclose(np.linalg.norm(statevector), 1):
+            warnings.warn(f'statevector is not normalized')
+
+        N = int(N)
+        non_zero = np.where(abs(statevector) >= threshold)[0]
+
+        # build binary states of non_zero terms
+        if N<64:
+            state_matrix = (((non_zero[:, None] & (1 << np.arange(N))[::-1])) > 0).astype(int)
+        else:
+            state_matrix = (((non_zero[:, None] & (1 << np.arange(N, dtype=object))[::-1])) > 0).astype(int)
+        coeff_vector = statevector[non_zero]
+        Qstate = QuantumState(state_matrix, coeff_vector)
+        return Qstate
 
 
 def array_to_QuantumState(statevector, threshold=1e-15):
