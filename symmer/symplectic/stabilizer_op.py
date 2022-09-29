@@ -2,23 +2,24 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
-from symmer.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
+from symmer.utils import rref_binary, cref_binary
 from symmer.symplectic import PauliwordOp, ObservableGraph, symplectic_to_string
 
-def find_symmetry_basis(operator, commuting_override=False):
+def find_symmetry_basis(P, commuting_override=False):
     """ Find an independent symmetry basis for the input operator,
     i.e. a basis that commutes universally within the operator
     """
     # swap order of XZ blocks in symplectic matrix to ZX
-    ZX_symp = np.hstack([operator.Z_block, operator.X_block])
-    reduced = gf2_gaus_elim(ZX_symp)
-    kernel  = gf2_basis_for_gf2_rref(reduced)
-    stabilizers = ObservableGraph(kernel, np.ones(kernel.shape[0]))
-    if not commuting_override and np.any(~stabilizers.adjacency_matrix):
+    to_reduce = np.vstack([np.hstack([P.Z_block, P.X_block]), np.eye(2*P.n_qubits, dtype=bool)])
+    cref_matrix = cref_binary(to_reduce)
+    S_symp = cref_matrix[P.n_terms:,np.all(~cref_matrix[:P.n_terms], axis=0)].T
+    S = StabilizerOp(S_symp, np.ones(S_symp.shape[0]))
+    if commuting_override:
+        return S
+    else:
         # if any of the stabilizers are not mutually commuting, take the largest commuting subset
-        stabilizers = stabilizers.clique_cover(clique_relation='C', colouring_strategy='largest_first')[0]
-
-    return StabilizerOp(stabilizers.symp_matrix, np.ones(stabilizers.n_terms))
+        S_commuting = S.clique_cover()[0]
+        return StabilizerOp(S_commuting.symp_matrix, np.ones(S_commuting.n_terms))
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
@@ -57,7 +58,7 @@ class StabilizerOp(PauliwordOp):
     def _check_independent(self):
         """ Check the supplied stabilizers are algebraically independent
         """
-        check_independent = gf2_gaus_elim(self.symp_matrix)
+        check_independent = rref_binary(self.symp_matrix)
         for row in check_independent:
             if np.all(row==0):
                 # there is a dependent row
