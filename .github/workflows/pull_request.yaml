@@ -2,6 +2,8 @@ name: Continuous_Integration
 on: 
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 jobs:
   build:
     runs-on: ubuntu-latest
