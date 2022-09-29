@@ -1,6 +1,6 @@
 import numpy as np
 from symmer.symplectic import PauliwordOp
-from symmer.unitaries import trotter
+from symmer.evolution import trotter
 
 #############################################
 # Gate library decomposed into PauliwordOps #

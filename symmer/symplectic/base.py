@@ -378,7 +378,7 @@ class PauliwordOp:
         if isinstance(mul_obj, QuantumState):
             coeff_vec = pauli_mult_out.coeff_vec*(1j**pauli_mult_out.Y_count)
             # need to run a separate cleanup since identities are all mapped to Z, i.e. II==ZZ in QuantumState
-            return QuantumState(pauli_mult_out.X_block, coeff_vec).cleanup()
+            return QuantumState(pauli_mult_out.X_block.astype(int), coeff_vec).cleanup()
         else:
             return pauli_mult_out
 
@@ -802,13 +802,11 @@ class QuantumState:
         self.state_matrix = state_matrix
         if coeff_vector is None:
             # if no coefficients specified produces a uniform superposition
-            self.coeff_vector = np.ones(self.n_terms)/np.sqrt(self.n_terms)
-        else:
-            self.coeff_vector = coeff_vector
+            coeff_vector = np.ones(self.n_terms)/np.sqrt(self.n_terms)
         self.vec_type = vec_type
         # the quantum state is manipulated via the state_op PauliwordOp
         symp_matrix = np.hstack([state_matrix, 1-state_matrix])
-        self.state_op = PauliwordOp(symp_matrix, self.coeff_vector)
+        self.state_op = PauliwordOp(symp_matrix, coeff_vector)
 
     def copy(self) -> "QuantumState":
         """ 
@@ -824,7 +822,7 @@ class QuantumState:
             out_string (str): human-readable QuantumState string
         """
         out_string = ''
-        for basis_vec, coeff in zip(self.state_matrix, self.coeff_vector):
+        for basis_vec, coeff in zip(self.state_matrix, self.state_op.coeff_vec):
             basis_string = ''.join([str(i) for i in basis_vec])
             if self.vec_type == 'ket':
                 out_string += (f'{coeff: .{self.sigfig}f} |{basis_string}> +\n')
@@ -836,6 +834,11 @@ class QuantumState:
 
     def __repr__(self):
         return str(self)
+
+    def __eq__(self, 
+            Qstate: "QuantumState"
+        ) -> bool:
+        return self.state_op == Qstate.state_op
     
     def __add__(self, 
             Qstate: "QuantumState"
@@ -865,6 +868,9 @@ class QuantumState:
             - inner_product (complex): when mul_obj is a ket state
             - new_bra_state (QuantumState): when mul_obj is a PauliwordOp
         """
+        if isinstance(mul_obj, Number):
+            return QuantumState(self.state_matrix, self.state_op.coeff_vec*mul_obj)
+        
         assert(self.n_qubits == mul_obj.n_qubits), 'Multiplication object defined for different number of qubits'
         assert(self.vec_type=='bra'), 'Cannot multiply a ket from the right'
         
@@ -872,8 +878,8 @@ class QuantumState:
             assert(mul_obj.vec_type=='ket'), 'Cannot multiply a bra with another bra'
             inner_product=0
             for (bra_string, bra_coeff),(ket_string, ket_coeff) in product(
-                    zip(self.state_matrix, self.coeff_vector), 
-                    zip(mul_obj.state_matrix, mul_obj.coeff_vector)
+                    zip(self.state_matrix, self.state_op.coeff_vec), 
+                    zip(mul_obj.state_matrix, mul_obj.state_op.coeff_vec)
                 ):
                 if np.all(bra_string == ket_string):
                     inner_product += (bra_coeff*ket_coeff)
@@ -883,7 +889,7 @@ class QuantumState:
             new_state_op = self.state_op * mul_obj
             new_state_op.coeff_vec*=((-1j)**new_state_op.Y_count)
             new_bra_state = QuantumState(
-                new_state_op.X_block, 
+                new_state_op.X_block.astype(int), 
                 new_state_op.coeff_vec, 
                 vec_type='bra'
             )
@@ -911,7 +917,7 @@ class QuantumState:
             mask = np.arange(start, stop, key.step)
         
         state_items = self.state_matrix[mask]
-        coeff_items = self.coeff_vector[mask]
+        coeff_items = self.state_op.coeff_vec[mask]
         return QuantumState(state_items, coeff_items)
 
     def __iter__(self):
@@ -924,7 +930,7 @@ class QuantumState:
         """
         clean_state_op = self.state_op.cleanup(zero_threshold=zero_threshold)
         return QuantumState(
-            clean_state_op.X_block, 
+            clean_state_op.X_block.astype(int), 
             clean_state_op.coeff_vec, 
             vec_type=self.vec_type
         )
@@ -934,7 +940,7 @@ class QuantumState:
         Sort the terms by some key, either magnitude, weight X, Y or Z
         """
         if key=='magnitude':
-            sort_order = np.argsort(-abs(self.coeff_vector))
+            sort_order = np.argsort(-abs(self.state_op.coeff_vec))
         elif key=='support':
             sort_order = np.argsort(-np.sum(self.state_matrix, axis=1))
         else:
@@ -943,7 +949,7 @@ class QuantumState:
             sort_order = sort_order[::-1]
         elif by!='decreasing':
             raise ValueError('Only permitted sort by values are increasing or decreasing')
-        return QuantumState(self.state_matrix[sort_order], self.coeff_vector[sort_order])
+        return QuantumState(self.state_matrix[sort_order], self.state_op.coeff_vec[sort_order])
 
     def sectors_present(self, symmetry):
         """ return the sectors present within the QuantumState w.r.t. a StabilizerOp
@@ -959,7 +965,7 @@ class QuantumState:
         Returns:
             self (QuantumState)
         """
-        coeff_vector = self.coeff_vector/norm(self.coeff_vector)
+        coeff_vector = self.state_op.coeff_vec/norm(self.state_op.coeff_vec)
         return QuantumState(self.state_matrix, coeff_vector)
         
     @cached_property
@@ -974,7 +980,7 @@ class QuantumState:
             new_type = 'ket'
         conj_state = QuantumState(
             state_matrix = self.state_matrix, 
-            coeff_vector = self.coeff_vector.conjugate(),
+            coeff_vector = self.state_op.coeff_vec.conjugate(),
             vec_type     = new_type
         )
         return conj_state
@@ -987,7 +993,7 @@ class QuantumState:
         """
         nonzero_indices = [int(''.join([str(i) for i in row]),2) for row in self.state_matrix]
         sparse_Qstate = csr_matrix(
-            (self.coeff_vector, (nonzero_indices, np.zeros_like(nonzero_indices))), 
+            (self.state_op.coeff_vec, (nonzero_indices, np.zeros_like(nonzero_indices))), 
             shape = (2**self.n_qubits, 1), 
             dtype=np.complex128
         )

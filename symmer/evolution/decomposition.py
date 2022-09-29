@@ -1,7 +1,7 @@
 from qiskit import QuantumCircuit
 from functools import reduce
 from symmer.symplectic import PauliwordOp
-from symmer.unitaries.gate_library import *
+from symmer.evolution.gate_library import *
 
 ###################################################
 # Decompose any QuantumCircuit into a PauliwordOp #
