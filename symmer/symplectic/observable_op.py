@@ -175,7 +175,7 @@ class ObservableOp(PauliwordOp):
         assert(set(ref_state).issubset({0,1})), f'Basis state must consist of binary elements, not {set(ref_state)}'
         assert(len(ref_state)==self.n_qubits), f'Number of qubits {len(ref_state)} in the basis state incompatible with {self.n_qubits}'
         mask_diagonal = np.where(np.all(self.X_block==0, axis=1))
-        measurement_signs = (-1)**np.einsum('ij->i', self.Z_block[mask_diagonal] & ref_state)
+        measurement_signs = (-1)**np.sum(self.Z_block[mask_diagonal] & ref_state, axis=0)
         return np.sum(measurement_signs * self.coeff_vec[mask_diagonal]).real
 
     def _ansatz_expectation_trotter_rotations(self, 
@@ -240,8 +240,8 @@ class ObservableOp(PauliwordOp):
         QWC_group_data = {}
         for group_index, group_operator in self.QWC_decomposition.items():
             # find the qubit positions containing X's or Y's in the QWC group
-            X_indices = np.where(np.einsum('ij->j', group_operator.X_block)!=0)[0]
-            Y_indices = np.where(np.einsum('ij->j', group_operator.X_block & group_operator.Z_block)!=0)[0]
+            X_indices = np.where(np.sum(group_operator.X_block, axis=0)!=0)[0]
+            Y_indices = np.where(np.sum(group_operator.X_block & group_operator.Z_block, axis=0)!=0)[0]
             basis_change_indices={'X_indices':X_indices, 'Y_indices':Y_indices}
             # we make a change of basis from Pauli X/Y --> Z, allowing us to take measurements in the Z basis
             group_qc = ansatz_op.to_QuantumCircuit(
