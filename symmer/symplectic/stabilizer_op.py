@@ -3,23 +3,7 @@ from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
 from symmer.utils import rref_binary, cref_binary
-from symmer.symplectic import PauliwordOp, ObservableGraph, symplectic_to_string
-
-def find_symmetry_basis(P, commuting_override=False):
-    """ Find an independent symmetry basis for the input operator,
-    i.e. a basis that commutes universally within the operator
-    """
-    # swap order of XZ blocks in symplectic matrix to ZX
-    to_reduce = np.vstack([np.hstack([P.Z_block, P.X_block]), np.eye(2*P.n_qubits, dtype=bool)])
-    cref_matrix = cref_binary(to_reduce)
-    S_symp = cref_matrix[P.n_terms:,np.all(~cref_matrix[:P.n_terms], axis=0)].T
-    S = StabilizerOp(S_symp, np.ones(S_symp.shape[0]))
-    if commuting_override:
-        return S
-    else:
-        # if any of the stabilizers are not mutually commuting, take the largest commuting subset
-        S_commuting = S.clique_cover()[0]
-        return StabilizerOp(S_commuting.symp_matrix, np.ones(S_commuting.n_terms))
+from symmer.symplectic import PauliwordOp, symplectic_to_string
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
@@ -49,6 +33,26 @@ class StabilizerOp(PauliwordOp):
         # set up these attributes to later track rotations mapping stabilizers to single-qubit Pauli operators
         self.stabilizer_rotations = None
         self.used_indices = None
+
+    @classmethod
+    def symmetry_basis(cls, 
+            PwordOp: PauliwordOp, 
+            commuting_override:bool=False
+        ):
+        """ Find an independent symmetry basis for the input operator,
+        i.e. a basis that commutes universally within the operator
+        """
+        # swap order of XZ blocks in symplectic matrix to ZX
+        to_reduce = np.vstack([np.hstack([PwordOp.Z_block, PwordOp.X_block]), np.eye(2*PwordOp.n_qubits, dtype=bool)])
+        cref_matrix = cref_binary(to_reduce)
+        S_symp = cref_matrix[PwordOp.n_terms:,np.all(~cref_matrix[:PwordOp.n_terms], axis=0)].T
+        S = cls(S_symp, np.ones(S_symp.shape[0]))
+        if commuting_override:
+            return S
+        else:
+            # if any of the stabilizers are not mutually commuting, take the largest commuting subset
+            S_commuting = S.clique_cover()[0]
+            return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms))
 
     def _check_stab(self):
         """ Checks the stabilizer coefficients are +/-1
@@ -106,7 +110,7 @@ class StabilizerOp(PauliwordOp):
         not exist (there is a check for this in generate_stabilizer_rotations, that wraps this method).
         """
         # drop any term(s) that are single-qubit Pauli operators
-        non_sqp = np.where(np.einsum('ij->i', basis.symp_matrix)!=1)
+        non_sqp = np.where(np.sum(basis.symp_matrix, axis=1)!=1)
         basis_non_sqp = StabilizerOp(basis.symp_matrix[non_sqp], basis.coeff_vec[non_sqp])
         sqp_indices = np.where((basis - basis_non_sqp).symp_matrix)[1]%self.n_qubits
         self.used_indices += np.append(sqp_indices, sqp_indices+self.n_qubits).tolist()
@@ -116,12 +120,12 @@ class StabilizerOp(PauliwordOp):
             return None
         else:
             # identify the lowest-weight Pauli operator from the commuting basis
-            row_sum = np.einsum('ij->i',basis_non_sqp.symp_matrix)
+            row_sum = np.sum(basis_non_sqp.symp_matrix, axis=1)
             sort_rows_by_weight = np.argsort(row_sum)
             pivot_row = basis_non_sqp.symp_matrix[sort_rows_by_weight][0]
             non_I = np.setdiff1d(np.where(pivot_row)[0], np.array(self.used_indices))
             # once a Pauli operator has been selected, the least-supported qubit is chosen as pivot
-            col_sum = np.einsum('ij->j',basis_non_sqp.symp_matrix)
+            col_sum = np.sum(basis_non_sqp.symp_matrix, axis=0)
             support = pivot_row*col_sum
             pivot_point = non_I[np.argmin(support[non_I])]
             # define (in the symplectic form) the single-qubit Pauli we aim to rotate onto
