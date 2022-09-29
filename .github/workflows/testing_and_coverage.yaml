@@ -1,11 +1,11 @@
-name: API workflow
+name: Testing and Coverage
 
 on: [pull_request]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Test python API
+    name: Testing and Coverage
     steps:
     - uses: actions/checkout@v1
     - name: Installation
