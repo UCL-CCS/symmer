@@ -1002,7 +1002,7 @@ class QuantumState:
         """
         Method to sample given quantum state in computational basis. Get an array of bitstrings and counts as output.
 
-        #TODO: could have change of operator added prior to sample
+        #TODO: could have a change of basis performed prior to sample
 
         Args:
             n_samples: how many bitstring samples to take
