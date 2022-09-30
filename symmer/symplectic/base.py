@@ -1059,7 +1059,7 @@ class QuantumState:
         else:
             state_matrix = (((non_zero[:, None] & (1 << np.arange(N, dtype=object))[::-1])) > 0).astype(int)
         coeff_vector = statevector[non_zero]
-        Qstate = QuantumState(state_matrix, coeff_vector)
+        Qstate = cls(state_matrix, coeff_vector)
         return Qstate
 
 
