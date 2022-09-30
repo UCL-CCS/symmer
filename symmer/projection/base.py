@@ -70,7 +70,7 @@ class S3_projection:
         if projected_symplectic.shape[1]:
             return PauliwordOp(projected_symplectic, coeff_sign_flip).cleanup()
         else:
-            return PauliwordOp([], [np.sum(coeff_sign_flip)])
+            return PauliwordOp(np.array([], dtype=bool), [np.sum(coeff_sign_flip)])
             
     def perform_projection(self,
             operator: PauliwordOp,

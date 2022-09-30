@@ -161,7 +161,7 @@ def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, number_
                         Z_symp, psi.state_matrix
                     )
                 )
-                expval_n_particle += Z_coeff * np.sum(sign * np.square(abs(psi.coeff_vector)))
+                expval_n_particle += Z_coeff * np.sum(sign * np.square(abs(psi.state_op.coeff_vec)))
             if round(expval_n_particle) == n_particles:
                 return evl, evc
         # if a solution is not found within the first n_eig eigenvalues then error

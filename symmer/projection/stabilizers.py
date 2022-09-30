@@ -2,7 +2,7 @@ import numpy as np
 from copy import deepcopy
 from typing import Union
 from scipy.optimize import differential_evolution
-from symmer.symplectic import PauliwordOp, StabilizerOp, find_symmetry_basis
+from symmer.symplectic import PauliwordOp, StabilizerOp
 from symmer.projection import QubitTapering, CS_VQE, CS_VQE_LW
 
 class ObservableBiasing:
@@ -87,7 +87,7 @@ class StabilizerIdentification:
         Then generate the largest symmetry basis that preserves them
         """
         preserve = self.basis_weighting[:n_preserved]
-        stabilizers = find_symmetry_basis(preserve, commuting_override=True)
+        stabilizers = StabilizerOp.symmetry_basis(preserve, commuting_override=True)
         mask_diag = np.where(~np.any(stabilizers.X_block, axis=1))[0]
         return StabilizerOp(stabilizers.symp_matrix[mask_diag], stabilizers.coeff_vec[mask_diag])
 

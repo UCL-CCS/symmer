@@ -6,8 +6,7 @@ from functools import reduce
 from scipy.optimize import shgo, differential_evolution
 from symmer.utils import unit_n_sphere_cartesian_coords, lp_norm
 from symmer.symplectic import (
-    PauliwordOp, StabilizerOp, AntiCommutingOp, 
-    symplectic_to_string, find_symmetry_basis
+    PauliwordOp, StabilizerOp, AntiCommutingOp, symplectic_to_string
 )
 from symmer.projection import S3_projection
 
@@ -116,7 +115,7 @@ class CS_VQE(S3_projection):
         """
         self.decomposed = {}
         # identify a basis of universally commuting operators
-        symmetry_generators = find_symmetry_basis(self.noncontextual_operator)
+        symmetry_generators = StabilizerOp.symmetry_basis(self.noncontextual_operator)
         # try to reconstruct the noncontextual operator in this basis
         # not all terms can be decomposed in this basis, so check which can
         reconstructed_indices, succesfully_reconstructed = self.noncontextual_operator.basis_reconstruction(symmetry_generators)
@@ -124,7 +123,6 @@ class CS_VQE(S3_projection):
         universal_operator = PauliwordOp(self.noncontextual_operator.symp_matrix[succesfully_reconstructed],
                                          self.noncontextual_operator.coeff_vec[succesfully_reconstructed])
         self.decomposed['symmetry'] = universal_operator
-        
         # identify the anticommuting cliques
         clique_union = self.noncontextual_operator - universal_operator
         if clique_union.n_terms != 0:
@@ -166,7 +164,7 @@ class CS_VQE(S3_projection):
                     np.arange(self.symmetry_generators.n_terms), clique_column_index
                 )
                 GuCi_symp = np.vstack([self.symmetry_generators.symp_matrix, Ci.symp_matrix])
-                GuCi = StabilizerOp(GuCi_symp, np.ones(GuCi_symp.shape[0]))
+                GuCi = StabilizerOp(GuCi_symp)
                 reconstructed, row_mask_inds = self.noncontextual_operator.basis_reconstruction(GuCi)
                 row_col_mask = np.ix_(row_mask_inds, col_mask_inds)
                 reconstruction_ind_matrix[row_col_mask] = reconstructed[row_mask_inds]
@@ -352,8 +350,7 @@ class CS_VQE_LW(S3_projection):
         
         # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
         basis = StabilizerOp(
-            basis.symp_matrix, 
-            np.ones(basis.n_terms, dtype=int), 
+            basis.symp_matrix,
             target_sqp=self.target_sqp
         )
         # update symmetry sector in accordance with the reference state
