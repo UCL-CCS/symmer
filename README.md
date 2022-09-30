@@ -47,10 +47,12 @@ Why should you use Symmer? It has been designed for high efficiency when manipul
 Single Pauli Multiplication |  Squaring Linear Combinations
 :--------------------------:|:-----------------------------:
 ![](https://github.com/UCL-CCS/symmer/blob/main/images/single_pauli_mult.png) | ![](https://github.com/UCL-CCS/symmer/blob/main/images/squaring_100q_linear_combs.png)
+Runtime for phased multiplication of single Pauli operators $P,Q \in \mathcal{P}_N$ with $N \leq 10^8$. Symmer and Qiskit are comparable throughout, with the latter slightly favourable for large numbers of qubits; Stim excels here as it is highly optimized for such operations. | Squaring 100-qubit Pauli operators with increasing numbers of terms. This benchmark is particularly challenging as it probes the efficiency of multiplication, addition and the subsequent collection of like-terms.
 
 Clifford Rotations          |  General Rotations
 :--------------------------:|:-----------------------------:
 ![](https://github.com/UCL-CCS/symmer/blob/main/images/100q_clifford_rotations.png) | ![](https://github.com/UCL-CCS/symmer/blob/main/images/100q_general_rotations.png)
+Clifford rotation of 100-qubit Pauli operators with increasing numbers of terms; this tests commutativity checks and multiplication. Symmer has been optimized with this in mind since it is one of the core operations necessary for stabilizer subspace projection techniques. | General (non-Clifford) rotations of 100-qubit Pauli operators with increasing numbers of terms; this tests commutativity checks and multiplication, as well as addition and the subsequent cleanup operation. This is relevant for performing [unitary partitioning](https://arxiv.org/abs/2207.03451) in [CS-VQE](https://quantum-journal.org/papers/q-2021-05-14-456/).
 
 ## How to cite
 
