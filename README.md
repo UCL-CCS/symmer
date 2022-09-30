@@ -40,6 +40,18 @@ Qubit reduction techniques such as [tapering](https://arxiv.org/abs/1701.08213) 
   - Performs [Contextual-Subspace VQE](https://quantum-journal.org/papers/q-2021-05-14-456/), allowing one to specify precisely how many qubits they would like in the output Hamiltonian. Despite this process incurring some systematic error, it is possible to retain sufficient information to permit high precision simulations at a significant reduction in quantum resource. This is the updated approach to [ContextualSubspaceVQE](https://github.com/wmkirby1/ContextualSubspaceVQE).
   - Here, the stabilizers are taken to be an independent generating set of a sub-Hamiltonian symmetry (defined by a noncontextual subset of terms) with an additional contribution encapsulating the remaining anticommuting terms therein.
 
+## Performance
+
+Why should you use Symmer? It has been designed for high efficiency when manipulating large Pauli operators -- addition, multiplication, Clifford/general rotations, commutativity/contextuality checks, symmetry basis identification, basis reconstruction and subspace projections have all been reformulated in the symplectic representation and implemented carefully to avoid unnecessary operations and redundancy. But don't just take our word for it, see these benchmarks against various popular quantum computing packages:
+
+Single Pauli Multiplication |  Squaring Linear Combinations
+:--------------------------:|:-----------------------------:
+![](https://github.com/UCL-CCS/symmer/blob/main/images/single_pauli_mult.png) | ![](https://github.com/UCL-CCS/symmer/blob/main/images/squaring_100q_linear_combs.png)
+
+Clifford Rotations          |  General Rotations
+:--------------------------:|:-----------------------------:
+![](https://github.com/UCL-CCS/symmer/blob/main/images/100q_clifford_rotations.png) | ![](https://github.com/UCL-CCS/symmer/blob/main/images/100q_general_rotations.png)
+
 ## How to cite
 
 When you use in a publication or other work, please cite as:
