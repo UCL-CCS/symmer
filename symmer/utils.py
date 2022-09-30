@@ -1,3 +1,4 @@
+from functools import reduce
 import numpy as np
 import scipy as sp
 from typing import Tuple
@@ -188,8 +189,11 @@ def ZX_calculus_reduction(qc: QuantumCircuit) -> QuantumCircuit:
 
     return simplified_qc
 
-def rref_binary(arr):
-    rref_matrix = arr.copy()
+def _rref_binary(matrix: np.array) -> np.array:
+    """ Row-reduced echelon form over the binary field (GF2) - rows are not reordered 
+    here for efficiency (not required in some use cases, e.g. symmetry identification)
+    """
+    rref_matrix = matrix.copy()
     # iterate over rows of array
     for i, row_i in enumerate(rref_matrix):
         # if not a row of zeros
@@ -203,8 +207,28 @@ def rref_binary(arr):
             # the rows below i will now be zeroed out in the pivot column
     return rref_matrix
 
-def cref_binary(arr):
-    return rref_binary(arr.T).T          
+def rref_binary(matrix: np.array) -> np.array:
+    """ Full row-reduced echelon form with row reordering
+    """
+    reduced = _rref_binary(matrix)
+    row_order, col_order = zip(
+        *sorted(
+            [(i,np.where(row)[0][0]) for i,row in enumerate(reduced) if np.any(row)],
+            key=lambda x:x[1]
+        )
+    )
+    row_order = list(row_order) + list(set(range(reduced.shape[0])).difference(row_order))
+    return reduced[row_order]
+
+def _cref_binary(matrix: np.array) -> np.array:
+    """ Column-reduced echelon form with static columns (used in symmetry identification)
+    """
+    return _rref_binary(matrix.T).T  
+
+def cref_binary(matrix: np.array) -> np.array:
+    """ Column-reduced echelon form with ordered columns (used in basis reconstruction)
+    """
+    return rref_binary(matrix.T).T         
 
 def get_ground_state_sparse(sparse_matrix, initial_guess=None):
     """Compute lowest eigenvalue and eigenstate.
