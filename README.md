@@ -54,6 +54,13 @@ Clifford Rotations          |  General Rotations
 ![](https://github.com/UCL-CCS/symmer/blob/main/images/100q_clifford_rotations.png) | ![](https://github.com/UCL-CCS/symmer/blob/main/images/100q_general_rotations.png)
 Clifford rotation of 100-qubit Pauli operators with increasing numbers of terms; this tests commutativity checks and multiplication. Symmer has been optimized with this in mind since it is one of the core operations necessary for stabilizer subspace projection techniques. | General (non-Clifford) rotations of 100-qubit Pauli operators with increasing numbers of terms; this tests commutativity checks and multiplication, as well as addition and the subsequent cleanup operation. This is relevant for performing [unitary partitioning](https://arxiv.org/abs/2207.03451) in [CS-VQE](https://quantum-journal.org/papers/q-2021-05-14-456/).
 
+### To conclude, what can Symmer do on a standard i5 laptop in just _one_ second?
+- Multiply two 100,000,000-qubit Pauli terms together.
+- Square a 100-qubit Pauli operator with 1,000 terms, involving a cleanup procedure over 1,000,000 cross terms.
+- Perform a unitary rotation of a 100-qubit Pauli operator with 1,000,000 terms.
+
+All this allows us to approach significantly larger systems than was previously possible, including those exceeding the realm of classical tractibility.
+
 ## How to cite
 
 When you use in a publication or other work, please cite as:
