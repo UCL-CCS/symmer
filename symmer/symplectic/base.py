@@ -1046,7 +1046,7 @@ class QuantumState:
 
     @classmethod
     def from_array(cls,
-            statevector: Union[List[complex], np.array],
+            statevector: np.array,
             threshold: float =1e-15,
         ) -> "QuantumState":
         """ Initialize a QubitState from a vector of 2^N elements over N qubits
