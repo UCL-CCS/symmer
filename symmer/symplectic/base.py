@@ -990,7 +990,7 @@ class QuantumState:
             self (QuantumState)
         """
         coeff_vector = self.state_op.coeff_vec/norm(self.state_op.coeff_vec)
-        return QuantumState(self.state_matrix, coeff_vector)
+        return QuantumState(self.state_matrix, coeff_vector, vec_type=self.vec_type)
         
     @cached_property
     def conjugate(self) -> "QuantumState":
@@ -1015,32 +1015,102 @@ class QuantumState:
         Returns:
             sparse_Qstate (csr_matrix): sparse matrix representation of the statevector
         """
-        nonzero_indices = [int(''.join([str(i) for i in row]),2) for row in self.state_matrix]
+        # nonzero_indices = [int(''.join([str(i) for i in row]),2) for row in self.state_matrix]
+        if self.n_qubits<64:
+            nonzero_indices = self.state_matrix @ (1 << np.arange(self.state_matrix.shape[1])[::-1])
+        else:
+            nonzero_indices = self.state_matrix @ (1 << np.arange(self.state_matrix.shape[1], dtype=object)[::-1])
+
         sparse_Qstate = csr_matrix(
-            (self.state_op.coeff_vec, (nonzero_indices, np.zeros_like(nonzero_indices))), 
+            (self.state_op.coeff_vec, (nonzero_indices, np.zeros_like(nonzero_indices))),
             shape = (2**self.n_qubits, 1), 
             dtype=np.complex128
         )
+        if self.vec_type == 'bra':
+            # conjugate has already taken place, just need to make into row vector
+            sparse_Qstate= sparse_Qstate.reshape([1,-1])
         return sparse_Qstate
 
+    def _is_normalized(self) -> bool:
+        """
+        check if state is normalized
 
-def array_to_QuantumState(statevector, threshold=1e-15):
-    """ Given a vector of 2^N elements over N qubits, convert to a QuantumState object.
-    
-    Returns:
-        Qstate (QuantumState): a QuantumState object representing the input vector
-        
-    **example
-        statevector = array([0.57735027,0,0,0,0,0.81649658,0,0])
-        print(array_to_QuantumState(statevector)) 
-        >>  0.5773502692 |000> + 
-            0.8164965809 |101>
-    """
-    N = np.log2(statevector.shape[0])
-    assert(N-int(N) == 0), 'the statevector dimension is not a power of 2'
-    N = int(N)
-    non_zero = np.where(abs(statevector)>=threshold)[0]
-    state_matrix = np.array([[int(i) for i in list(np.binary_repr(index,N))] for index in non_zero])
-    coeff_vector = statevector[non_zero]
-    Qstate = QuantumState(state_matrix, coeff_vector)
-    return Qstate
+        Returns:
+            True or False depending on if state is normalized
+
+        """
+
+        if not np.isclose(np.linalg.norm(self.state_op.coeff_vec), 1):
+            return False
+        else:
+            return True
+
+    def sample_state(self, n_samples: int, return_normalized: bool=False) -> "QuantumState":
+        """
+        Method to sample given quantum state in computational basis. Get an array of bitstrings and counts as output.
+
+        Note if other basis measurement required perform change of basis on state first.
+
+        Args:
+            n_samples (int): how many bitstring samples to take
+            return_normalized (bool): whether to normalize sampled state (defaults to False)
+
+        Returns:
+            samples_as_coeff_state (QuantumState): state approximated via sampling (normalized or not depending on optional arg)
+        """
+
+        if not self._is_normalized():
+            raise ValueError('should not sample state that is not normalized')
+
+        counter = np.random.multinomial(n_samples, np.abs(self.state_op.coeff_vec)**2)
+        samples_as_coeff_state = QuantumState(self.state_matrix, counter, vec_type=self.vec_type)  ## gives counts as coefficients!
+        if return_normalized:
+            return samples_as_coeff_state.normalize
+        else:
+            return samples_as_coeff_state
+
+    @classmethod
+    def from_array(cls,
+            statevector: np.array,
+            threshold: float =1e-15,
+        ) -> "QuantumState":
+        """ Initialize a QubitState from a vector of 2^N elements over N qubits
+        Args:
+            statevector (np.array): numpy array of quantum state (size 2^N by 1)
+            threshold (float): threshold to determine zero amplitudes (absolute value)
+        Returns:
+            Qstate (QuantumState): a QuantumState object
+
+        **example
+            statevector = array([0.57735027,0,0,0,0,0.81649658,0,0]).reshape([-1,1])
+            Qstate = QuantumState.from_array(statevector)
+            print(Qstate)
+            >>  0.5773502692 |000> +
+                0.8164965809 |101>
+        """
+        assert(((len(statevector.shape)==2) and (1 in statevector.shape))), 'state must be a bra (row) or ket (column) vector'
+
+        vec_type = 'ket'
+        if statevector.shape[0] == 1:
+            vec_type= 'bra'
+
+        statevector = statevector.reshape([-1])
+
+        N = np.log2(statevector.shape[0])
+        assert (N - int(N) == 0), 'the statevector dimension is not a power of 2'
+
+        if not np.isclose(np.linalg.norm(statevector), 1):
+            warnings.warn(f'statevector is not normalized')
+
+        N = int(N)
+        non_zero = np.where(abs(statevector) >= threshold)[0]
+
+        # build binary states of non_zero terms
+        if N<64:
+            state_matrix = (((non_zero[:, None] & (1 << np.arange(N))[::-1])) > 0).astype(int)
+        else:
+            state_matrix = (((non_zero[:, None] & (1 << np.arange(N, dtype=object))[::-1])) > 0).astype(int)
+
+        coeff_vector = statevector[non_zero]
+        Qstate = cls(state_matrix, coeff_vector, vec_type=vec_type)
+        return Qstate
