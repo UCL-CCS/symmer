@@ -2,7 +2,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
-from symmer.utils import rref_binary, cref_binary
+from symmer.utils import _rref_binary, _cref_binary
 from symmer.symplectic import PauliwordOp, symplectic_to_string
 
 class StabilizerOp(PauliwordOp):
@@ -39,12 +39,27 @@ class StabilizerOp(PauliwordOp):
             PwordOp: PauliwordOp, 
             commuting_override:bool=False
         ):
-        """ Find an independent symmetry basis for the input operator,
-        i.e. a basis that commutes universally within the operator
+        """ Identify a symmetry basis for the supplied Pauli operator with
+        symplectic representation  M = [ X | Z ]. We perform columnwise 
+        Gaussian elimination to yield the matrix
+
+                [ Z | X ]     [ R ]
+                |-------| ->  |---|
+                [   I   ]     [ Q ]
+
+        Indexing the zero columns of R with i, we form the matrix
+        
+                S^T = [ Q_i1 | ... | Q_iM ] 
+                
+        and conclude that S is the symplectic representation of the symmetry basis.
+        This holds since MΩS^T=0 by construction, which implies commutativity.
+
+        Since we only need to reduce columns, the algorithm scales with the number of
+        qubits N, not the number of terms M, and is therefore at worst O(N^2).
         """
         # swap order of XZ blocks in symplectic matrix to ZX
         to_reduce = np.vstack([np.hstack([PwordOp.Z_block, PwordOp.X_block]), np.eye(2*PwordOp.n_qubits, dtype=bool)])
-        cref_matrix = cref_binary(to_reduce)
+        cref_matrix = _cref_binary(to_reduce)
         S_symp = cref_matrix[PwordOp.n_terms:,np.all(~cref_matrix[:PwordOp.n_terms], axis=0)].T
         S = cls(S_symp, np.ones(S_symp.shape[0]))
         if commuting_override:
@@ -62,11 +77,10 @@ class StabilizerOp(PauliwordOp):
     def _check_independent(self):
         """ Check the supplied stabilizers are algebraically independent
         """
-        check_independent = rref_binary(self.symp_matrix)
-        for row in check_independent:
-            if np.all(row==0):
-                # there is a dependent row
-                raise ValueError('The supplied stabilizers are not independent')
+        check_independent = _rref_binary(self.symp_matrix)
+        if np.any(np.all(~check_independent, axis=1)):
+            # there is a dependent row
+            raise ValueError('The supplied stabilizers are not independent')
 
     def __str__(self) -> str:
         """ 

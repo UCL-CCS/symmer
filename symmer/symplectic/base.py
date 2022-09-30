@@ -205,28 +205,29 @@ class PauliwordOp:
     def basis_reconstruction(self, 
             operator_basis: "PauliwordOp"
         ) -> np.array:
-        """ simultaneously reconstruct every operator term in the supplied basis.
-        Performs Gaussian elimination on [op_basis.T | self_symp_csc.T] and restricts 
-        so that the row-reduced identity block is removed. Each row of the
-        resulting matrix will index the basis elements required to reconstruct
-        the corresponding term in the operator.
+        """ Simultaneously reconstruct every operator term in the supplied basis.
+        With B and M the symplectic form of the supplied basis and the internal 
+        Pauli operator, respectively, we perform columnwise Gaussian elimination 
+        to yield the matrix
 
-        Nonzero entries ocurring below the resulting identity block cannot be reconstructed
-        in the supplied basis - index_successfully_reconstructed indicates those which succeeded
+                [ B ]     [ I | 0 ]
+                |---| ->  |-------|
+                [ M ]     [ R | F ]
+
+        where R is the reconstruction matrix, i.e. M = RB, and F indicates which
+        terms were succesfully reconstructed in the basis. If F is a zero matrix
+        this means the basis is sufficiently expressible to reconstruct M. However,
+        if any rows of F contain a non-zero entry, the corresponding row in R is
+        not fully constructed.
+
+        Since we only need to reduce columns, the algorithm scales with the number of
+        qubits N, not the number of terms M, and is therefore at worst O(N^2).
         """
         dim = operator_basis.n_terms
         basis_op_stack = np.vstack([operator_basis.symp_matrix, self.symp_matrix])
         reduced = cref_binary(basis_op_stack)
-        # order columns so identiy block in top left (cref_binary does not do this by default)
-        col_order, row_order = zip(
-            *sorted(
-                [(i,np.where(row)[0][0]) for i,row in enumerate(reduced.T) if np.any(row)],
-                key=lambda x:x[1]
-            )
-        )
-        col_order = list(col_order) + list(set(range(reduced.shape[1])).difference(col_order))
-        index_successfully_reconstructed = np.where(np.all(~reduced[:, col_order][dim:,dim:], axis=1))[0]
-        op_reconstruction = reduced[:,col_order][dim:,:dim]
+        index_successfully_reconstructed = np.where(np.all(~reduced[dim:,dim:], axis=1))[0]
+        op_reconstruction = reduced[dim:,:dim]
         return op_reconstruction, index_successfully_reconstructed
 
     @cached_property
