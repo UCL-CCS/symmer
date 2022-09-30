@@ -1008,10 +1008,10 @@ class QuantumState:
 
     def _is_normalized(self) -> bool:
         """
-        check of state is normalized
+        check if state is normalized
 
         Returns:
-            bool
+            True or False depending on if state is normalized
 
         """
 
