@@ -990,9 +990,14 @@ class QuantumState:
         Returns:
             sparse_Qstate (csr_matrix): sparse matrix representation of the statevector
         """
-        nonzero_indices = [int(''.join([str(i) for i in row]),2) for row in self.state_matrix]
+        # nonzero_indices = [int(''.join([str(i) for i in row]),2) for row in self.state_matrix]
+        if self.n_qubits<64:
+            nonzero_indices = self.state_matrix @ (1 << np.arange(self.state_matrix.shape[1])[::-1])
+        else:
+            nonzero_indices = self.state_matrix @ (1 << np.arange(self.state_matrix.shape[1], dtype=object)[::-1])
+
         sparse_Qstate = csr_matrix(
-            (self.state_op.coeff_vec, (nonzero_indices, np.zeros_like(nonzero_indices))), 
+            (self.state_op.coeff_vec, (nonzero_indices, np.zeros_like(nonzero_indices))),
             shape = (2**self.n_qubits, 1), 
             dtype=np.complex128
         )
