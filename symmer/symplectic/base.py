@@ -66,11 +66,13 @@ class PauliwordOp:
     @classmethod
     def from_list(cls, 
             pauli_terms :List[str], 
-            coeff_vec:   List[complex]
+            coeff_vec:   List[complex] = None
         ) -> "PauliwordOp":
         """ Initialize a PauliwordOp from its Pauli terms and coefficients stored as lists
         """
         n_rows = len(pauli_terms)
+        if coeff_vec is None:
+            coeff_vec = np.ones(n_rows)
         if pauli_terms:
             n_qubits = len(pauli_terms[0])
             symp_matrix = np.zeros((n_rows, 2 * n_qubits), dtype=int)
@@ -78,7 +80,7 @@ class PauliwordOp:
                 symp_matrix[row_ind] = string_to_symplectic(pauli_str, n_qubits)
         else:
             n_qubits = 0
-            symp_matrix = np.array([[]], dtype=int)
+            symp_matrix = np.array([[]], dtype=bool)
         return cls(symp_matrix, coeff_vec)
 
     @classmethod
@@ -203,27 +205,29 @@ class PauliwordOp:
     def basis_reconstruction(self, 
             operator_basis: "PauliwordOp"
         ) -> np.array:
-        """ simultaneously reconstruct every operator term in the supplied basis.
-        Performs Gaussian elimination on [op_basis.T | self_symp_csc.T] and restricts 
-        so that the row-reduced identity block is removed. Each row of the
-        resulting matrix will index the basis elements required to reconstruct
-        the corresponding term in the operator.
+        """ Simultaneously reconstruct every operator term in the supplied basis.
+        With B and M the symplectic form of the supplied basis and the internal 
+        Pauli operator, respectively, we perform columnwise Gaussian elimination 
+        to yield the matrix
 
-        Nonzero entries ocurring below the resulting identity block cannot be reconstructed
-        in the supplied basis - index_successfully_reconstructed indicates those which succeeded
+                [ B ]     [ I | 0 ]
+                |---| ->  |-------|
+                [ M ]     [ R | F ]
+
+        where R is the reconstruction matrix, i.e. M = RB, and F indicates which
+        terms were succesfully reconstructed in the basis. If F is a zero matrix
+        this means the basis is sufficiently expressible to reconstruct M. However,
+        if any rows of F contain a non-zero entry, the corresponding row in R is
+        not fully constructed.
+
+        Since we only need to reduce columns, the algorithm scales with the number of
+        qubits N, not the number of terms M, and is therefore at worst O(N^2).
         """
         dim = operator_basis.n_terms
-        basis_symp = operator_basis.symp_matrix
-        basis_op_stack = np.vstack([basis_symp, self.symp_matrix])
-        reduced = gf2_gaus_elim(basis_op_stack.T)
-
-        index_successfully_reconstructed = np.where(
-            np.sum(reduced[dim:,dim:], axis=0)==0
-        )[0]
-        #if index_unsuccessful_reconstruction:
-        #    warnings.warn(f'Terms {index_unsuccessful_reconstruction} cannot be reconstructed.')
-        op_reconstruction = reduced[:dim,dim:].T
-
+        basis_op_stack = np.vstack([operator_basis.symp_matrix, self.symp_matrix])
+        reduced = cref_binary(basis_op_stack)
+        index_successfully_reconstructed = np.where(np.all(~reduced[dim:,dim:], axis=1))[0]
+        op_reconstruction = reduced[dim:,:dim]
         return op_reconstruction, index_successfully_reconstructed
 
     @cached_property
@@ -594,6 +598,70 @@ class PauliwordOp:
             op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle).cleanup()
         return op_copy
 
+    def get_graph(self, 
+            edge_relation = 'C'
+        ) -> nx.graph:
+        """ Build a graph based on edge relation C (commuting), 
+        AC (anticommuting) or QWC (qubitwise commuting).
+        """
+        # build the adjacency matrix for the chosen edge relation
+        if edge_relation == 'AC':
+            adjmat = ~self.adjacency_matrix.copy()
+        elif edge_relation == 'C':
+            adjmat = self.adjacency_matrix.copy()
+        elif edge_relation == 'QWC':
+            adjmat = self.adjacency_matrix_qwc.copy()
+        else:
+            raise TypeError('Unrecognised edge relation, must be one of C (commuting), AC (anticommuting) or QWC (qubitwise commuting).')
+        np.fill_diagonal(adjmat,False) # avoids self-adjacency
+        # convert to a networkx graph and perform colouring on complement
+        graph = nx.from_numpy_matrix(adjmat)
+        return graph
+
+    def largest_clique(self,
+            edge_relation='C'
+        ) -> "PauliwordOp":
+        """ Return the largest clique w.r.t. the specified edge relation
+        """
+        # build graph
+        graph = self.get_graph(edge_relation=edge_relation)
+        pauli_indices = sorted(nx.find_cliques(graph), key=lambda x:-len(x))[0]
+        return sum([self[i] for i in pauli_indices])
+
+    def clique_cover(self, 
+            edge_relation = 'C', 
+            colouring_strategy='independent_set', 
+            colouring_interchange=False
+        ) -> Dict[int, "PauliwordOp"]:
+        """ Perform a graph colouring to identify a clique partition
+
+        ------------------------
+        | colouring strategies |
+        ------------------------
+        'largest_first'
+        'random_sequential'
+        'smallest_last'
+        'independent_set'
+        'connected_sequential_bfs'
+        'connected_sequential_dfs'
+        'connected_sequential' #(alias for the previous strategy)
+        'saturation_largest_first'
+        'DSATUR' #(alias for the previous strategy)
+
+        """
+        # build graph and invert
+        graph = self.get_graph(edge_relation=edge_relation)
+        inverted_graph = nx.complement(graph)
+        col_map = nx.greedy_color(inverted_graph, strategy=colouring_strategy, interchange=colouring_interchange)
+        # invert the resulting colour map to identify cliques
+        cliques = {}
+        for p_index, colour in col_map.items():
+            cliques[colour] = cliques.get(
+                colour, 
+                PauliwordOp.from_list(['I'*self.n_qubits],[0])
+            ) + self[p_index]
+        return cliques
+
     @cached_property
     def conjugate(self) -> "PauliwordOp":
         """
@@ -681,51 +749,6 @@ class PauliwordOp:
             dtype=complex
         )
         return sparse_matrix
-
-    def clique_cover(self, 
-            edge_relation = 'C', 
-            colouring_strategy='random_sequential', 
-            colouring_interchange=False
-        ) -> Dict[int, "PauliwordOp"]:
-        """ Build a graph based on edge relation C (commuting), AC (anticommuting) or
-        QWC (qubitwise commuting) and perform a graph colouring to identify cliques
-
-        ------------------------
-        | colouring strategies |
-        ------------------------
-        'largest_first'
-        'random_sequential'
-        'smallest_last'
-        'independent_set'
-        'connected_sequential_bfs'
-        'connected_sequential_dfs'
-        'connected_sequential' #(alias for the previous strategy)
-        'saturation_largest_first'
-        'DSATUR' #(alias for the previous strategy)
-
-        """
-        # build the adjacency matrix for the chosen edge relation
-        if edge_relation == 'AC':
-            adjmat = ~self.adjacency_matrix.copy()
-        elif edge_relation == 'C':
-            adjmat = self.adjacency_matrix.copy()
-        elif edge_relation == 'QWC':
-            adjmat = self.adjacency_matrix_qwc.copy()
-        else:
-            raise TypeError('Unrecognised edge relation, must be one of C (commuting), AC (anticommuting) or QWC (qubitwise commuting).')
-        np.fill_diagonal(adjmat,False) # avoids self-adjacency
-        # convert to a networkx graph and perform colouring on complement
-        graph = nx.from_numpy_matrix(adjmat)
-        inverted_graph = nx.complement(graph)
-        col_map = nx.greedy_color(inverted_graph, strategy=colouring_strategy, interchange=colouring_interchange)
-        # invert the resulting colour map to identify cliques
-        cliques = {}
-        for p_index, colour in col_map.items():
-            cliques[colour] = cliques.get(
-                colour, 
-                PauliwordOp.from_list(['I'*self.n_qubits],[0])
-            ) + self[p_index]
-        return cliques
 
 
 def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_clifford=True):

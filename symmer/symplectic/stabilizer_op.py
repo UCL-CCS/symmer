@@ -2,23 +2,8 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
-from symmer.utils import gf2_gaus_elim, gf2_basis_for_gf2_rref
-from symmer.symplectic import PauliwordOp, ObservableGraph, symplectic_to_string
-
-def find_symmetry_basis(operator, commuting_override=False):
-    """ Find an independent symmetry basis for the input operator,
-    i.e. a basis that commutes universally within the operator
-    """
-    # swap order of XZ blocks in symplectic matrix to ZX
-    ZX_symp = np.hstack([operator.Z_block, operator.X_block])
-    reduced = gf2_gaus_elim(ZX_symp)
-    kernel  = gf2_basis_for_gf2_rref(reduced)
-    stabilizers = ObservableGraph(kernel, np.ones(kernel.shape[0]))
-    if not commuting_override and np.any(~stabilizers.adjacency_matrix):
-        # if any of the stabilizers are not mutually commuting, take the largest commuting subset
-        stabilizers = stabilizers.clique_cover(clique_relation='C', colouring_strategy='largest_first')[0]
-
-    return StabilizerOp(stabilizers.symp_matrix, np.ones(stabilizers.n_terms))
+from symmer.utils import _rref_binary, _cref_binary
+from symmer.symplectic import PauliwordOp, symplectic_to_string
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
@@ -49,6 +34,41 @@ class StabilizerOp(PauliwordOp):
         self.stabilizer_rotations = None
         self.used_indices = None
 
+    @classmethod
+    def symmetry_basis(cls, 
+            PwordOp: PauliwordOp, 
+            commuting_override:bool=False
+        ):
+        """ Identify a symmetry basis for the supplied Pauli operator with
+        symplectic representation  M = [ X | Z ]. We perform columnwise 
+        Gaussian elimination to yield the matrix
+
+                [ Z | X ]     [ R ]
+                |-------| ->  |---|
+                [   I   ]     [ Q ]
+
+        Indexing the zero columns of R with i, we form the matrix
+        
+                S^T = [ Q_i1 | ... | Q_iM ] 
+                
+        and conclude that S is the symplectic representation of the symmetry basis.
+        This holds since MΩS^T=0 by construction, which implies commutativity.
+
+        Since we only need to reduce columns, the algorithm scales with the number of
+        qubits N, not the number of terms M, and is therefore at worst O(N^2).
+        """
+        # swap order of XZ blocks in symplectic matrix to ZX
+        to_reduce = np.vstack([np.hstack([PwordOp.Z_block, PwordOp.X_block]), np.eye(2*PwordOp.n_qubits, dtype=bool)])
+        cref_matrix = _cref_binary(to_reduce)
+        S_symp = cref_matrix[PwordOp.n_terms:,np.all(~cref_matrix[:PwordOp.n_terms], axis=0)].T
+        S = cls(S_symp, np.ones(S_symp.shape[0]))
+        if commuting_override:
+            return S
+        else:
+            # if any of the stabilizers are not mutually commuting, take the largest commuting subset
+            S_commuting = S.clique_cover()[0]
+            return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms))
+
     def _check_stab(self):
         """ Checks the stabilizer coefficients are +/-1
         """
@@ -57,11 +77,10 @@ class StabilizerOp(PauliwordOp):
     def _check_independent(self):
         """ Check the supplied stabilizers are algebraically independent
         """
-        check_independent = gf2_gaus_elim(self.symp_matrix)
-        for row in check_independent:
-            if np.all(row==0):
-                # there is a dependent row
-                raise ValueError('The supplied stabilizers are not independent')
+        check_independent = _rref_binary(self.symp_matrix)
+        if np.any(np.all(~check_independent, axis=1)):
+            # there is a dependent row
+            raise ValueError('The supplied stabilizers are not independent')
 
     def __str__(self) -> str:
         """ 
@@ -105,7 +124,7 @@ class StabilizerOp(PauliwordOp):
         not exist (there is a check for this in generate_stabilizer_rotations, that wraps this method).
         """
         # drop any term(s) that are single-qubit Pauli operators
-        non_sqp = np.where(np.einsum('ij->i', basis.symp_matrix)!=1)
+        non_sqp = np.where(np.sum(basis.symp_matrix, axis=1)!=1)
         basis_non_sqp = StabilizerOp(basis.symp_matrix[non_sqp], basis.coeff_vec[non_sqp])
         sqp_indices = np.where((basis - basis_non_sqp).symp_matrix)[1]%self.n_qubits
         self.used_indices += np.append(sqp_indices, sqp_indices+self.n_qubits).tolist()
@@ -115,12 +134,12 @@ class StabilizerOp(PauliwordOp):
             return None
         else:
             # identify the lowest-weight Pauli operator from the commuting basis
-            row_sum = np.einsum('ij->i',basis_non_sqp.symp_matrix)
+            row_sum = np.sum(basis_non_sqp.symp_matrix, axis=1)
             sort_rows_by_weight = np.argsort(row_sum)
             pivot_row = basis_non_sqp.symp_matrix[sort_rows_by_weight][0]
             non_I = np.setdiff1d(np.where(pivot_row)[0], np.array(self.used_indices))
             # once a Pauli operator has been selected, the least-supported qubit is chosen as pivot
-            col_sum = np.einsum('ij->j',basis_non_sqp.symp_matrix)
+            col_sum = np.sum(basis_non_sqp.symp_matrix, axis=0)
             support = pivot_row*col_sum
             pivot_point = non_I[np.argmin(support[non_I])]
             # define (in the symplectic form) the single-qubit Pauli we aim to rotate onto

@@ -11,7 +11,7 @@ class AntiCommutingOp(PauliwordOp):
 
         # check all operators anticommute
         anti_comm_check = self.adjacency_matrix.astype(int) - np.eye(self.adjacency_matrix.shape[0])
-        assert (np.einsum('ij->', anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
+        assert (np.sum(anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
 
         # normalization factor
         self.gamma_l = np.linalg.norm(self.coeff_vec)

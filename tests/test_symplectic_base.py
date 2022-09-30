@@ -105,11 +105,35 @@ def test_Y_count(
     ):
     P = PauliwordOp(symp_matrix_1, coeff_vec_1)
     assert np.all(P.Y_count == np.array([0,0,3,0]))
-    
+
+def test_getitem(
+        pauli_list_2, 
+        coeff_vec_2
+    ):
+    P = PauliwordOp.from_list(pauli_list_2, coeff_vec_2)
+    assert all(
+        [P[i] == PauliwordOp.from_list([pauli_list_2[i]], [coeff_vec_2[i]]) 
+        for i in range(-4,4)]
+    )
+
+def test_iter(
+        pauli_list_2, 
+        coeff_vec_2
+    ):
+    P = PauliwordOp.from_list(pauli_list_2, coeff_vec_2)
+    assert all(
+        [Pi==PauliwordOp.from_list([pauli_list_2[i]], [coeff_vec_2[i]]) 
+        for i, Pi in enumerate(P)]
+    )
+        
 def test_cleanup_zeros(symp_matrix_1):
     P = PauliwordOp.random(3,10)
     P.coeff_vec[:] = 0
     assert P.cleanup().n_terms == 0
+
+def test_cleanup():
+    P = PauliwordOp.from_list(['XXX', 'YYY', 'XXX', 'YYY'], [1,1,-1,1])
+    assert P == PauliwordOp.from_list(['YYY'], [2])
 
 def test_addition():
     P = PauliwordOp.random(3, 10)
@@ -122,8 +146,8 @@ def test_subtraction():
 def test_termwise_commutatvity(
         pauli_list_1, pauli_list_2
     ):
-    P1 = PauliwordOp.from_list(pauli_list_1, np.ones(4))
-    P2 = PauliwordOp.from_list(pauli_list_2, np.ones(4))
+    P1 = PauliwordOp.from_list(pauli_list_1)
+    P2 = PauliwordOp.from_list(pauli_list_2)
     assert(
         np.all(P1.commutes_termwise(P2) == np.array([
             [True , True , True , True ],
@@ -136,7 +160,7 @@ def test_termwise_commutatvity(
 def test_adjacency_matrix(
     pauli_list_2
     ):
-    P = PauliwordOp.from_list(pauli_list_2, np.ones(4))
+    P = PauliwordOp.from_list(pauli_list_2)
     assert(
         np.all(P.adjacency_matrix == np.array([
             [True , False, True , False],
@@ -145,6 +169,17 @@ def test_adjacency_matrix(
             [False, False, True , True ]
         ]))
     )
+
+@pytest.mark.parametrize(
+    "P_list,is_noncon", 
+    [
+        (['XZ', 'ZX', 'ZI', 'IZ'],False), 
+        (['XZ', 'ZX', 'XX', 'YY'],True),
+    ]
+)
+def test_is_noncontextual(P_list, is_noncon):
+    P = PauliwordOp.from_list(P_list)
+    assert P.is_noncontextual == is_noncon
 
 @pytest.mark.parametrize(
     "P1_dict,P2_dict,P1P2_dict", 
