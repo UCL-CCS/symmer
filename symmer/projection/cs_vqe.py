@@ -164,7 +164,7 @@ class CS_VQE(S3_projection):
                     np.arange(self.symmetry_generators.n_terms), clique_column_index
                 )
                 GuCi_symp = np.vstack([self.symmetry_generators.symp_matrix, Ci.symp_matrix])
-                GuCi = StabilizerOp(GuCi_symp, np.ones(GuCi_symp.shape[0]))
+                GuCi = StabilizerOp(GuCi_symp)
                 reconstructed, row_mask_inds = self.noncontextual_operator.basis_reconstruction(GuCi)
                 row_col_mask = np.ix_(row_mask_inds, col_mask_inds)
                 reconstruction_ind_matrix[row_col_mask] = reconstructed[row_mask_inds]
@@ -350,8 +350,7 @@ class CS_VQE_LW(S3_projection):
         
         # instantiate as StabilizerOp to ensure algebraic independence and coefficients are +/-1
         basis = StabilizerOp(
-            basis.symp_matrix, 
-            np.ones(basis.n_terms, dtype=int), 
+            basis.symp_matrix,
             target_sqp=self.target_sqp
         )
         # update symmetry sector in accordance with the reference state
