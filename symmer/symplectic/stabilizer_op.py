@@ -17,12 +17,14 @@ class StabilizerOp(PauliwordOp):
         the stabilizer rotations, since these will be cached
     """
     def __init__(self,
-            operator:   Union[List[str], Dict[str, float], np.array],
+            symp_matrix:   np.array,
             coeff_vec:  Union[List[complex], np.array] = None,
             target_sqp: str = 'Z'):
         """
         """
-        super().__init__(operator, coeff_vec)
+        if coeff_vec is None:
+            coeff_vec = np.ones(symp_matrix.shape[0])
+        super().__init__(symp_matrix, coeff_vec)
         self._check_stab()
         self.coeff_vec = self.coeff_vec.real.astype(int)
         self._check_independent()
@@ -35,10 +37,33 @@ class StabilizerOp(PauliwordOp):
         self.used_indices = None
 
     @classmethod
+    def from_PauliwordOp(cls,
+            PwordOp: PauliwordOp
+        ) -> "StabilizerOp":
+        return cls(PwordOp.symp_matrix, PwordOp.coeff_vec)
+
+    @classmethod
+    def from_list(cls, 
+            pauli_terms :List[str], 
+            coeff_vec:   List[complex] = None
+        ) -> "StabilizerOp":
+        PwordOp = super().from_list(pauli_terms, coeff_vec)
+        return cls.from_PauliwordOp(PwordOp)
+
+    @classmethod
+    def from_dictionary(cls,
+            operator_dict: Dict[str, complex]
+        ) -> "StabilizerOp":
+        """ Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+        """
+        PwordOp = super().from_dictionary(operator_dict)
+        return cls.from_PauliwordOp(PwordOp)
+
+    @classmethod
     def symmetry_basis(cls, 
             PwordOp: PauliwordOp, 
             commuting_override:bool=False
-        ):
+        ) -> "StabilizerOp":
         """ Identify a symmetry basis for the supplied Pauli operator with
         symplectic representation  M = [ X | Z ]. We perform columnwise 
         Gaussian elimination to yield the matrix
@@ -69,12 +94,12 @@ class StabilizerOp(PauliwordOp):
             S_commuting = S.clique_cover()[0]
             return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms))
 
-    def _check_stab(self):
+    def _check_stab(self) -> None:
         """ Checks the stabilizer coefficients are +/-1
         """
         assert(set(self.coeff_vec).issubset({+1,-1})), f'Stabilizer coefficients not +/-1: {self.coeff_vec}'
 
-    def _check_independent(self):
+    def _check_independent(self) -> None:
         """ Check the supplied stabilizers are algebraically independent
         """
         check_independent = _rref_binary(self.symp_matrix)
@@ -96,19 +121,19 @@ class StabilizerOp(PauliwordOp):
             out_string += (f'{coeff: d} {p_string} \n')
         return out_string[:-2]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return str(self)
     
-    def __add__(self, Pword: "PauliwordOp") -> "PauliwordOp":
+    def __add__(self, Pword: "StabilizerOp") -> "StabilizerOp":
         summed = super().__add__(Pword)
-        return StabilizerOp(summed.symp_matrix, summed.coeff_vec)
+        return self.from_PauliwordOp(summed)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 
             angle: float = None
-        ) -> "PauliwordOp":
+        ) -> "StabilizerOp":
         rotated_stabilizers = super()._rotate_by_single_Pword(Pword, angle)
-        return StabilizerOp(rotated_stabilizers.symp_matrix, rotated_stabilizers.coeff_vec)
+        return self.from_PauliwordOp(rotated_stabilizers)
 
     def perform_rotations(self, 
         rotations: List[Tuple["PauliwordOp", float]]
@@ -116,9 +141,9 @@ class StabilizerOp(PauliwordOp):
         """ Overwrite PauliwordOp.perform_rotations to return a StabilizerOp
         """
         rotated_stabilizers = super().perform_rotations(rotations)
-        return StabilizerOp(rotated_stabilizers.symp_matrix, rotated_stabilizers.coeff_vec)
+        return self.from_PauliwordOp(rotated_stabilizers)
 
-    def _recursive_rotations(self, basis: "StabilizerOp"):
+    def _recursive_rotations(self, basis: "StabilizerOp") -> None:
         """ Recursively rotate terms of the StabilizerOp to single-qubit Pauli operators.
         This is only possible when the basis is mutually commuting! Else, such rotations do
         not exist (there is a check for this in generate_stabilizer_rotations, that wraps this method).
@@ -153,7 +178,7 @@ class StabilizerOp(PauliwordOp):
             rotated_basis = basis_non_sqp._rotate_by_single_Pword(pivot_rotation)
             return self._recursive_rotations(rotated_basis)
         
-    def generate_stabilizer_rotations(self):
+    def generate_stabilizer_rotations(self) -> None:
         """ Find the full list of pi/2 Pauli rotations (Clifford operations) mapping this StabilizerOp 
         to single-qubit Pauli operators, for use in stabilizer subsapce projection schemes.
         """
