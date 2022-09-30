@@ -820,6 +820,7 @@ class QuantumState:
             state_matrix = np.array(state_matrix)
         if isinstance(coeff_vector, list):
             coeff_vector = np.array(coeff_vector)
+        state_matrix = state_matrix.astype(int) # in case input is boolean
         assert(set(state_matrix.flatten()).issubset({0,1})) # must be binary, does not support N-ary qubits
         self.n_terms, self.n_qubits = state_matrix.shape
         self.state_matrix = state_matrix
@@ -912,7 +913,7 @@ class QuantumState:
             new_state_op = self.state_op * mul_obj
             new_state_op.coeff_vec*=((-1j)**new_state_op.Y_count)
             new_bra_state = QuantumState(
-                new_state_op.X_block.astype(int), 
+                new_state_op.X_block, 
                 new_state_op.coeff_vec, 
                 vec_type='bra'
             )
@@ -953,7 +954,7 @@ class QuantumState:
         """
         clean_state_op = self.state_op.cleanup(zero_threshold=zero_threshold)
         return QuantumState(
-            clean_state_op.X_block.astype(int), 
+            clean_state_op.X_block, 
             clean_state_op.coeff_vec, 
             vec_type=self.vec_type
         )
