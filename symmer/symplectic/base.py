@@ -1002,7 +1002,7 @@ class QuantumState:
         """
         Method to sample given quantum state in computational basis. Get an array of bitstrings and counts as output.
 
-        #TODO: could have a change of basis performed prior to sample
+        #TODO: could have a change of basis performed prior to state sample
 
         Args:
             n_samples: how many bitstring samples to take
@@ -1012,8 +1012,9 @@ class QuantumState:
             counter: number of times each row was sampled
         """
         counter = np.random.multinomial(n_samples, np.abs(self.state_op.coeff_vec)**2)
-        # approx_state = QuantumState(self.state_matrix, counter/sum(counter))
-        # return QuantumState(self.state_matrix, counter) ## gives counts as coefficients!
+        # approx_state_by_sample = QuantumState(self.state_matrix,np.sqrt( counter/sum(counter)))
+        # samples_as_coeff_state = QuantumState(self.state_matrix, counter) ## gives counts as coefficients!
+        # return samples_as_coeff_state
         # TODO: could return approx state and then measure expect value using that to get sample expec val.
 
         return self.state_matrix, counter
