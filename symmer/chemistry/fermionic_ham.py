@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 from pathlib import Path
 import os
 import numpy as np
@@ -266,7 +266,7 @@ class FermionicHamiltonian:
 
 
     @cached_property
-    def hf_comp_basis_state(self):
+    def hf_fermionic_basis_state(self):
         hf_comp_basis_state = np.zeros(self.n_qubits, dtype=int)
         hf_comp_basis_state[:self.n_electrons] = 1
         return hf_comp_basis_state
@@ -276,7 +276,7 @@ class FermionicHamiltonian:
     def hf_ket(self):
         binary_int_list = 1 << np.arange(self.n_qubits)[::-1]
         hf_ket = np.zeros(2 ** self.n_qubits, dtype=int)
-        hf_ket[self.hf_comp_basis_state @ binary_int_list] = 1
+        hf_ket[self.hf_fermionic_basis_state @ binary_int_list] = 1
         return hf_ket
 
 
@@ -398,6 +398,8 @@ class PySCFDriver:
         pyscf_print_level (int): Amount of information PySCF prints
         unit (str): molecular geometry unit 'Angstrom' or 'Bohr'
         max_hf_cycles (int): max number of Hartree-Fock iterations allowed
+        spin (int): 2S, twice the total spin operator
+        symmetry (str, bool): Point-group symmetry of molecular system (see pyscf for details)
 
     Attributes:
 
@@ -415,6 +417,7 @@ class PySCFDriver:
         unit: Optional[str] = "angstrom",
         max_hf_cycles: int = 50,
         spin: Optional[int] = 0,
+        symmetry: Optional[Union[str, bool]] = False,
 
         run_mp2: Optional[bool] = False,
         run_cisd: Optional[bool] = False,
@@ -433,6 +436,7 @@ class PySCFDriver:
         self.savefile = savefile
         self.unit = unit
         self.max_hf_cycles = max_hf_cycles
+        self.symmetry = symmetry
 
         self.run_mp2  = run_mp2
         self.run_cisd = run_cisd
@@ -453,7 +457,8 @@ class PySCFDriver:
                 basis=self.basis,
                 charge=self.charge,
                 unit=self.unit,
-                spin=self.spin
+                spin=self.spin,
+                symmetry=self.symmetry
             ).build()
         else:
             # geometry is raw xyz string
@@ -463,6 +468,7 @@ class PySCFDriver:
                 charge=self.charge,
                 unit=self.unit,
                 spin=self.spin,
+                symmetry=self.symmetry
             ).build()
         return full_mol
 

@@ -1,10 +1,11 @@
 from functools import cached_property
-from symmer.symplectic import PauliwordOp
-from symmer.utils import QubitOperator_to_dict
+from symmer.symplectic import PauliwordOp, QuantumState
+from symmer.utils import QubitOperator_to_dict, safe_PauliwordOp_to_dict
 from symmer.chemistry import (
     FermionicHamiltonian, FermioniCC, PySCFDriver, 
     fermion_to_qubit_operator, get_fermionic_number_operator, get_fermionic_up_down_parity_operators
 )
+import numpy as np
 from openfermion import get_fermion_operator, jordan_wigner, FermionOperator, hermitian_conjugated
 from typing import Tuple, List
 
@@ -27,6 +28,7 @@ class MoleculeBuilder:
         spin=0,
         run_fci = True,
         qubit_mapping_str = 'jordan_wigner',
+        symmetry = False,
         print_info = True) -> None:
         """
         """
@@ -41,6 +43,7 @@ class MoleculeBuilder:
         self.charge = charge
         self.spin = spin
         self.qubit_mapping_str = qubit_mapping_str
+        self.symmetry = symmetry
         self.print_info = print_info
         self.calculate(run_fci=run_fci)
         self.n_particles = self.pyscf_obj.pyscf_hf.mol.nelectron
@@ -52,7 +55,11 @@ class MoleculeBuilder:
         self.T_fermion.build_operator()
 
         self.n_qubits = self.H_fermion.n_qubits
-        self.hf_array = self.H_fermion.hf_comp_basis_state
+        hf_ferm_array = self.H_fermion.hf_fermionic_basis_state
+        HF_fermionic_op = FermionOperator(' '.join([f'{pos}^' for pos in hf_ferm_array.nonzero()[0]]), 1)
+        self.HF_fermionic_op_q = fermion_to_qubit_operator(HF_fermionic_op, self.qubit_mapping_str, N_qubits=self.n_qubits)
+        self.hf_array = (self.HF_fermionic_op_q * QuantumState([[0]*self.n_qubits])).state_matrix[0]
+
         if self.print_info:
             print()
             print('Number of qubits:', self.n_qubits)
@@ -85,6 +92,7 @@ class MoleculeBuilder:
                                 run_cisd=run_cisd,
                                 run_ccsd=run_ccsd,
                                 run_fci=run_fci,
+                                symmetry=self.symmetry,
                                 convergence=convergence,
                                 max_ram_memory=ram,
                                 max_hf_cycles=max_hf_cycles,                   
@@ -173,5 +181,45 @@ class MoleculeBuilder:
             parity_down_op, self.qubit_mapping_str, N_qubits=self.n_qubits
         )
         return parity_up_pword, parity_down_pword
+
+    def data_dictionary(self):
+        mol_data = {
+            'qubit_encoding': self.qubit_mapping_str,
+            'unit':self.pyscf_obj.unit,
+            'geometry': self.geometry,
+            'basis': self.basis,
+            'charge': int(self.charge),
+            'spin': int(self.spin),
+            'hf_array': self.hf_array.tolist(),
+            'n_particles': int(self.n_particles),
+            'n_qubits': int(self.n_qubits),
+            'convergence_threshold':self.pyscf_obj.convergence,
+            'point_group':{
+                'groupname':self.pyscf_obj.pyscf_hf.mol.groupname,
+                'topgroup':self.pyscf_obj.pyscf_hf.mol.topgroup
+            },
+            'calculated_properties':{
+                'HF':{'energy':self.hf_energy, 'converged':bool(self.pyscf_obj.pyscf_hf.converged)}
+            },
+            'auxiliary_operators':{
+                #'HF_operator': safe_PauliwordOp_to_dict(self.HF_fermionic_op_q),
+                'number_operator': safe_PauliwordOp_to_dict(self.number_operator),
+                'alpha_parity_operator': safe_PauliwordOp_to_dict(self.up_down_parity_operators[0]),
+                'beta_parity_operator': safe_PauliwordOp_to_dict(self.up_down_parity_operators[1])
+            }    
+        }
+
+        if self.pyscf_obj.run_mp2:
+            mol_data['calculated_properties']['MP2'] = {
+                'energy':self.mp2_energy, 'converged':bool(self.pyscf_obj.pyscf_hf.converged)}
+        if self.pyscf_obj.run_ccsd:
+            mol_data['calculated_properties']['CCSD'] = {
+                'energy':self.ccsd_energy, 'converged':bool(self.pyscf_obj.pyscf_ccsd.converged)}
+            mol_data['auxiliary_operators']['UCCSD_operator'] = safe_PauliwordOp_to_dict(self.UCC_q),
+        if self.pyscf_obj.run_fci:
+            mol_data['calculated_properties']['FCI'] = {
+                'energy':self.fci_energy, 'converged':bool(self.pyscf_obj.pyscf_fci.converged)}        
+        
+        return mol_data
 
 

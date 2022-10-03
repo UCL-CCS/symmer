@@ -73,6 +73,14 @@ class PauliwordOp:
         n_rows = len(pauli_terms)
         if coeff_vec is None:
             coeff_vec = np.ones(n_rows)
+        else:
+            coeff_vec = np.array(coeff_vec)
+            if len(coeff_vec.shape)==2:
+                # if coeff_vec supplied as list of tuples (real, imag) 
+                # then converts to single complex vector
+                assert(coeff_vec.shape[1]==2), 'Only tuples of size two allowed (real and imaginary components)'
+                coeff_vec = coeff_vec[:,0] + 1j*coeff_vec[:,1]
+        
         if pauli_terms:
             n_qubits = len(pauli_terms[0])
             symp_matrix = np.zeros((n_rows, 2 * n_qubits), dtype=int)

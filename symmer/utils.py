@@ -1,7 +1,7 @@
 from functools import reduce
 import numpy as np
 import scipy as sp
-from typing import Tuple
+from typing import Tuple, Dict
 from qiskit import QuantumCircuit
 import pyzx as zx
 import openfermion as of
@@ -282,6 +282,8 @@ def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
     return np.array(cartesians)
 
 def QubitOperator_to_dict(op, num_qubits):
+    """ OpenFermion
+    """
     assert(type(op) == of.QubitOperator)
     op_dict = {}
     term_dict = op.terms
@@ -295,3 +297,17 @@ def QubitOperator_to_dict(op, num_qubits):
         op_dict[p_string] = term_dict[t]
          
     return op_dict
+
+def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:
+    """ Stores the real and imaginary parts of the coefficient separately in a tuple
+
+    Args:
+        op (PauliwordOp): Weighted linear combination of N-fold Pauli operators
+    Returns:
+        dict_out (dict): Dictionary of the form {pstring:(real, imag)}
+
+    """
+    terms, coeffs = zip(*op.to_dictionary.items())
+    coeffs = [(n.real, n.imag) for n in coeffs]
+    dict_out = dict(zip(terms, coeffs))
+    return dict_out

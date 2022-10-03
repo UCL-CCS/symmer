@@ -1,4 +1,4 @@
-from typing import Optional, List #,List, Tuple, Union
+from typing import Optional, List, Union #,List, Tuple, Union
 from pathlib import Path
 import os
 import numpy as np
@@ -27,7 +27,9 @@ class PySCFDriver:
         max_ram_memory (int): Amount of RAM memery in MB available for PySCF calculation
         pyscf_print_level (int): Amount of information PySCF prints
         unit (str): molecular geometry unit 'Angstrom' or 'Bohr'
-        max_hf_cycles (int): max number of Hartree-Fock iterations allowed
+        max_hf_cycles (int): max number of Hartree-Fock iterations allowed,
+        spin (int): 2S, twice the total spin operator
+        symmetry (str, bool): Point-group symmetry of molecular system (see pyscf for details)
 
     Attributes:
 
@@ -45,7 +47,7 @@ class PySCFDriver:
         unit: Optional[str] = "angstrom",
         max_hf_cycles: int = 50,
         spin: Optional[int] = 0,
-
+        symmetry: Optional[Union[str, bool]] = False,
         run_mp2: Optional[bool] = False,
         run_cisd: Optional[bool] = False,
         run_ccsd: Optional[bool] = False,
@@ -61,6 +63,7 @@ class PySCFDriver:
         self.savefile = savefile
         self.unit = unit
         self.max_hf_cycles = max_hf_cycles
+        self.symmetry = symmetry
 
         self.run_mp2  = run_mp2
         self.run_cisd = run_cisd
@@ -81,7 +84,8 @@ class PySCFDriver:
                 basis=self.basis,
                 charge=self.charge,
                 unit=self.unit,
-                spin=self.spin
+                spin=self.spin,
+                symmetry=self.symmetry
             ).build()
         else:
             # geometry is raw xyz string
@@ -91,6 +95,7 @@ class PySCFDriver:
                 charge=self.charge,
                 unit=self.unit,
                 spin=self.spin,
+                symmetry=self.symmetry
             ).build()
         return full_mol
 
