@@ -1,4 +1,3 @@
-from symmer.symplectic import array_to_QuantumState
 from typing import List, Tuple
 import os
 import numpy as np
@@ -9,6 +8,7 @@ import py3Dmol
 from pyscf.tools import cubegen
 from openfermion import FermionOperator, count_qubits
 from openfermion.transforms import jordan_wigner, bravyi_kitaev, parity_code
+from symmer.symplectic.base import QuantumState
 from symmer.utils import QubitOperator_to_dict
 from symmer.symplectic import PauliwordOp
 
@@ -146,13 +146,13 @@ def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, number_
     
     if n_particles is None:
         # if no particle number is specified then return the smallest eigenvalue
-        return eigvals[0], eigvecs.T[0]
+        return eigvals[0], eigvecs[:,0].reshape([-1,1])
     else:
         assert(number_operator is not None), 'Must specify the number operator.'
         # otherwise, search through the first n_eig eigenvalues and check the Hamming weight
         # of the the corresponding eigenvector - return the first match with n_particles
         for evl, evc in zip(eigvals, eigvecs.T):
-            psi = array_to_QuantumState(evc).cleanup(zero_threshold=1e-5)
+            psi = QuantumState.from_array(evc.reshape([-1,1])).cleanup(zero_threshold=1e-5)
             assert(~np.any(number_operator.X_block)), 'Number operator not diagonal'
             expval_n_particle = 0
             for Z_symp, Z_coeff in zip(number_operator.Z_block, number_operator.coeff_vec):
@@ -163,7 +163,7 @@ def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, number_
                 )
                 expval_n_particle += Z_coeff * np.sum(sign * np.square(abs(psi.state_op.coeff_vec)))
             if round(expval_n_particle) == n_particles:
-                return evl, evc
+                return evl, evc.reshape([-1,1])
         # if a solution is not found within the first n_eig eigenvalues then error
         raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
 

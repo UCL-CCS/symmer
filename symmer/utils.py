@@ -259,6 +259,9 @@ def get_ground_state_sparse(sparse_matrix, initial_guess=None):
 def exact_gs_energy(sparse_matrix, initial_guess=None) -> Tuple[float, np.array]:
     """ Return the ground state energy and corresponding 
     ground statevector for the input operator
+
+    Full Fock space - can find ground state in wrong particle number subsapce. 
+    Refer to chem_utils.exact_gs_state for a specified particle number.
     """
 
     if sparse_matrix.shape[0] > 2**5:
@@ -268,7 +271,7 @@ def exact_gs_energy(sparse_matrix, initial_guess=None) -> Tuple[float, np.array]
         eigvals, eigvecs = np.linalg.eigh(dense_matrix)
         ground_energy, ground_state = sorted(zip(eigvals,eigvecs.T), key=lambda x:x[0])[0]
 
-    return ground_energy, np.array(ground_state)
+    return ground_energy, np.array(ground_state).reshape([-1,1])
 
 def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
     """ Input an array of angles of length n, returns the n+1 cartesian coordinates 
