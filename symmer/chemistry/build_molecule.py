@@ -219,7 +219,7 @@ class MoleculeBuilder:
         if self.pyscf_obj.run_ccsd:
             mol_data['calculated_properties']['CCSD'] = {
                 'energy':self.ccsd_energy, 'converged':bool(self.pyscf_obj.pyscf_ccsd.converged)}
-            mol_data['auxiliary_operators']['UCCSD_operator'] = safe_PauliwordOp_to_dict(self.UCC_q),
+            mol_data['auxiliary_operators']['UCCSD_operator'] = safe_PauliwordOp_to_dict(self.UCC_q)
         if self.pyscf_obj.run_fci:
             mol_data['calculated_properties']['FCI'] = {
                 'energy':self.fci_energy, 'converged':bool(self.pyscf_obj.pyscf_fci.converged)}        
