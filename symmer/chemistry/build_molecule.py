@@ -28,6 +28,7 @@ class MoleculeBuilder:
         spin=0,
         run_fci = True,
         qubit_mapping_str = 'jordan_wigner',
+        hf_method = 'RHF',
         symmetry = False,
         print_info = True) -> None:
         """
@@ -45,7 +46,7 @@ class MoleculeBuilder:
         self.qubit_mapping_str = qubit_mapping_str
         self.symmetry = symmetry
         self.print_info = print_info
-        self.calculate(run_fci=run_fci)
+        self.calculate(run_fci=run_fci, hf_method=hf_method)
         self.n_particles = self.pyscf_obj.pyscf_hf.mol.nelectron
 
         # build the fermionic hamiltonian/CC operator
@@ -80,6 +81,7 @@ class MoleculeBuilder:
         run_cisd = True, 
         run_ccsd = True, 
         run_fci  = True,
+        hf_method= 'RHF',
         convergence = 1e-6, 
         max_hf_cycles=100_000,
         ram = 8_000) -> None:
@@ -92,6 +94,7 @@ class MoleculeBuilder:
                                 run_cisd=run_cisd,
                                 run_ccsd=run_ccsd,
                                 run_fci=run_fci,
+                                hf_method=hf_method,
                                 symmetry=self.symmetry,
                                 convergence=convergence,
                                 max_ram_memory=ram,
@@ -191,6 +194,7 @@ class MoleculeBuilder:
             'charge': int(self.charge),
             'spin': int(self.spin),
             'hf_array': self.hf_array.tolist(),
+            'hf_method': f'{self.pyscf_obj.pyscf_hf.__module__}.{self.pyscf_obj.pyscf_hf.__class__.__name__}',
             'n_particles': int(self.n_particles),
             'n_qubits': int(self.n_qubits),
             'convergence_threshold':self.pyscf_obj.convergence,

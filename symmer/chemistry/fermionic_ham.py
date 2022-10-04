@@ -400,6 +400,9 @@ class PySCFDriver:
         max_hf_cycles (int): max number of Hartree-Fock iterations allowed
         spin (int): 2S, twice the total spin operator
         symmetry (str, bool): Point-group symmetry of molecular system (see pyscf for details)
+        hf_method (str): Type of Hartree-Fock calulcation, one of the following:
+                        restricted (RHF), restricted open-shell (ROHF), 
+                        unrestriced (UHF) or generalised (GHF) Hartree-Fock.
 
     Attributes:
 
@@ -423,6 +426,7 @@ class PySCFDriver:
         run_cisd: Optional[bool] = False,
         run_ccsd: Optional[bool] = False,
         run_fci: Optional[bool] = False,
+        hf_method: Optional[str] = 'RHF'
     ):
         if convergence>1e-2:
             warnings.warn('note scf convergence threshold not very low')
@@ -442,6 +446,7 @@ class PySCFDriver:
         self.run_cisd = run_cisd
         self.run_ccsd = run_ccsd
         self.run_fci = run_fci
+        self.hf_method = hf_method
         self.spin = spin
 
     def _build_mol(self) -> gto.mole:
@@ -479,10 +484,16 @@ class PySCFDriver:
         mol_full = self._build_mol()
         # run Hartree-Fock
 
-        if mol_full.spin:
-            global_hf = scf.ROHF(mol_full)
-        else:
+        if self.hf_method.upper() == 'RHF':
             global_hf = scf.RHF(mol_full)
+        elif self.hf_method.upper() == 'ROHF':
+            global_hf = scf.ROHF(mol_full)
+        elif self.hf_method.upper() == 'UHF':
+            raise NotImplementedError('Unrestricted HF currently not implemented')
+        elif self.hf_method.upper() == 'GHF':
+            raise NotImplementedError('Generalised HF currently not implemented')
+        else:
+            raise ValueError('Unknown Hartree-Fock method, must be one of RHF, ROHF, UHF or GHF.')
 
         global_hf.conv_tol = self.convergence
         global_hf.max_memory = self.max_ram_memory
@@ -491,7 +502,7 @@ class PySCFDriver:
         global_hf.kernel()
         if global_hf.converged is False:
             warnings.warn("Hartree-Fock calc not converged")
-
+        
         return global_hf
 
 
