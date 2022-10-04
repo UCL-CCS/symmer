@@ -191,6 +191,7 @@ class MoleculeBuilder:
             'charge': int(self.charge),
             'spin': int(self.spin),
             'hf_array': self.hf_array.tolist(),
+            'hf_method': type(self.pyscf_obj),
             'n_particles': int(self.n_particles),
             'n_qubits': int(self.n_qubits),
             'convergence_threshold':self.pyscf_obj.convergence,
