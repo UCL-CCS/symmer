@@ -11,6 +11,7 @@ from symmer.utils import *
 from openfermion import QubitOperator
 from qiskit.quantum_info import Pauli
 from qiskit.opflow import PauliOp, PauliSumOp
+from scipy.stats import unitary_group
 import warnings
 warnings.simplefilter('always', UserWarning)
 
@@ -62,6 +63,22 @@ class PauliwordOp:
         if complex_coeffs:
             coeff_vec += 1j * np.random.randn(n_terms)
         return cls(symp_matrix, coeff_vec)
+
+    @classmethod
+    def haar_random(cls,
+            n_qubits: int,
+        ) -> "PauliwordOp":
+        """ Generate a Haar random U(N) matrix (N^n_qubits) as a linear combination of Pauli operators.
+        aka generate a uniform random unitary from a Hilbert space.
+
+        Args:
+            n_qubits: number of qubits
+        Returns:
+            p_random (PauliwordOp): Haar random matrix in Pauli basis
+        """
+        haar_matrix = unitary_group.rvs(2**n_qubits)
+        p_random = cls.from_matrix(haar_matrix)
+        return p_random
 
     @classmethod
     def from_list(cls, 
@@ -845,6 +862,31 @@ class QuantumState:
         Create a carbon copy of the class instance
         """
         return deepcopy(self)
+
+    @classmethod
+    def haar_random(cls,
+                    n_qubits: int,
+                    vec_type: str) -> "QuantumState":
+        """
+        Generate a Haar random quantum state - (uniform random quantum state).
+
+        Args:
+            n_qubits: number of qubits
+            vec_type (str): bra or ket
+
+        Returns:
+            qstate_random (QuantumState): Haar random quantum state
+
+        """
+        if vec_type=='ket':
+            haar_vec = (unitary_group.rvs(2**n_qubits)[:,0]).reshape([-1, 1])
+        elif vec_type == 'bra':
+            haar_vec = (unitary_group.rvs(2**n_qubits)[0,:]).reshape([1, -1])
+        else:
+            raise ValueError(f'vector type: {vec_type} unkown')
+
+        qstate_random = cls.from_array(haar_vec)
+        return qstate_random
 
     def __str__(self) -> str:
         """ 
