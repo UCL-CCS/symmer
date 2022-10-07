@@ -775,6 +775,59 @@ class PauliwordOp:
         )
         return sparse_matrix
 
+    def conjugate_op(self, R: 'PauliwordOp') -> 'PauliwordOp':
+        """
+        For a defined linear combination of pauli operators : R = ∑_{𝑖} ci Pi ... (note each P self-adjoint!)
+
+        perform the adjoint rotation R self R† =  R [∑_{a} ca Pa] R†
+
+        Args:
+            R (PauliwordOp): operator to rotate self by
+        Returns:
+            rot_H (PauliwordOp): rotated operator
+
+        ### Notes
+        R = ∑_{𝑖} ci Pi
+        R^{†} = ∑_{j}  cj^{*} Pj
+        note i and j here run over the same indices!
+        apply R H R^{†} where H is self (current Pauli defined in class object)
+
+        ### derivation:
+
+        = (∑_{𝑖} ci Pi ) * (∑_{a} ca Pa ) * ∑_{j} cj^{*} Pj
+
+        = ∑_{a}∑_{i}∑_{j} (ci ca cj^{*}) Pi  Pa Pj
+
+        # can write as case for when i==j and i!=j
+
+        = ∑_{a}∑_{i=j} (ci ca ci^{*}) Pi  Pa Pi + ∑_{a}∑_{i}∑_{j!=i} (ci ca cj^{*}) Pi  Pa Pj
+
+        # let C by the termwise commutator matrix between H and R
+        = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa  + ∑_{a}∑_{i}∑_{j!=i} (ci ca cj^{*}) Pi  Pa Pj
+
+        # next write final term over upper triange (as i and j run over same indices)
+        ## so add common terms for i and j and make j>i
+
+        = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
+          + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*}) Pi  Pa Pj + (cj ca ci^{*}) Pj  Pa Pi
+
+        # then need to know commutation relation betwen terms in R
+        ## given by adjaceny matrix of R... here A
+
+
+        = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
+         + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*}) Pi  Pa Pj + (-1)^{C_{ia}+A_{ij}+C_{ja}}(cj ca ci^{*}) Pi  Pa Pj
+
+
+        = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
+         + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*} + (-1)^{C_{ia}+A_{ij}+C_{ja}}(cj ca ci^{*})) Pi  Pa Pj
+
+
+        """
+
+        # see from symmer.symplectic.anticommuting_op import conjugate_Pop_with_R
+        raise NotImplementedError('not done yet. Full function at: from symmer.symplectic.anticommuting_op.conjugate_Pop_with_R')
+
 
 def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_clifford=True):
     """ Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
@@ -796,7 +849,7 @@ def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_cliffor
     if complex_coeff:
         coeff_vec += 1j * np.random.randn((len(P_list)))
 
-    P_anticomm = PauliwordOp((dict(zip(P_list, coeff_vec))))
+    P_anticomm = PauliwordOp.from_dictionary((dict(zip(P_list, coeff_vec))))
 
     # random rotations to get rid of structure
     if apply_clifford:

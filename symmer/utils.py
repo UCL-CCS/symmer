@@ -1,4 +1,3 @@
-from functools import reduce
 import numpy as np
 import scipy as sp
 from typing import Tuple, Dict
@@ -311,3 +310,46 @@ def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:
     coeffs = [(n.real, n.imag) for n in coeffs]
     dict_out = dict(zip(terms, coeffs))
     return dict_out
+
+def mul_symplectic(
+        symp_vec1: np.array,
+        coeff1: complex,
+        symp_vec2: np.array,
+        coeff2: complex) -> Tuple[np.array, complex, int]:
+    """ performs Pauli multiplication with phases at the level of the symplectic
+         vector (1D here!). The phase compensation is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
+
+        P1 * P2 is performed
+
+    Args:
+        symp_vec1 (np.array) : 1D vector of left Pauli operator
+        coeff1 (float): coefficient of left  Pauli operator
+        Y_count1: number of Y terms in left Pauli operator
+
+        symp_vec2 (np.array) : 1D vector of right Pauli operator
+        coeff2 (float): coefficient of right  Pauli operator
+        Y_count2: number of Y terms in right Pauli operator
+
+    Returns:
+        output_symplectic_vec (np.array): binary symplectic output (Pauli opertor out)
+        coeff_vec (complex): complex coeff with correct phase
+        Y_count_out (int): number of Y terms in output
+    """
+    X_block1, Z_block1 = np.split(symp_vec1, 2)
+    X_block2, Z_block2 = np.split(symp_vec2, 2)
+
+    Y_count1 = np.sum(np.bitwise_and(X_block1, Z_block1), axis=0)
+    Y_count2 = np.sum(np.bitwise_and(X_block2, Z_block2), axis=0)
+
+    # phaseless multiplication is binary addition in symplectic representation
+    output_symplectic_vec = np.bitwise_xor(symp_vec1, symp_vec2)
+    # phase is determined by Y counts plus additional sign flip
+    Y_count_out = np.sum(np.bitwise_and(*np.split(output_symplectic_vec, 2)), axis=0)
+    # X_block of first op and Z_block of second op
+    sign_change = (-1) ** (
+            np.sum(np.bitwise_and(X_block1, Z_block2), axis=0) % 2
+    )  # mod 2 as only care about parity
+    # final phase modification
+    phase_mod = sign_change * (1j) ** ((3 * (Y_count1 + Y_count2) + Y_count_out) % 4)  # mod 4 as roots of unity
+    coeff_vec = phase_mod * coeff1 * coeff2
+    return output_symplectic_vec, coeff_vec #, Y_count_out

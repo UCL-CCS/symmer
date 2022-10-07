@@ -18,10 +18,13 @@ class CS_VQE(S3_projection):
             ref_state: np.array = None,
             target_sqp: str = 'Z',
             noncontextual_form = 'legacy',
-            basis_weighting_operator: PauliwordOp = None
+            basis_weighting_operator: PauliwordOp = None,
+            unitary_partitioning_method = 'LCU',
         ) -> None:
         """ 
         """
+        assert unitary_partitioning_method in ['LCU', 'seq_rot'], f'unitary partitioning method {unitary_partitioning_method} unknown'
+        self.unitary_partitioning_method = unitary_partitioning_method
         self.operator = operator
         self.ref_state = ref_state
         self.target_sqp = target_sqp
@@ -41,7 +44,11 @@ class CS_VQE(S3_projection):
         self.solve_noncontextual(ref_state)
         # Determine the unitary partitioning rotations and the single Pauli operator that is rotated onto
         if self.n_cliques > 0:
-            self.unitary_partitioning_rotations, self.C0 = self.clique_operator.gen_seq_rotations()
+
+            (self.C0, self.unitary_partitioning_rotations,
+             self.clique_normalizaion,
+             self.normalized_clique) = self.clique_operator.unitary_partitioning(up_method=unitary_partitioning_method,
+                                                                                  s_index=None)
             self.C0.coeff_vec[0] = round(self.C0.coeff_vec[0].real)
         
     def basis_score(self, 
@@ -305,6 +312,13 @@ class CS_VQE(S3_projection):
 
         # instantiate the parent S3_projection class with the stabilizers we are enforcing
         super().__init__(fix_stabilizers)
+
+        if isinstance(insert_rotations, PauliwordOp) and self.unitary_partitioning_method=='LCU':
+            # apply LCU to operator
+            # TODO: need to make this cleaner!
+            operator_to_project = (self.unitary_partitioning_rotations * operator_to_project
+                                   * self.unitary_partitioning_rotations.conjugate).cleanup()
+            insert_rotations = []
 
         return self.perform_projection(
             operator=operator_to_project,
