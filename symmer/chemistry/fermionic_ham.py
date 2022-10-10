@@ -1,3 +1,4 @@
+from itertools import combinations, product
 from typing import Optional, Tuple, Union
 from pathlib import Path
 import os
@@ -10,6 +11,7 @@ from openfermion.ops.representations import get_active_space_integrals
 from pyscf import ao2mo, gto, scf, mp, ci, cc, fci
 from pyscf.lib import StreamObject
 from pyscf.cc.addons import spatial2spin
+import multiprocessing as mproc
 import warnings
 
 class FermionicHamiltonian:
@@ -107,35 +109,39 @@ class FermionicHamiltonian:
                 h_core_mo_basis_spin[(2 * p + 1), (2 * q + 1)] = self._one_body_integrals[p, q]  # spin DOWN
         return h_core_mo_basis_spin
 
+    def _update_eri_mo_basis_spin(self, p,q,r,s):
+        AO_term = self.two_body_integrals[p, q, r, s]
+        # up,up,up,up
+        self.ERI_mo_basis_spin[2 * p, 2 * q, 2 * r, 2 * s] = AO_term
+        # down,down, down, down
+        self.ERI_mo_basis_spin[2 * p + 1, 2 * q + 1, 2 * r + 1, 2 * s + 1] = AO_term
+        ## pg 82 Szabo
+        #  up down up down (physics notation)
+        self.ERI_mo_basis_spin[2 * p, 2 * q + 1,
+                            2 * r, 2 * s + 1] = AO_term
+        # down up down up  (physics notation)
+        self.ERI_mo_basis_spin[2 * p + 1, 2 * q,
+                            2 * r + 1, 2 * s] = AO_term
+
     @cached_property
     def eri_spin_basis(self):
         n_spatial_orbs = self.scf_method.mol.nao
         n_spin_orbs = 2 * n_spatial_orbs
-        ERI_mo_basis_spin = np.zeros((n_spin_orbs, n_spin_orbs, n_spin_orbs, n_spin_orbs))
+        self.ERI_mo_basis_spin = np.zeros((n_spin_orbs, n_spin_orbs, n_spin_orbs, n_spin_orbs))
 
-        two_body_integrals = np.einsum('ijkl -> ikjl', ao2mo.restore(1,  ao2mo.kernel(self.scf_method.mol,
+        self.two_body_integrals = np.einsum('ijkl -> ikjl', ao2mo.restore(1,  ao2mo.kernel(self.scf_method.mol,
                                                                                       self.scf_method.mo_coeff),
                                                                      self.scf_method.mo_coeff.shape[1]))
 
-        for p in range(n_spatial_orbs):
-            for q in range(n_spatial_orbs):
-                for r in range(n_spatial_orbs):
-                    for s in range(n_spatial_orbs):
-                        AO_term = two_body_integrals[p, q, r, s]
-                        # up,up,up,up
-                        ERI_mo_basis_spin[2 * p, 2 * q, 2 * r, 2 * s] = AO_term
-                        # down,down, down, down
-                        ERI_mo_basis_spin[2 * p + 1, 2 * q + 1, 2 * r + 1, 2 * s + 1] = AO_term
+        #pool = mproc.Pool(mproc.cpu_count())
+        #pool.starmap(
+        #    self._update_eri_mo_basis_spin, 
+        #    product(*[range(n_spatial_orbs)]*4)
+        #)
+        for p,q,r,s in product(*[range(n_spatial_orbs)]*4):
+            self._update_eri_mo_basis_spin(p,q,r,s)
 
-                        ## pg 82 Szabo
-                        #  up down up down (physics notation)
-                        ERI_mo_basis_spin[2 * p, 2 * q + 1,
-                                          2 * r, 2 * s + 1] = AO_term
-                        # down up down up  (physics notation)
-                        ERI_mo_basis_spin[2 * p + 1, 2 * q,
-                                          2 * r + 1, 2 * s] = AO_term
-
-        return ERI_mo_basis_spin
+        return self.ERI_mo_basis_spin
 
     def get_perturbation_correlation_potential(self):
         """
@@ -183,25 +189,33 @@ class FermionicHamiltonian:
         self.fermionic_molecular_hamiltonian = InteractionOperator(core_constant,
                                                               one_body_coefficients,
                                                               0.5 * two_body_coefficients)
+    
 
+    def _manual_fermionic_hamiltonian_operator(self, p,q,r,s) -> FermionOperator:
+        if r==0 and s==0:
+            # only populate once per r,s loop (single excitations)
+            h_pq = self.core_h_spin_basis[p, q]
+            self.fermionic_molecular_hamiltonian += FermionOperator(f'{p}^ {q}', h_pq)
+        ## note pyscf:  ⟨01|23⟩ ==> ⟨02|31⟩
+        g_pqrs = self.eri_spin_basis[p, q, r, s]
+        self.fermionic_molecular_hamiltonian += 0.5 * FermionOperator(f'{p}^ {r}^ {s} {q}', g_pqrs)
+        
     def manual_fermionic_hamiltonian_operator(self) -> None:
         """Build fermionic Hamiltonian"""
 
         # nuclear energy
-        fermionic_molecular_hamiltonian = FermionOperator((), self.scf_method.energy_nuc())
+        self.fermionic_molecular_hamiltonian = FermionOperator((), self.scf_method.energy_nuc())
+        
+        #pool = mproc.Pool(mproc.cpu_count())
+        #fermionic_terms = pool.starmap(
+        #    self._manual_fermionic_hamiltonian_operator, 
+        #    product(*[range(self.n_qubits)]*4)
+        #)
+        for p,q,r,s in product(*[range(self.n_qubits)]*4):
+            self._manual_fermionic_hamiltonian_operator(p,q,r,s)
 
-        for p in range(self.n_qubits):
-            for q in range(self.n_qubits):
-
-                h_pq = self.core_h_spin_basis[p, q]
-                fermionic_molecular_hamiltonian += FermionOperator(f'{p}^ {q}', h_pq)
-                for r in range(self.n_qubits):
-                    for s in range(self.n_qubits):
-                        ## note pyscf:  ⟨01|23⟩ ==> ⟨02|31⟩
-                        g_pqrs = self.eri_spin_basis[p, q, r, s]
-                        fermionic_molecular_hamiltonian += 0.5 * FermionOperator(f'{p}^ {r}^ {s} {q}', g_pqrs)
-
-        return fermionic_molecular_hamiltonian
+        #fermionic_molecular_hamiltonian += sum(fermionic_terms)
+        #return fermionic_molecular_hamiltonian
 
     @cached_property
     def fock_spin_mo_basis(self):
@@ -250,7 +264,7 @@ class FermionicHamiltonian:
         T2_phys = FermionOperator((),0)
         for i in range(self.t_ijab_phy.shape[0]):
             for j in range(self.t_ijab_phy.shape[1]):
-
+                
                 for a in range(self.t_ijab_phy.shape[2]):
                     for b in range(self.t_ijab_phy.shape[3]):
 
