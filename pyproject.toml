@@ -16,7 +16,6 @@ isort = "^5.10.1"
 black = "^22.1.0"
 flake8 = "^4.0.1"
 py3Dmol = "^1.8.0"
-pyzx = "^0.7.0"
 h5py = "<=3.1"
 
 [tool.poetry.dev-dependencies]

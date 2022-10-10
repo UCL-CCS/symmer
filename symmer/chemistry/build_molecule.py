@@ -1,4 +1,4 @@
-from functools import cached_property
+from cached_property import cached_property
 from symmer.symplectic import PauliwordOp, QuantumState
 from symmer.utils import QubitOperator_to_dict, safe_PauliwordOp_to_dict
 from symmer.chemistry import (
@@ -72,7 +72,7 @@ class MoleculeBuilder:
         self.H_q = fermion_to_qubit_operator(self.H, self.qubit_mapping_str, N_qubits=self.n_qubits)
         self.T_q = fermion_to_qubit_operator(self.T, self.qubit_mapping_str, N_qubits=self.n_qubits)
 
-        self.UCC_q = self.T_q - self.T_q.conjugate
+        self.UCC_q = self.T_q - self.T_q.dagger
         self.UCC_q.coeff_vec = self.UCC_q.coeff_vec.imag
         self.SOR_q = self.second_order_response()
 
