@@ -655,7 +655,7 @@ class PauliwordOp:
 
     def clique_cover(self, 
             edge_relation = 'C', 
-            colouring_strategy='independent_set', 
+            strategy='independent_set',
             colouring_interchange=False
         ) -> Dict[int, "PauliwordOp"]:
         """ Perform a graph colouring to identify a clique partition
@@ -673,19 +673,51 @@ class PauliwordOp:
         'saturation_largest_first'
         'DSATUR' #(alias for the previous strategy)
 
+           ------------------------
+        | NON - colouring strategies |
+        ------------------------
+        'sorted_insertion' https://quantum-journal.org/papers/q-2021-01-20-385/pdf/
+
         """
-        # build graph and invert
-        graph = self.get_graph(edge_relation=edge_relation)
-        inverted_graph = nx.complement(graph)
-        col_map = nx.greedy_color(inverted_graph, strategy=colouring_strategy, interchange=colouring_interchange)
-        # invert the resulting colour map to identify cliques
-        cliques = {}
-        for p_index, colour in col_map.items():
-            cliques[colour] = cliques.get(
-                colour, 
-                PauliwordOp.from_list(['I'*self.n_qubits],[0])
-            ) + self[p_index]
-        return cliques
+        if strategy == 'sorted_insertion':
+            ### not a graph approach
+            if colouring_interchange is not False:
+                warnings.warn(f'{strategy} is not a graph colouring method, so colouring_interchange flag is ignored')
+
+            sorted_op_list = list(self.sort(by='decreasing', key='magnitude'))
+
+            check_dic = {
+                'C': lambda x, y: np.all(x.commutes_termwise(y)),
+                'AC': lambda x, y: np.all(~x.commutes_termwise(y)),
+                'QWC': lambda x, y: np.all(x.qubitwise_commutes_termwise(y))}
+
+            cliques = {0: sorted_op_list[0]}
+            new_clique_ind = 1
+            for selected_op in sorted_op_list[1:]:
+                term_added = False
+                for key in cliques.keys():
+                    clique = cliques[key]
+                    if check_dic[edge_relation](selected_op, clique):
+                        cliques[key] += selected_op
+                        term_added = True
+                        break
+                if term_added is False:
+                    cliques[new_clique_ind] = selected_op
+                    new_clique_ind += 1
+            return cliques
+        else:
+            # build graph and invert
+            graph = self.get_graph(edge_relation=edge_relation)
+            inverted_graph = nx.complement(graph)
+            col_map = nx.greedy_color(inverted_graph, strategy=strategy, interchange=colouring_interchange)
+            # invert the resulting colour map to identify cliques
+            cliques = {}
+            for p_index, colour in col_map.items():
+                cliques[colour] = cliques.get(
+                    colour,
+                    PauliwordOp.from_list(['I'*self.n_qubits],[0])
+                ) + self[p_index]
+            return cliques
 
     @cached_property
     def conjugate(self) -> "PauliwordOp":
