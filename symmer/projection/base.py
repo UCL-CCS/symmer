@@ -75,8 +75,7 @@ class S3_projection:
     def perform_projection(self,
             operator: PauliwordOp,
             ref_state: Union[List[int], np.array]=None,
-            sector: Union[List[int], np.array]=None,
-            insert_rotations:List[Tuple[str, float]]=[]
+            sector: Union[List[int], np.array]=None
         ) -> PauliwordOp:
         """ Input a PauliwordOp and returns the reduced operator corresponding 
         with the specified stabilizers and eigenvalues.
@@ -95,12 +94,9 @@ class S3_projection:
         self.stab_qubit_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1] % operator.n_qubits
         self.free_qubit_indices  = np.setdiff1d(np.arange(operator.n_qubits),self.stab_qubit_indices)
 
-        # insert any supplementary rotations coming from the child class to be applied first
-        stab_rotations = insert_rotations + self.stabilizers.stabilizer_rotations
-
         # perform the full list of rotations on the input operator...
-        if stab_rotations != []:
-            op_rotated = operator.perform_rotations(stab_rotations)
+        if len(self.stabilizers.stabilizer_rotations) > 0:
+            op_rotated = operator.perform_rotations(self.stabilizers.stabilizer_rotations)
         else:
             op_rotated = operator
         

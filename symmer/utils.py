@@ -2,7 +2,6 @@ import numpy as np
 import scipy as sp
 from typing import Tuple, Dict
 from qiskit import QuantumCircuit
-import pyzx as zx
 import openfermion as of
 
 def symplectic_to_string(symp_vec) -> str:
@@ -169,24 +168,6 @@ def lp_norm(vector: np.array, p:int=2) -> float:
         lp-norm of vector
     """
     return np.power(np.sum(np.power(np.abs(vector), p)), 1/p)
-
-def ZX_calculus_reduction(qc: QuantumCircuit) -> QuantumCircuit:
-    """ Simplify the circuit via ZX calculus using PyZX... 
-    Only works on parametrized circuits!
-
-    Returns:
-        simplified_qc (QuantumCircuit): the reduced circuit via ZX calculus
-    """
-    # to perform ZX-calculus optimization
-    qc_qasm = qc.qasm()
-    qc_pyzx = zx.Circuit.from_qasm(qc_qasm)
-    g = qc_pyzx.to_graph()
-    zx.full_reduce(g) # simplifies the Graph in-place
-    g.normalize()
-    c_opt = zx.extract_circuit(g.copy())
-    simplified_qc = QuantumCircuit.from_qasm_str(c_opt.to_qasm())
-
-    return simplified_qc
 
 def _rref_binary(matrix: np.array) -> np.array:
     """ Row-reduced echelon form over the binary field (GF2) - rows are not reordered 

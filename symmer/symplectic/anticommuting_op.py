@@ -282,7 +282,7 @@ def conjugate_Pop_with_R(Pop:PauliwordOp,
 
     """
     if Pop.n_terms == 1:
-        rot_H = (R * Pop * R.conjugate).cleanup()
+        rot_H = (R * Pop * R.dagger).cleanup()
     else:
         # anticommutes == 1 and commutes == 0
         commutation_check = (~Pop.commutes_termwise(R)).astype(int)
