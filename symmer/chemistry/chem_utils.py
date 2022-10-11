@@ -7,7 +7,7 @@ from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
 from pyscf.tools import cubegen
 from openfermion import FermionOperator, count_qubits
-from openfermion.transforms import jordan_wigner, bravyi_kitaev, parity_code
+from openfermion.transforms import jordan_wigner, bravyi_kitaev#, parity_code
 from symmer.symplectic.base import QuantumState
 from symmer.utils import QubitOperator_to_dict
 from symmer.symplectic import PauliwordOp
@@ -210,6 +210,24 @@ def get_fermionic_up_down_parity_operators(N_qubits: int) -> Tuple[FermionOperat
 
     return parity_up, parity_down
 
+def build_bk_matrix(n_qubits):
+    """ Implemented from https://onlinelibrary.wiley.com/doi/full/10.1002/qua.24969
+    """
+    assert n_qubits > 0
+    B = np.array([[1]])
+    
+    n_q_power2 = int(np.ceil(np.log2(n_qubits)))
+    for _ in range(n_q_power2):
+        zero = np.zeros_like(B)
+        zero_ones = zero.copy()
+        zero_ones[-1,:] =1 
+        
+        B = np.block([ 
+            [ B,         zero ],
+            [ zero_ones, B    ]    
+        ])
+    
+    return B[:n_qubits, :n_qubits]
 
 def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
                               qubit_mapping_str: str,
@@ -226,9 +244,11 @@ def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
     Returns:
         qubit_operator (PauliwordOp): qubit operator of fermonic operator (under certain mapping)
     """
-    fermonic_to_qubit_map = {'jordan_wigner': jordan_wigner,
-                             'bravyi_kitaev': bravyi_kitaev,
-                             'parity_code': parity_code}
+    fermonic_to_qubit_map = {
+        'jordan_wigner': jordan_wigner,
+        'bravyi_kitaev': bravyi_kitaev,
+        #'parity_code': parity_code
+    }
 
     if qubit_mapping_str.lower() not in fermonic_to_qubit_map.keys():
         print(f'valid qubit mappings : {list(fermonic_to_qubit_map.keys())}')
@@ -245,3 +265,49 @@ def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
     # want to return PauliWordOp (but results in circular import!)
     ## aka PauliWordOp base class imports utils and so import here causes problems.
     return PauliwordOp.from_dictionary(q_op_dict)
+
+def get_parity_operators_JW(n_qubits):
+    """ Assumes alternating up/down spin orbitals
+    """
+    spin_up_parity_Z_block = np.arange(1, n_qubits+1) % 2
+    spin_up_parity_op = PauliwordOp(np.hstack(
+        [np.zeros_like(spin_up_parity_Z_block), spin_up_parity_Z_block]), [1])
+
+    spin_down_parity_Z_block = np.arange(n_qubits) % 2
+    spin_down_parity_op = PauliwordOp(np.hstack(
+        [np.zeros_like(spin_down_parity_Z_block), spin_down_parity_Z_block]), [1])
+
+    return spin_up_parity_op, spin_down_parity_op 
+
+def get_parity_operators_BK(n_qubits):
+    """ Assumes alternating up/down spin orbitals
+    """
+    spin_up_parity_Z_block = np.arange(1, n_qubits+1) % 2
+    spin_up_parity_op = PauliwordOp(np.hstack(
+        [np.zeros_like(spin_up_parity_Z_block), spin_up_parity_Z_block]), [1])
+
+    parity_mat = build_bk_matrix(n_qubits)
+    temp_array = parity_mat.copy()
+    argmax_list = []
+    counter = 0
+    while counter<n_qubits:
+        new_index = np.argmax(np.sum(temp_array, axis=1))
+        if argmax_list == []:
+            old = 0
+        else:
+            old = argmax_list[-1]+1
+        argmax_list.append(old+new_index)
+        temp_array = temp_array[new_index+1:]
+        if len(temp_array)==0:
+            break
+        counter+=1
+    full_parity_str = ['I']*n_qubits
+    for i in argmax_list:
+        full_parity_str[i] = 'Z'
+    
+    full_parity_op = PauliwordOp.from_list([full_parity_str])
+    spin_down_parity_op = full_parity_op * spin_up_parity_op
+
+    return spin_up_parity_op, spin_down_parity_op 
+
+
