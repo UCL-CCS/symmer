@@ -970,6 +970,16 @@ class QuantumState:
         """
         new_state = self.state_op + Qstate.state_op
         return QuantumState(new_state.X_block, new_state.coeff_vec)
+
+    def __radd__(self, 
+            add_obj: Union[int, "QuantumState"]
+        ) -> "QuantumState":
+        """ Allows use of sum() over a list of PauliwordOps
+        """
+        if add_obj == 0:
+            return self
+        else:
+            return self + add_obj
     
     def __sub__(self, 
             Qstate: "QuantumState"
@@ -1083,11 +1093,24 @@ class QuantumState:
 
     @cached_property
     def normalize(self):
-        """
+        """ Normalize a state by dividing through its norm.
+        
         Returns:
             self (QuantumState)
         """
         coeff_vector = self.state_op.coeff_vec/norm(self.state_op.coeff_vec)
+        return QuantumState(self.state_matrix, coeff_vector, vec_type=self.vec_type)
+
+    @cached_property
+    def normalize_counts(self):
+        """ Normalize a state by dividing through by the sum of coefficients and taking its square 
+        root. This normalization is faithful to the probability distribution one might obtain from
+        quantum circuit sampling. A subtle difference, but important!
+
+        Returns:
+            self (QuantumState)
+        """
+        coeff_vector = np.sqrt(self.state_op.coeff_vec/np.sum(self.state_op.coeff_vec))
         return QuantumState(self.state_matrix, coeff_vector, vec_type=self.vec_type)
         
     @cached_property
@@ -1166,6 +1189,18 @@ class QuantumState:
             return samples_as_coeff_state.normalize
         else:
             return samples_as_coeff_state
+
+    @classmethod
+    def from_dictionary(cls, 
+            state_dict: Dict[str, complex]
+        ) -> "QuantumState":
+        """ Initialize a QuantumState from a dictionary of the form {'1101':a, '0110':b, '1010':c, ...}. This is useful for
+        converting the measurement output of a quantum circuit to a QuantumState object for further manipulation/bootstrapping.
+        """
+        bin_strings, coeff_vector = zip(*state_dict.items())
+        coeff_vector = np.array(coeff_vector)
+        state_matrix = np.array([[int(i) for i in bstr] for bstr in bin_strings])
+        return cls(state_matrix, coeff_vector)
 
     @classmethod
     def from_array(cls,
