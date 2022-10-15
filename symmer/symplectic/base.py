@@ -1198,11 +1198,14 @@ class QuantumState:
             raise ValueError('should not sample state that is not normalized')
 
         counter = np.random.multinomial(n_samples, np.abs(self.state_op.coeff_vec)**2)
-        samples_as_coeff_state = QuantumState(self.state_matrix, counter, vec_type=self.vec_type)  ## gives counts as coefficients!
         if return_normalized:
-            return samples_as_coeff_state.normalize
-        else:
-            return samples_as_coeff_state
+            # normalize counter (note counter will be real and positive)
+            counter = np.sqrt(counter /n_samples)
+
+        samples_as_coeff_state = QuantumState(self.state_matrix,
+                                              counter,
+                                              vec_type=self.vec_type)  ## gives counts as coefficients!
+        return samples_as_coeff_state
 
     @classmethod
     def from_array(cls,
