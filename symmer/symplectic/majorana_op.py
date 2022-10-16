@@ -88,7 +88,6 @@ def bubble_sort_maj(array):
 
     return arr.tolist(), sign_dict[swap_counter%2]
 
-
 class MajoranaOp:
     """
     A class thats represents an operator defined as Majorana fermionic operators (stored in a symplectic representation).
@@ -105,7 +104,7 @@ class MajoranaOp:
                  phase_factors_included:bool=True,
                  ) -> None:
         """
-        TODO: need to fix ordering in init! ( aka if one defines [[12,10]] then we get y_10 y_12 (but order change here must change sign!)
+
         """
         if symp_matrix.dtype == int:
             # initialization is slow if not boolean array
@@ -238,8 +237,8 @@ class MajoranaOp:
         aka: [γ0 γ1 γ2 γ3 γ4 γ5]† == γ5† γ4† γ3† γ2† γ1† γ0† = γ5 γ4 γ3 γ2 γ1 γ0
         Then need to re-order so as in numerical order (note sign changes on re-ordering!)
 
-        note to sort the flipped term when originally in correct order requires: N(N-1) /2 swaps for N sites
-        Therefore even changes give +1 sign and odd changes give -1 sign
+        note to sort the flipped term when originally in sorted numerical order requires: N(N-1) /2 swaps for N sites
+        Therefore even changes give +1 sign and odd changes give -1 sign so can do fast modulo arithmetic
 
         Returns:
             Maj_conj (MajoranaOp): The Hermitian conjugated operator
@@ -434,13 +433,6 @@ class MajoranaOp:
                                                     )
                 new_coeff_vec[ind] = self.coeff_vec[ind1] * M_OP.coeff_vec[ind2] * reordering_sign
                 ind += 1
-
-                # track changes to make operator in normal order
-                # reordering_sign = sum(term * (sum(vec[i + 1:])) for i, term in enumerate(vec2[:-1])) % 2
-                # new_coeff_vec[ind] *= sign_dict[reordering_sign]
-
-                # new_coeff_vec[ind] *= reordering_sign
-                # ind += 1
 
         return MajoranaOp(new_vec, new_coeff_vec, phase_factors_included=True).cleanup()
 
