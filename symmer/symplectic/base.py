@@ -1305,57 +1305,6 @@ def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_cliffor
     return P_anticomm
 
 
-def get_computational_projector(N_qubits:int,
-                                qubit_inds_to_fix: List[int],
-                                qubit_state_on_ind: List[int]) -> "PauliwordOp":
-    """
-    Build PauliwordOp projector onto different computational states (qubit state defined in Z basis)
-
-    Args:
-        N_qubits (int) : number of system qubits
-        qubit_inds_to_fix (list): list of integers of qubit indices to fix
-        qubit_state_on_ind (list): list of 0 and 1s defining state of qubit to fix (|0> or |1>)
-
-    TODO: could be used to develop a control version of PauliWordOp
-
-    Returns:
-        projector (PauliwordOp): operator that performs projection
-    """
-    qubit_inds_to_fix = np.asarray(qubit_inds_to_fix)
-    qubit_state_on_ind = np.asarray(qubit_state_on_ind)
-    assert set(qubit_state_on_ind).issubset({0, 1}), 'not computational state on qubit'
-    assert qubit_inds_to_fix.shape[0] == qubit_state_on_ind.shape[0]
-    assert(max(qubit_inds_to_fix))<N_qubits, 'cannot fix qubit indices above system qubits'
-
-    # build binary 2**N binary vec matrix (where N is number of qubits being fixed)
-    # this will be Z block of projector
-    N_qubits_fixed = qubit_inds_to_fix.shape[0]
-    if N_qubits_fixed < 64:
-        binary_vec = (((np.arange(2 ** N_qubits_fixed).reshape([-1, 1]) & (1 << np.arange(N_qubits_fixed))[
-                                                                          ::-1])) > 0).astype(int)
-    else:
-        binary_vec = (((np.arange(2 ** N_qubits_fixed, dtype=object).reshape([-1, 1]) & (1 << np.arange(N_qubits_fixed,
-                                                                                                        dtype=object))[
-                                                                                        ::-1])) > 0).astype(int)
-    # account for sign... given by the state of each qubit fixed
-    state_sign = -2 * np.array(qubit_state_on_ind) + 1
-
-    # assign a sign only to 'active positions' (0 in binary not relevent)
-    sign_from_binary = binary_vec * state_sign
-
-    # need to turn 0s in matrix to 1s before taking product across rows
-    sign_from_binary = sign_from_binary + (sign_from_binary + 1) % 2
-    sign = np.product(sign_from_binary, axis=1)
-
-    coeff = 1 / 2 ** (N_qubits_fixed) * np.ones(2 ** N_qubits_fixed)
-    sym_arr = np.zeros((coeff.shape[0], 2 * N_qubits))
-    # need to update Z block (right side) of symp marix of only the qubits inds fixed
-    sym_arr[:, qubit_inds_to_fix + N_qubits] = binary_vec
-
-    projector = PauliwordOp(sym_arr.astype(bool), coeff * sign)
-    return projector
-
-
 def get_PauliwordOp_projector(projector: Union[str, List[str], np.array]) -> "PauliwordOp":
     """
     Build PauliwordOp projector onto different qubit states. Using I to leave state unchanged and 0,1,+,-,*,% to fix
@@ -1370,10 +1319,10 @@ def get_PauliwordOp_projector(projector: Union[str, List[str], np.array]) -> "Pa
     e.g.
      'I+0*1II' defines the projector the state I ⊗ [ |+ 0 i+ 1>  <+ 0 i+ 1| ]  ⊗ II
 
+    TODO: could be used to develop a control version of PauliWordOp
+
     Args:
         projector (str, list) : either string or list of strings defininng projector
-
-    TODO: could be used to develop a control version of PauliWordOp
 
     Returns:
         projector (PauliwordOp): operator that performs projection
