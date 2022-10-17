@@ -15,12 +15,12 @@ from openfermion import (
 def convert_openF_fermionic_op_to_maj_op(fermionic_op: FermionOperator,
                                          phase_factors_included:bool=True,) -> "MajoranaOp":
     """
-    Function wraps inbuilt functions in OpenFermion and returns symred form.
+    Function wraps inbuilt functions in OpenFermion and returns symmer form.
 
     Convserion as:
         a_{p} = 0.5*(γ_{2p} + iγ_{2p+1})
         a†_{p} = 0.5*(γ_{2p} - iγ_{2p+1})
-     note goes from N to 2N sites!
+     note goes from N sites to 2N sites!
 
     Args:
         fermionic_op (FermionOperator): openfermion FermionOperator
@@ -41,7 +41,9 @@ def convert_openF_fermionic_op_to_maj_op(fermionic_op: FermionOperator,
         majorana[ind, term_coeff[0]] = 1
         coeffs[ind] = term_coeff[1]
 
-    op_out = MajoranaOp(majorana, coeffs, phase_factors_included=phase_factors_included).cleanup()
+    op_out = MajoranaOp(majorana,
+                        coeffs,
+                        phase_factors_included=phase_factors_included).cleanup()
 
     #     if op_out.to_OF_op() != get_majorana_operator(fermionic_op):
     #         # check using openF == comparison
@@ -86,7 +88,6 @@ def bubble_sort_maj(array):
 
     return arr.tolist(), sign_dict[swap_counter%2]
 
-
 class MajoranaOp:
     """
     A class thats represents an operator defined as Majorana fermionic operators (stored in a symplectic representation).
@@ -98,26 +99,49 @@ class MajoranaOp:
     """
 
     def __init__(self,
-                 list_lists_OR_sympletic_form: Union[List[int], np.array],
+                 symp_matrix: np.array,
                  coeff_list: np.array,
-                 phase_factors_included:bool=False,
+                 phase_factors_included:bool=True,
                  ) -> None:
         """
-        TODO: need to fix ordering in init! ( aka if one defines [[12,10]] then we get y_10 y_12 (but order change here must change sign!)
+
         """
-        self.phase_factors_included = phase_factors_included
+        if symp_matrix.dtype == int:
+            # initialization is slow if not boolean array
+            assert(set(np.unique(symp_matrix)).issubset({0,1})), 'symplectic matrix not defined with 0 and 1 only'
+            symp_matrix = symp_matrix.astype(bool)
+
+        if len(symp_matrix.shape)==1:
+            symp_matrix = symp_matrix.reshape([1, len(symp_matrix)])
+
+        assert symp_matrix.shape[1]%2==0, 'majoranas defined on even number of modes'
+        self.n_sites = symp_matrix.shape[1]
+        self.symp_matrix = symp_matrix
+
         self.coeff_vec = np.asarray(coeff_list, dtype=complex)
-        self.initalize_op(list_lists_OR_sympletic_form)
         self.term_index_list = np.arange(0, self.n_sites, 1)
         self.n_terms = self.symp_matrix.shape[0]
+
+        self.phase_factors_included = phase_factors_included
+        if self.phase_factors_included is False:
+            # calculate phase factors and update coeff vector
+            self.coeff_vec*= (1j)**(np.einsum('ij->i', self.symp_matrix.astype(int))//2)
+            self.phase_factors_included = True
 
         # 2i positions
         self.even_inds = np.arange(0,self.n_sites, 2)
         # 2i+1 positions
         self.odd_inds = np.arange(1,self.n_sites, 2)
 
-    def initalize_op(self, input_term: Union[List[int], np.array]):
+    @classmethod
+    def from_list(cls,
+                  maj_indices: Union[List[int], np.array],
+                  coeff_vec: List[complex] = None,
+                  phase_factors_included: bool = False
+                  ) -> "MajoranaOp":
         """
+        generate majorana operator from list of maj indices.
+
         Each row in symplectic array is defined as:
         𝛾𝐴= 𝑖^{⌊|𝛾𝐴|2⌋} * ∏_{𝑘∈𝐴} 𝛾𝑘
 
@@ -125,46 +149,50 @@ class MajoranaOp:
 
         See eq 10 of: https://arxiv.org/pdf/2102.00620.pdf
 
+        Note sorts into correct ordering via a bubble sort.
+
         Args:
-            input_term:
-            calc_phase (bool): whether to calculate phase factors (NOTE SHOULD NOT DO THIS WHEN ADDING AND MULTIPLYING)
+            maj_indices:
+            coeff_vec:
+            phase_factors_included (bool): whether to calculate phase factors
 
         Returns:
-
+            MajoranaOp of input
         """
-        if isinstance(input_term, np.ndarray):
-            if (len(input_term)==0) and (len(self.coeff_vec)==1):
-                self.n_sites = 2
-                self.symp_matrix = np.array([[0,0]], dtype=int)
-            else:
-                if len(input_term.shape)==1:
-                    input_term = input_term.reshape([1,-1])
+        maj_indices = np.asarray(maj_indices)
+        if not isinstance(maj_indices, np.ndarray):
+            raise ValueError('need array or list input')
 
-                self.n_sites = input_term.shape[1]
-                assert(self.n_sites%2==0), 'not even moded'
-                self.symp_matrix = input_term.astype(int)
+        flat_list = set(maj_indices.reshape([-1]))
+        if flat_list:
+            # python indexing... therefore add 1
+            n_sites = max(flat_list) + 1
+            if n_sites%2!=0:
+                # majorana must be even
+                n_sites+=1
         else:
-            flat_list = set(item for sublist in input_term for item in sublist)
-            if flat_list:
-                n_sites = max(flat_list) + 1
-                if n_sites%2!=0:
-                    n_sites+=1
-                self.n_sites = n_sites
-            else:
-                self.n_sites = 2
-            n_terms = len(input_term)
-            self.symp_matrix = np.zeros((n_terms, self.n_sites), dtype=int)
-            for ind, term in enumerate(input_term):
-                ordered_term, sign = bubble_sort_maj(term)
-                self.symp_matrix[ind, ordered_term] = 1
-                self.coeff_vec[ind] *= sign
+            # zero term!
+            n_sites = 2
+            symp_matrix = np.array([[False, False]])
+            return cls(symp_matrix, coeff_vec)
 
-        assert (self.symp_matrix.shape[0] == len(self.coeff_vec)), 'incorrect number of coefficients'
+        n_terms = len(maj_indices)
+        symp_matrix = np.zeros((n_terms, n_sites), dtype=bool)
+        for ind, term in enumerate(maj_indices):
+            ordered_term, sign = bubble_sort_maj(term)
+            symp_matrix[ind, ordered_term] = True
+            coeff_vec[ind] *= sign
+
+        assert (symp_matrix.shape[0] == len(coeff_vec)), 'incorrect number of coefficients'
 
         ## calc phase factors
-        if self.phase_factors_included is False:
+        if phase_factors_included is False:
             # calculate phase factors and update coeff vector
-            self.coeff_vec*= (1j)**(np.einsum('ij->i', self.symp_matrix)//2)
+            coeff_vec*= (1j)**(np.einsum('ij->i', symp_matrix.astype(int))//2)
+            phase_factors_included= True
+
+        return cls(symp_matrix, coeff_vec, phase_factors_included=phase_factors_included)
+
 
     def __str__(self) -> str:
         """
@@ -204,17 +232,30 @@ class MajoranaOp:
     @property
     def dagger(self) -> "MajoranaOp":
         """
-        Similar idea to hermitian conjugate operation on Fermionic operators (reverse order then dagger)
-        As operators are self dagger, just reverse order!
+        Similar idea to hermitian conjugate operation on Pauli operators (reverse order then dagger)
+
+        aka: [γ0 γ1 γ2 γ3 γ4 γ5]† == γ5† γ4† γ3† γ2† γ1† γ0† = γ5 γ4 γ3 γ2 γ1 γ0
+        Then need to re-order so as in numerical order (note sign changes on re-ordering!)
+
+        note to sort the flipped term when originally in sorted numerical order requires: N(N-1) /2 swaps for N sites
+        Therefore even changes give +1 sign and odd changes give -1 sign so can do fast modulo arithmetic
 
         Returns:
             Maj_conj (MajoranaOp): The Hermitian conjugated operator
         """
-        new_terms = []
-        for sym_vec in self.symp_matrix:
-            current_term = self.term_index_list[sym_vec.astype(bool)]
-            new_terms.append(current_term[::-1]) # reverse order
-        Maj_conj = MajoranaOp(new_terms, self.coeff_vec.conjugate(), phase_factors_included=True)
+        # new_terms = []
+        # for sym_vec in self.symp_matrix:
+        #     current_term = self.term_index_list[sym_vec]
+        #     new_terms.append(current_term[::-1]) # reverse order
+        # # note when reversed performs bubble sort to put back into correct order
+        # Maj_conj = MajoranaOp.from_list(new_terms, self.coeff_vec.conjugate(), phase_factors_included=True)
+
+        N = np.einsum('ij->i', self.symp_matrix.astype(int))
+        swaps = (N*(N-1)/2) % 2
+        sign_changes = -1*swaps + (-1*swaps+1)
+        Maj_conj = MajoranaOp(self.symp_matrix,
+                                    sign_changes*self.coeff_vec.conjugate(),
+                                    phase_factors_included=True)
         return Maj_conj
 
     def commutes_termwise(self, M_OP: "MajoranaOp") -> np.array:
@@ -283,7 +324,7 @@ class MajoranaOp:
 
         """
         check_1 = self.cleanup()
-        check_2 =  M_OP.cleanup()
+        check_2 = M_OP.cleanup()
         if check_1.n_terms != check_2.n_terms:
             return False
 
@@ -392,13 +433,6 @@ class MajoranaOp:
                                                     )
                 new_coeff_vec[ind] = self.coeff_vec[ind1] * M_OP.coeff_vec[ind2] * reordering_sign
                 ind += 1
-
-                # track changes to make operator in normal order
-                # reordering_sign = sum(term * (sum(vec[i + 1:])) for i, term in enumerate(vec2[:-1])) % 2
-                # new_coeff_vec[ind] *= sign_dict[reordering_sign]
-
-                # new_coeff_vec[ind] *= reordering_sign
-                # ind += 1
 
         return MajoranaOp(new_vec, new_coeff_vec, phase_factors_included=True).cleanup()
 

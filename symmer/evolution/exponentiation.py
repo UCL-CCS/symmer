@@ -3,7 +3,7 @@ from typing import List
 from functools import reduce
 from symmer.symplectic import PauliwordOp
 
-def _exponentiate(P: PauliwordOp) -> PauliwordOp:
+def exponentiate_single_Pop(P: PauliwordOp) -> PauliwordOp:
     """ exponentiate a single Pauli term
     """
     assert(P.n_terms == 1), 'Can only exponentiate single Pauli terms'
@@ -21,7 +21,7 @@ def trotter(op:PauliwordOp, trotnum:int=1) -> PauliwordOp:
     and increasing trotnum will improve precision.
     """
     op_copy = op.copy().multiply_by_constant(1/trotnum)
-    factors = [_exponentiate(P) for P in op_copy]*trotnum
+    factors = [exponentiate_single_Pop(P) for P in op_copy]*trotnum
     return reduce(lambda x,y:x*y, factors)
 
 def truncated_exponential(op:PauliwordOp, truncate_at:int=10) -> PauliwordOp:

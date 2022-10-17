@@ -9,7 +9,7 @@ from cached_property import cached_property
 from scipy.sparse import csr_matrix
 from symmer.utils import *
 from openfermion import QubitOperator
-from qiskit.quantum_info import Pauli
+import matplotlib.pyplot as plt
 from qiskit.opflow import PauliOp, PauliSumOp
 from scipy.stats import unitary_group
 import warnings
@@ -203,7 +203,7 @@ class PauliwordOp:
         return deepcopy(self)
 
     def sort(self, 
-            by: str = 'decreasing', 
+            by: str = 'decreasing',
             key:str = 'magnitude'
         ) -> "PauliwordOp":
         """
@@ -755,7 +755,7 @@ class PauliwordOp:
         pauli_terms = []
         for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
             pauli_terms.append(
-                QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(symp_vec)) if Pi!='I']), 
+                QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(symp_vec)) if Pi!='I']),
                 coeff)
             )
         if len(pauli_terms) == 1:
@@ -777,7 +777,7 @@ class PauliwordOp:
         """
         # clean the operator since duplicated terms will be overwritten in the conversion to a dictionary
         op_to_convert = self.cleanup()
-        out_dict = {symplectic_to_string(symp_vec):coeff for symp_vec, coeff 
+        out_dict = {symplectic_to_string(symp_vec):coeff for symp_vec, coeff
                     in zip(op_to_convert.symp_matrix, op_to_convert.coeff_vec)}
         return out_dict
 
@@ -824,40 +824,58 @@ class PauliwordOp:
         )
         return sparse_matrix
 
-def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_clifford=True):
-    """ Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
-        with normally distributed coefficients. Generates in structured way then uses Clifford rotation (default)
-        to try and make more random (can stop this to allow FAST build, but inherenet structure
-         will be present as operator is formed in specific way!)
-    """
-    base = 'X' * n_qubits
-    I_term = 'I' * n_qubits
+    def conjugate_op(self, R: 'PauliwordOp') -> 'PauliwordOp':
+        """
+        For a defined linear combination of pauli operators : R = ∑_{𝑖} ci Pi ... (note each P self-adjoint!)
 
-    P_list = [base]
-    for i in range(n_qubits):
-        # Z_term
-        P_list.append(base[:i] + 'Z' + I_term[i + 1:])
-        # Y_term
-        P_list.append(base[:i] + 'Y' + I_term[i + 1:])
+        perform the adjoint rotation R self R† =  R [∑_{a} ca Pa] R†
 
-    coeff_vec = np.random.randn(len(P_list)).astype(complex)
-    if complex_coeff:
-        coeff_vec += 1j * np.random.randn((len(P_list)))
+        Args:
+            R (PauliwordOp): operator to rotate self by
+        Returns:
+            rot_H (PauliwordOp): rotated operator
 
-    P_anticomm = PauliwordOp.from_dictionary((dict(zip(P_list, coeff_vec))))
+        ### Notes
+        R = ∑_{𝑖} ci Pi
+        R^{†} = ∑_{j}  cj^{*} Pj
+        note i and j here run over the same indices!
+        apply R H R^{†} where H is self (current Pauli defined in class object)
 
-    # random rotations to get rid of structure
-    if apply_clifford:
-        for _ in range(10):
-            P_rand = PauliwordOp.random(n_qubits, 1, complex_coeffs=complex_coeff)
-            P_rand.coeff_vec[0] = 1
-            P_anticomm = P_anticomm._rotate_by_single_Pword(P_rand,
-                                                            None)
+        ### derivation:
 
-    anti_comm_check = P_anticomm.adjacency_matrix.astype(int) - np.eye(P_anticomm.adjacency_matrix.shape[0])
-    assert(np.sum(anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
+        = (∑_{𝑖} ci Pi ) * (∑_{a} ca Pa ) * ∑_{j} cj^{*} Pj
 
-    return P_anticomm
+        = ∑_{a}∑_{i}∑_{j} (ci ca cj^{*}) Pi  Pa Pj
+
+        # can write as case for when i==j and i!=j
+
+        = ∑_{a}∑_{i=j} (ci ca ci^{*}) Pi  Pa Pi + ∑_{a}∑_{i}∑_{j!=i} (ci ca cj^{*}) Pi  Pa Pj
+
+        # let C by the termwise commutator matrix between H and R
+        = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa  + ∑_{a}∑_{i}∑_{j!=i} (ci ca cj^{*}) Pi  Pa Pj
+
+        # next write final term over upper triange (as i and j run over same indices)
+        ## so add common terms for i and j and make j>i
+
+        = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
+          + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*}) Pi  Pa Pj + (cj ca ci^{*}) Pj  Pa Pi
+
+        # then need to know commutation relation betwen terms in R
+        ## given by adjaceny matrix of R... here A
+
+
+        = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
+         + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*}) Pi  Pa Pj + (-1)^{C_{ia}+A_{ij}+C_{ja}}(cj ca ci^{*}) Pi  Pa Pj
+
+
+        = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
+         + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*} + (-1)^{C_{ia}+A_{ij}+C_{ja}}(cj ca ci^{*})) Pi  Pa Pj
+
+
+        """
+
+        # see from symmer.symplectic.anticommuting_op import conjugate_Pop_with_R
+        raise NotImplementedError('not done yet. Full function at: from symmer.symplectic.anticommuting_op.conjugate_Pop_with_R')
 
 
 class QuantumState:
@@ -935,6 +953,24 @@ class QuantumState:
 
         qstate_random = cls.from_array(haar_vec)
         return qstate_random
+    @classmethod
+    def zero_state(cls,
+                    n_qubits: int,
+                    vec_type: str) -> "QuantumState":
+        """
+        Generate the all zero state on N qubits
+
+        Args:
+            n_qubits: number of qubits
+            vec_type (str): bra or ket
+
+        Returns:
+            q_zero_state (QuantumState): zero ket or bra quantum state
+
+        """
+        binary_zero = np.zeros(n_qubits).reshape(1,-1)
+        q_zero_state = QuantumState(binary_zero, coeff_vector=np.array([1]), vec_type=vec_type)
+        return q_zero_state
 
     def __str__(self) -> str:
         """ 
@@ -1184,11 +1220,15 @@ class QuantumState:
             raise ValueError('should not sample state that is not normalized')
 
         counter = np.random.multinomial(n_samples, np.abs(self.state_op.coeff_vec)**2)
-        samples_as_coeff_state = QuantumState(self.state_matrix, counter, vec_type=self.vec_type)  ## gives counts as coefficients!
         if return_normalized:
-            return samples_as_coeff_state.normalize
-        else:
-            return samples_as_coeff_state
+            # normalize counter (note counter will be real and positive)
+            counter = np.sqrt(counter /n_samples)
+            # NOTE this is NOT the same as normalizing the state using np.linalg.norm!
+
+        samples_as_coeff_state = QuantumState(self.state_matrix,
+                                              counter,
+                                              vec_type=self.vec_type)  ## gives counts as coefficients!
+        return samples_as_coeff_state
 
     @cached_property
     def to_dictionary(self) -> Dict[str, complex]:
@@ -1259,3 +1299,122 @@ class QuantumState:
         coeff_vector = statevector[non_zero]
         Qstate = cls(state_matrix, coeff_vector, vec_type=vec_type)
         return Qstate
+
+    def plot_state(self, logscale:bool = False):
+
+        assert self._is_normalized(), 'should only plot normalized quantum states'
+
+        # clean duplicate states and set amplitdue threshold
+        q_state = self.cleanup()
+        prob = np.abs(q_state.state_op.coeff_vec) ** 2
+
+        fig, ax = plt.subplots(1, 1)
+
+        if q_state.state_op.n_qubits<64:
+            x_binary_ints = q_state.state_matrix @ (1 << np.arange(q_state.state_matrix.shape[1])[::-1])
+        else:
+            x_binary_ints = q_state.state_matrix @ (1 << np.arange(q_state.state_matrix.shape[1], dtype=object)[::-1])
+
+        if prob.shape[0]<2**8:
+            # bar chart
+            ax.bar(x_binary_ints, prob, width=1, edgecolor="white", linewidth=0.8)
+        else:
+            # line plot
+            sort_inds = np.argsort(x_binary_ints)
+            x_data = x_binary_ints[sort_inds]
+            y_data = prob[sort_inds]
+            ax.plot(x_data, y_data)
+        ax.set(xlabel='binary output', ylabel='probability amplitude')
+
+        if logscale:
+            ax.set_yscale('log')
+
+        return (ax)
+
+
+
+def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_clifford=True):
+    """ Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
+        with normally distributed coefficients. Generates in structured way then uses Clifford rotation (default)
+        to try and make more random (can stop this to allow FAST build, but inherenet structure
+         will be present as operator is formed in specific way!)
+    """
+    base = 'X' * n_qubits
+    I_term = 'I' * n_qubits
+
+    P_list = [base]
+    for i in range(n_qubits):
+        # Z_term
+        P_list.append(base[:i] + 'Z' + I_term[i + 1:])
+        # Y_term
+        P_list.append(base[:i] + 'Y' + I_term[i + 1:])
+
+    coeff_vec = np.random.randn(len(P_list)).astype(complex)
+    if complex_coeff:
+        coeff_vec += 1j * np.random.randn((len(P_list)))
+
+    P_anticomm = PauliwordOp.from_dictionary((dict(zip(P_list, coeff_vec))))
+
+    # random rotations to get rid of structure
+    if apply_clifford:
+        for _ in range(10):
+            P_rand = PauliwordOp.random(n_qubits, 1, complex_coeffs=complex_coeff)
+            P_rand.coeff_vec[0] = 1
+            P_anticomm = P_anticomm._rotate_by_single_Pword(P_rand,
+                                                            None)
+
+    anti_comm_check = P_anticomm.adjacency_matrix.astype(int) - np.eye(P_anticomm.adjacency_matrix.shape[0])
+    assert(np.sum(anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
+
+    return P_anticomm
+
+
+def get_computational_projector(N_qubits:int,
+                                qubit_inds_to_fix: List[int],
+                                qubit_state_on_ind: List[int]) -> "PauliwordOp":
+    """
+    Build PauliwordOp projector onto different computational states (qubit state defined in Z basis)
+
+    Args:
+        N_qubits (int) : number of system qubits
+        qubit_inds_to_fix (list): list of integers of qubit indices to fix
+        qubit_state_on_ind (list): list of 0 and 1s defining state of qubit to fix (|0> or |1>)
+
+    TODO: could be used to develop a control version of PauliWordOp
+
+    Returns:
+        projector (PauliwordOp): operator that performs projection
+    """
+    qubit_inds_to_fix = np.asarray(qubit_inds_to_fix)
+    qubit_state_on_ind = np.asarray(qubit_state_on_ind)
+    assert set(qubit_state_on_ind).issubset({0, 1}), 'not computational state on qubit'
+    assert qubit_inds_to_fix.shape[0] == qubit_state_on_ind.shape[0]
+    assert(max(qubit_inds_to_fix))<N_qubits, 'cannot fix qubit indices above system qubits'
+
+    # build binary 2**N binary vec matrix (where N is number of qubits being fixed)
+    # this will be Z block of projector
+    N_qubits_fixed = qubit_inds_to_fix.shape[0]
+    if N_qubits_fixed < 64:
+        binary_vec = (((np.arange(2 ** N_qubits_fixed).reshape([-1, 1]) & (1 << np.arange(N_qubits_fixed))[
+                                                                          ::-1])) > 0).astype(int)
+    else:
+        binary_vec = (((np.arange(2 ** N_qubits_fixed, dtype=object).reshape([-1, 1]) & (1 << np.arange(N_qubits_fixed,
+                                                                                                        dtype=object))[
+                                                                                        ::-1])) > 0).astype(int)
+    # account for sign... given by the state of each qubit fixed
+    state_sign = -2 * np.array(qubit_state_on_ind) + 1
+
+    # assign a sign only to 'active positions' (0 in binary not relevent)
+    sign_from_binary = binary_vec * state_sign
+
+    # need to turn 0s in matrix to 1s before taking product across rows
+    sign_from_binary = sign_from_binary + (sign_from_binary + 1) % 2
+    sign = np.product(sign_from_binary, axis=1)
+
+    coeff = 1 / 2 ** (N_qubits_fixed) * np.ones(2 ** N_qubits_fixed)
+    sym_arr = np.zeros((coeff.shape[0], 2 * N_qubits))
+    # need to update Z block (right side) of symp marix of only the qubits inds fixed
+    sym_arr[:, qubit_inds_to_fix + N_qubits] = binary_vec
+
+    projector = PauliwordOp(sym_arr.astype(bool), coeff * sign)
+    return projector
