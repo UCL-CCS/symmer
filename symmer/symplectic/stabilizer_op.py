@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Dict, List, Tuple, Union
 from functools import reduce
+import warnings
 from cached_property import cached_property
 from symmer.utils import _rref_binary, _cref_binary
 from symmer.symplectic import PauliwordOp, symplectic_to_string
@@ -62,7 +63,7 @@ class StabilizerOp(PauliwordOp):
     @classmethod
     def symmetry_basis(cls, 
             PwordOp: PauliwordOp, 
-            commuting_override:bool=False
+            commuting_override:bool=False,
         ) -> "StabilizerOp":
         """ Identify a symmetry basis for the supplied Pauli operator with
         symplectic representation  M = [ X | Z ]. We perform columnwise 
@@ -91,7 +92,14 @@ class StabilizerOp(PauliwordOp):
             return S
         else:
             # if any of the stabilizers are not mutually commuting, take the largest commuting subset
-            S_commuting = S.clique_cover()[0]
+            if S.n_terms < 10:
+                # expensive clique cover finding optimal commuting subset
+                S_commuting = S.largest_clique(edge_relation='C')    
+            else:
+                # greedy graph-colouring approach when symmetry basis is large
+                S_commuting = S.clique_cover(edge_relation='C')[0]
+                warnings.warn('Greedy method may identify non-optimal commuting symmetry terms; might be able to taper again.')
+            
             return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms))
 
     def _check_stab(self) -> None:

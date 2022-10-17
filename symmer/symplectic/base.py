@@ -366,22 +366,12 @@ class PauliwordOp:
         coeff_vec = phase_mod * self.coeff_vec * coeff
         return phaseless_prod, coeff_vec
 
-    def __mul__(self, 
-            mul_obj: Union["PauliwordOp", "QuantumState", complex],
+    def _multiply_by_operator(self, 
+            PwordOp: Union["PauliwordOp", "QuantumState", complex],
             zero_threshold: float = 1e-15
         ) -> "PauliwordOp":
         """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
         """
-        if isinstance(mul_obj, Number):
-            return self.multiply_by_constant(mul_obj)
-
-        if isinstance(mul_obj, QuantumState):
-            # allows one to apply PauliwordOps to QuantumStates
-            # (corresponds with multipcation of the underlying state_op)
-            assert(mul_obj.vec_type == 'ket'), 'cannot multiply a bra from the left'
-            PwordOp = mul_obj.state_op
-        else:
-            PwordOp = mul_obj
         assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
 
         if PwordOp.n_terms == 1:
@@ -403,6 +393,32 @@ class PauliwordOp:
                     np.vstack(symp_stack), np.hstack(coeff_stack), zero_threshold=zero_threshold
                 )
             )
+        return pauli_mult_out
+
+    def __mul__(self, 
+            mul_obj: Union["PauliwordOp", "QuantumState", complex],
+            zero_threshold: float = 1e-15
+        ) -> "PauliwordOp":
+        """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
+        """
+        if isinstance(mul_obj, Number):
+            return self.multiply_by_constant(mul_obj)
+
+        if isinstance(mul_obj, QuantumState):
+            # allows one to apply PauliwordOps to QuantumStates
+            # (corresponds with multipcation of the underlying state_op)
+            assert(mul_obj.vec_type == 'ket'), 'cannot multiply a bra from the left'
+            PwordOp = mul_obj.state_op
+        else:
+            PwordOp = mul_obj
+
+        # more efficient to multiply the larger operator from the right
+        if self.n_terms < PwordOp.n_terms:
+            pauli_mult_out = PwordOp.dagger._multiply_by_operator(
+                self.dagger, zero_threshold=zero_threshold).dagger
+        else:
+            pauli_mult_out = self._multiply_by_operator(
+                PwordOp, zero_threshold=zero_threshold)
 
         if isinstance(mul_obj, QuantumState):
             coeff_vec = pauli_mult_out.coeff_vec*(1j**pauli_mult_out.Y_count)
@@ -410,6 +426,7 @@ class PauliwordOp:
             return QuantumState(pauli_mult_out.X_block.astype(int), coeff_vec).cleanup()
         else:
             return pauli_mult_out
+        
 
     def __imul__(self, 
             PwordOp: "PauliwordOp"
@@ -720,7 +737,7 @@ class PauliwordOp:
             return cliques
 
     @cached_property
-    def conjugate(self) -> "PauliwordOp":
+    def dagger(self) -> "PauliwordOp":
         """
         Returns:
             Pword_conj (PauliwordOp): The Hermitian conjugated operator
@@ -989,6 +1006,16 @@ class QuantumState:
         """
         new_state = self.state_op + Qstate.state_op
         return QuantumState(new_state.X_block, new_state.coeff_vec)
+
+    def __radd__(self, 
+            add_obj: Union[int, "QuantumState"]
+        ) -> "QuantumState":
+        """ Allows use of sum() over a list of PauliwordOps
+        """
+        if add_obj == 0:
+            return self
+        else:
+            return self + add_obj
     
     def __sub__(self, 
             Qstate: "QuantumState"
@@ -1097,20 +1124,33 @@ class QuantumState:
         """
         symmetry_copy = symmetry.copy()
         symmetry_copy.coeff_vec = np.ones(symmetry.n_terms)
-        sector = np.array([self.conjugate*S*self for S in symmetry_copy])
+        sector = np.array([self.dagger*S*self for S in symmetry_copy])
         return sector
 
     @cached_property
     def normalize(self):
-        """
+        """ Normalize a state by dividing through its norm.
+
         Returns:
             self (QuantumState)
         """
         coeff_vector = self.state_op.coeff_vec/norm(self.state_op.coeff_vec)
         return QuantumState(self.state_matrix, coeff_vector, vec_type=self.vec_type)
+
+    @cached_property
+    def normalize_counts(self):
+        """ Normalize a state by dividing through by the sum of coefficients and taking its square 
+        root. This normalization is faithful to the probability distribution one might obtain from
+        quantum circuit sampling. A subtle difference, but important!
+
+        Returns:
+            self (QuantumState)
+        """
+        coeff_vector = np.sqrt(self.state_op.coeff_vec/np.sum(self.state_op.coeff_vec))
+        return QuantumState(self.state_matrix, coeff_vector, vec_type=self.vec_type)
         
     @cached_property
-    def conjugate(self) -> "QuantumState":
+    def dagger(self) -> "QuantumState":
         """
         Returns:
             conj_state (QuantumState): The Hermitian conjugated state i.e. bra -> ket, ket -> bra
@@ -1189,6 +1229,30 @@ class QuantumState:
                                               counter,
                                               vec_type=self.vec_type)  ## gives counts as coefficients!
         return samples_as_coeff_state
+
+    @cached_property
+    def to_dictionary(self) -> Dict[str, complex]:
+        """ Return the QuantumState as a dictionary
+        """
+        state_dict = dict(
+            zip(
+                [''.join([str(i) for i in row]) for row in self.state_matrix], 
+                self.state_op.coeff_vec
+            )
+        )
+        return state_dict
+
+    @classmethod
+    def from_dictionary(cls, 
+            state_dict: Dict[str, complex]
+        ) -> "QuantumState":
+        """ Initialize a QuantumState from a dictionary of the form {'1101':a, '0110':b, '1010':c, ...}. This is useful for
+        converting the measurement output of a quantum circuit to a QuantumState object for further manipulation/bootstrapping.
+        """
+        bin_strings, coeff_vector = zip(*state_dict.items())
+        coeff_vector = np.array(coeff_vector)
+        state_matrix = np.array([[int(i) for i in bstr] for bstr in bin_strings])
+        return cls(state_matrix, coeff_vector)
 
     @classmethod
     def from_array(cls,

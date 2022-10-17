@@ -208,7 +208,7 @@ class ObservableOp(PauliwordOp):
             return (psi @ self.to_sparse_matrix @ psi.T)[0,0].real
         else:
             psi = ansatz_op.exponentiate() * QuantumState([ref_state])
-            return (psi.conjugate * self * psi).real
+            return (psi.dagger * self * psi).real
 
     @cached_property
     def QWC_decomposition(self):

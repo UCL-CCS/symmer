@@ -1,10 +1,10 @@
-from functools import cached_property
+from cached_property import cached_property
 from symmer.symplectic import PauliwordOp, QuantumState
 from symmer.utils import QubitOperator_to_dict, safe_PauliwordOp_to_dict
 from symmer.chemistry import (
-    FermionicHamiltonian, FermioniCC, PySCFDriver, 
-    fermion_to_qubit_operator, get_fermionic_number_operator, get_fermionic_up_down_parity_operators
-)
+    FermionicHamiltonian, FermioniCC, PySCFDriver, build_bk_matrix, 
+    fermion_to_qubit_operator, get_fermionic_number_operator, get_parity_operators_JW, get_parity_operators_BK
+    )
 import numpy as np
 from openfermion import get_fermion_operator, jordan_wigner, FermionOperator, hermitian_conjugated
 from typing import Tuple, List
@@ -56,10 +56,9 @@ class MoleculeBuilder:
         self.T_fermion.build_operator()
 
         self.n_qubits = self.H_fermion.n_qubits
-        hf_ferm_array = self.H_fermion.hf_fermionic_basis_state
-        HF_fermionic_op = FermionOperator(' '.join([f'{pos}^' for pos in hf_ferm_array.nonzero()[0]]), 1)
-        self.HF_fermionic_op_q = fermion_to_qubit_operator(HF_fermionic_op, self.qubit_mapping_str, N_qubits=self.n_qubits)
-        self.hf_array = (self.HF_fermionic_op_q * QuantumState([[0]*self.n_qubits])).state_matrix[0]
+        self.hf_array = self.H_fermion.hf_fermionic_basis_state
+        if self.qubit_mapping_str == 'bravyi_kitaev':
+            self.hf_array = (build_bk_matrix(self.n_qubits) @ self.hf_array.reshape(-1,1)).reshape(-1) % 2
 
         if self.print_info:
             print()
@@ -72,7 +71,7 @@ class MoleculeBuilder:
         self.H_q = fermion_to_qubit_operator(self.H, self.qubit_mapping_str, N_qubits=self.n_qubits)
         self.T_q = fermion_to_qubit_operator(self.T, self.qubit_mapping_str, N_qubits=self.n_qubits)
 
-        self.UCC_q = self.T_q - self.T_q.conjugate
+        self.UCC_q = self.T_q - self.T_q.dagger
         self.UCC_q.coeff_vec = self.UCC_q.coeff_vec.imag
         self.SOR_q = self.second_order_response()
 
@@ -176,13 +175,12 @@ class MoleculeBuilder:
     def up_down_parity_operators(self):
         """ Assumes alternating up/down spin orbitals
         """
-        parity_up_op, parity_down_op = get_fermionic_up_down_parity_operators(self.n_qubits)
-        parity_up_pword = fermion_to_qubit_operator(
-            parity_up_op, self.qubit_mapping_str, N_qubits=self.n_qubits
-        )
-        parity_down_pword = fermion_to_qubit_operator(
-            parity_down_op, self.qubit_mapping_str, N_qubits=self.n_qubits
-        )
+        if self.qubit_mapping_str == 'jordan_wigner':
+            parity_up_pword, parity_down_pword = get_parity_operators_JW(self.n_qubits)
+        elif self.qubit_mapping_str == 'bravyi_kitaev':
+            parity_up_pword, parity_down_pword = get_parity_operators_BK(self.n_qubits)
+        else:
+            raise ValueError('Unrecognised qubit mapping, must be one of jordan_wigner or bravyi_kitaev')
         return parity_up_pword, parity_down_pword
 
     def data_dictionary(self):
@@ -219,7 +217,7 @@ class MoleculeBuilder:
         if self.pyscf_obj.run_ccsd:
             mol_data['calculated_properties']['CCSD'] = {
                 'energy':self.ccsd_energy, 'converged':bool(self.pyscf_obj.pyscf_ccsd.converged)}
-            mol_data['auxiliary_operators']['UCCSD_operator'] = safe_PauliwordOp_to_dict(self.UCC_q),
+            mol_data['auxiliary_operators']['UCCSD_operator'] = safe_PauliwordOp_to_dict(self.UCC_q)
         if self.pyscf_obj.run_fci:
             mol_data['calculated_properties']['FCI'] = {
                 'energy':self.fci_energy, 'converged':bool(self.pyscf_obj.pyscf_fci.converged)}        
