@@ -1094,7 +1094,7 @@ class QuantumState:
     @cached_property
     def normalize(self):
         """ Normalize a state by dividing through its norm.
-        
+
         Returns:
             self (QuantumState)
         """
@@ -1189,6 +1189,18 @@ class QuantumState:
             return samples_as_coeff_state.normalize
         else:
             return samples_as_coeff_state
+
+    @cached_property
+    def to_dictionary(self) -> Dict[str, complex]:
+        """ Return the QuantumState as a dictionary
+        """
+        state_dict = dict(
+            zip(
+                [''.join([str(i) for i in row]) for row in self.state_matrix], 
+                self.state_op.coeff_vec
+            )
+        )
+        return state_dict
 
     @classmethod
     def from_dictionary(cls, 
