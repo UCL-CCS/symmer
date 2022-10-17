@@ -3,7 +3,6 @@ from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
 from symmer.symplectic import PauliwordOp
-from symmer.utils import ZX_calculus_reduction
 from qiskit.circuit import QuantumCircuit, ParameterVector
 
 class AnsatzOp(PauliwordOp):
@@ -61,8 +60,7 @@ class AnsatzOp(PauliwordOp):
         ref_state: np.array = None,
         basis_change_indices: Dict[str, List[int]] = {'X_indices':[],'Y_indices':[]},
         trotter_number: int = 1, 
-        bind_params: bool = True,
-        ZX_reduction = False
+        bind_params: bool = True
         ) -> str:
         """
         Convert the operator to a QASM circuit string for input 
@@ -119,8 +117,5 @@ class AnsatzOp(PauliwordOp):
             qc.s(qiskit_ordering(i))
         for i in basis_change_indices['X_indices']:
             qc.h(qiskit_ordering(i))
-
-        if ZX_reduction:
-            qc = ZX_calculus_reduction(qc)
-
+            
         return qc

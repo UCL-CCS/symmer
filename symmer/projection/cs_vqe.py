@@ -49,7 +49,7 @@ class CS_VQE(S3_projection):
              self.clique_normalizaion,
              self.normalized_clique) = self.clique_operator.unitary_partitioning(up_method=unitary_partitioning_method,
                                                                                   s_index=None)
-            self.C0.coeff_vec[0] = round(self.C0.coeff_vec[0].real)
+            #self.C0.coeff_vec[0] = round(self.C0.coeff_vec[0].real)
         
     def basis_score(self, 
             basis: StabilizerOp,
@@ -255,7 +255,23 @@ class CS_VQE(S3_projection):
             self.noncontextual_energy = self.noncontextual_objective_function(
                 nu = self.symmetry_generators.coeff_vec, r=None
             )
-        
+
+    def perform_unitary_paritioning(self, 
+            operator: PauliwordOp
+        ) -> PauliwordOp:
+        if self.unitary_partitioning_method=='LCU':
+            RHRdag = (self.unitary_partitioning_rotations * operator
+                    * self.unitary_partitioning_rotations.dagger).cleanup()
+        elif self.unitary_partitioning_method=='seq_rot':
+            RHRdag = operator.perform_rotations(self.unitary_partitioning_rotations)
+        else:
+            raise ValueError('Unrecognised unitary partitioning rotation method, must be one of LCU or seq_rot.')
+        return RHRdag
+
+    @cached_property
+    def UP_rotated_operator(self):
+        return self.perform_unitary_paritioning(self.operator)
+
     def project_onto_subspace(self,
             stabilizers: StabilizerOp = None,
             enforce_clique_operator   = False,
@@ -267,8 +283,14 @@ class CS_VQE(S3_projection):
         # define the operator to be projected (aux_operator faciliates ansatze to be projected)
         if aux_operator is not None:
             operator_to_project = aux_operator.copy()
+            if enforce_clique_operator:
+                # if the clique operator is to be enforced, perform unitary partitioning:
+                operator_to_project = self.perform_unitary_paritioning(operator_to_project)
         else:
-            operator_to_project = self.operator.copy()
+            if enforce_clique_operator:
+                operator_to_project = self.UP_rotated_operator
+            else:
+                operator_to_project = self.operator.copy()
 
         if stabilizers is not None:    
             if self.n_cliques > 0:
@@ -297,15 +319,11 @@ class CS_VQE(S3_projection):
             # in accordance with the noncontextual ground state
             self.update_eigenvalues(fix_stabilizers)
             
-            # if the clique operator is to be enforced, perform unitary partitioning:
-            insert_rotations=[]
             if enforce_clique_operator and self.n_cliques > 0:
                 # if any stabilizers in the list contain more than one term then apply unitary partitioning
                 fix_stabilizers += self.C0
-                insert_rotations = self.unitary_partitioning_rotations
         elif enforce_clique_operator and self.n_cliques > 0:
             fix_stabilizers = StabilizerOp(self.C0.symp_matrix, self.C0.coeff_vec)
-            insert_rotations = self.unitary_partitioning_rotations
         else:
             warnings.warn('No stabilizers were specifed so the operator was returned')
             return operator_to_project
@@ -313,16 +331,8 @@ class CS_VQE(S3_projection):
         # instantiate the parent S3_projection class with the stabilizers we are enforcing
         super().__init__(fix_stabilizers)
 
-        if isinstance(insert_rotations, PauliwordOp) and self.unitary_partitioning_method=='LCU':
-            # apply LCU to operator
-            # TODO: need to make this cleaner!
-            operator_to_project = (self.unitary_partitioning_rotations * operator_to_project
-                                   * self.unitary_partitioning_rotations.conjugate).cleanup()
-            insert_rotations = []
-
         return self.perform_projection(
-            operator=operator_to_project,
-            insert_rotations=insert_rotations
+            operator=operator_to_project
         )
 
 class CS_VQE_LW(S3_projection):

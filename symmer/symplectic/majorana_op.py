@@ -230,7 +230,7 @@ class MajoranaOp:
         return self.commutator(M_OP).n_terms == 0
 
     @property
-    def conjugate(self) -> "MajoranaOp":
+    def dagger(self) -> "MajoranaOp":
         """
         Similar idea to hermitian conjugate operation on Pauli operators (reverse order then dagger)
 
@@ -538,8 +538,8 @@ class majorana_rotations():
 
             # rotate Z onto different term
             maj_rot_op = MajoranaOp([[], rot_op_inds], [np.cos(np.pi / 4), 1j * np.sin(np.pi / 4)])
-            rot_basis_out = (maj_rot_op * maj_basis * maj_rot_op.conjugate).cleanup()
-            rot_piv = (maj_rot_op * pivot_maj * maj_rot_op.conjugate).cleanup()
+            rot_basis_out = (maj_rot_op * maj_basis * maj_rot_op.dagger).cleanup()
+            rot_piv = (maj_rot_op * pivot_maj * maj_rot_op.dagger).cleanup()
             self.maj_rotations.append(maj_rot_op)
 
         elif rot_op[pivot_point_even] == rot_op[pivot_point_odd] == 0:
@@ -559,11 +559,11 @@ class majorana_rotations():
         rot2_sym[1] = rot_op2
         maj_rot_op2 = MajoranaOp(rot2_sym, [np.cos(np.pi / 4), 1j * np.sin(np.pi / 4)])
 
-        rot_basis_out2 = maj_rot_op2 * rot_basis_out * maj_rot_op2.conjugate  # .cleanup()
+        rot_basis_out2 = maj_rot_op2 * rot_basis_out * maj_rot_op2.dagger  # .cleanup()
 
         self.maj_rotations.append(maj_rot_op2)
 
-        rotated_term = (maj_rot_op2 * rot_piv * maj_rot_op2.conjugate).cleanup()
+        rotated_term = (maj_rot_op2 * rot_piv * maj_rot_op2.dagger).cleanup()
 
         self.rotated_basis.append(rotated_term)
 
