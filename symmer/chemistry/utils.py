@@ -1,15 +1,13 @@
 from typing import List, Tuple
 import os
 import numpy as np
-import scipy as sp
 from pyscf import gto
 from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
 from pyscf.tools import cubegen
 from openfermion import FermionOperator, count_qubits
 from openfermion.transforms import jordan_wigner, bravyi_kitaev#, parity_code
-from symmer.symplectic.base import QuantumState
-from symmer.utils import QubitOperator_to_dict
+from symmer.symplectic.utils import QubitOperator_to_dict
 from symmer.symplectic import PauliwordOp
 
 def Draw_molecule(
@@ -127,47 +125,6 @@ def xyz_from_pubchem(molecule_name):
     return xyz_file
 
 
-def exact_gs_energy(sparse_matrix, initial_guess=None, n_particles=None, number_operator=None, n_eigs=6) -> Tuple[float, np.array]:
-    """ Return the ground state energy and corresponding ground statevector for the input operator
-    Specifying a particle number will restrict to eigenvectors of that Hamming weight
-    """
-    # Note the eigenvectors are stored column-wise so need to transpose
-    if sparse_matrix.shape[0] > 2**5:
-        eigvals, eigvecs = sp.sparse.linalg.eigsh(
-            sparse_matrix,k=n_eigs,v0=initial_guess,which='SA',maxiter=1e7
-        )
-    else:
-        # for small matrices the dense representation can be more efficient than sparse!
-        eigvals, eigvecs = np.linalg.eigh(sparse_matrix.toarray())
-    
-    # order the eigenvalues by increasing size
-    order = np.argsort(eigvals)
-    eigvals, eigvecs = eigvals[order], eigvecs[:, order]
-    
-    if n_particles is None:
-        # if no particle number is specified then return the smallest eigenvalue
-        return eigvals[0], eigvecs[:,0].reshape([-1,1])
-    else:
-        assert(number_operator is not None), 'Must specify the number operator.'
-        # otherwise, search through the first n_eig eigenvalues and check the Hamming weight
-        # of the the corresponding eigenvector - return the first match with n_particles
-        for evl, evc in zip(eigvals, eigvecs.T):
-            psi = QuantumState.from_array(evc.reshape([-1,1])).cleanup(zero_threshold=1e-5)
-            assert(~np.any(number_operator.X_block)), 'Number operator not diagonal'
-            expval_n_particle = 0
-            for Z_symp, Z_coeff in zip(number_operator.Z_block, number_operator.coeff_vec):
-                sign = (-1) ** np.einsum('ij->i', 
-                    np.bitwise_and(
-                        Z_symp, psi.state_matrix
-                    )
-                )
-                expval_n_particle += Z_coeff * np.sum(sign * np.square(abs(psi.state_op.coeff_vec)))
-            if round(expval_n_particle) == n_particles:
-                return evl, evc.reshape([-1,1])
-        # if a solution is not found within the first n_eig eigenvalues then error
-        raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
-
-
 def get_fermionic_number_operator(N_qubits: int) -> FermionOperator:
     """
 
@@ -210,6 +167,7 @@ def get_fermionic_up_down_parity_operators(N_qubits: int) -> Tuple[FermionOperat
 
     return parity_up, parity_down
 
+
 def build_bk_matrix(n_qubits):
     """ Implemented from https://onlinelibrary.wiley.com/doi/full/10.1002/qua.24969
     """
@@ -228,6 +186,7 @@ def build_bk_matrix(n_qubits):
         ])
     
     return B[:n_qubits, :n_qubits]
+
 
 def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
                               qubit_mapping_str: str,
@@ -266,6 +225,7 @@ def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
     ## aka PauliWordOp base class imports utils and so import here causes problems.
     return PauliwordOp.from_dictionary(q_op_dict)
 
+
 def get_parity_operators_JW(n_qubits):
     """ Assumes alternating up/down spin orbitals
     """
@@ -278,6 +238,7 @@ def get_parity_operators_JW(n_qubits):
         [np.zeros_like(spin_down_parity_Z_block), spin_down_parity_Z_block]), [1])
 
     return spin_up_parity_op, spin_down_parity_op 
+
 
 def get_parity_operators_BK(n_qubits):
     """ Assumes alternating up/down spin orbitals
@@ -309,5 +270,3 @@ def get_parity_operators_BK(n_qubits):
     spin_down_parity_op = full_parity_op * spin_up_parity_op
 
     return spin_up_parity_op, spin_down_parity_op 
-
-

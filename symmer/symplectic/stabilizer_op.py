@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Union
 from functools import reduce
 import warnings
 from cached_property import cached_property
-from symmer.utils import _rref_binary, _cref_binary
+from symmer.symplectic.utils import _rref_binary, _cref_binary
 from symmer.symplectic import PauliwordOp, symplectic_to_string
 
 class StabilizerOp(PauliwordOp):
