@@ -2,7 +2,7 @@ from symmer.symplectic import PauliwordOp
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
 import warnings
-from symmer.utils import mul_symplectic
+from symmer.symplectic.utils import mul_symplectic
 
 warnings.simplefilter('always', UserWarning)
 class AntiCommutingOp(PauliwordOp):

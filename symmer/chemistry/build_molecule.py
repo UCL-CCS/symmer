@@ -1,12 +1,11 @@
 from cached_property import cached_property
-from symmer.symplectic import PauliwordOp, QuantumState
-from symmer.utils import QubitOperator_to_dict, safe_PauliwordOp_to_dict
-from symmer.chemistry import (
-    FermionicHamiltonian, FermioniCC, PySCFDriver, build_bk_matrix, 
-    fermion_to_qubit_operator, get_fermionic_number_operator, get_parity_operators_JW, get_parity_operators_BK
+from symmer.symplectic import PauliwordOp
+from symmer.symplectic.utils import QubitOperator_to_dict, safe_PauliwordOp_to_dict
+from symmer.chemistry import FermionicHamiltonian, FermioniCC, PySCFDriver
+from symmer.chemistry.utils import (
+    build_bk_matrix, fermion_to_qubit_operator, get_fermionic_number_operator, get_parity_operators_JW, get_parity_operators_BK
     )
-import numpy as np
-from openfermion import get_fermion_operator, jordan_wigner, FermionOperator, hermitian_conjugated
+from openfermion import get_fermion_operator, jordan_wigner, FermionOperator
 from typing import Tuple, List
 
 def list_to_xyz(geometry: List[Tuple[str, Tuple[float, float, float]]]) -> str:
