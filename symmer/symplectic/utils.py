@@ -2,6 +2,7 @@ import numpy as np
 import scipy as sp
 from typing import Tuple, Dict
 import openfermion as of
+from qiskit.opflow import PauliSumOp
 
 def symplectic_to_string(symp_vec) -> str:
     """
@@ -211,6 +212,15 @@ def QubitOperator_to_dict(op, num_qubits):
         op_dict[p_string] = term_dict[t]
          
     return op_dict
+
+def PauliSumOp_to_dict(op:PauliSumOp) -> dict:
+    """ Qiskit
+    """
+    H_dict = {}
+    for P_term in op.to_pauli_op():
+        Pstr = P_term.primitive.to_label()
+        H_dict[Pstr] = P_term._coeff
+    return H_dict
 
 def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:
     """ Stores the real and imaginary parts of the coefficient separately in a tuple
