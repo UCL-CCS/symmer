@@ -214,14 +214,20 @@ class PauliwordOp:
             strategy: str = 'projector'
         ) -> "PauliwordOp":
         """
-        Given any arbitrary matrix convert it into a linear combination of Pauli operators (PauliwordOp)
-        Note this decomposition builds a basis of size 4^{N_qubits} to decompose matrix into
-        this can be costly! (TODO: may be better way of chosing a basis to represent operator in! aka smaller than 4^N
-                                see jupyter notebook for further details)
-
-        If user doesn't define an operator basis then builds the full 4^N Hilbert space.
+        --------------
+        | strategies |
+        --------------
+        
+        - full_basis
+        
+        If user doesn't define an operator basis then builds the full 4^N Hilbert space - this can be costly!.
         The user can avoid this by specificying a reduced basis that targets a subspace; there is a check 
         to assess whether the basis is sufficiently expressible to represent the input matrix in this case.
+        
+        - projector
+
+        Scales as O(M*2^N) where M the number of nonzero elements in the matrix. If M is too large 
+        (over 2^n_qubits) then reverts to the full basis strategy as can be more efficient.
         """
         if isinstance(matrix, np.matrix):
             # summing over numpy matrices does not function correctly
