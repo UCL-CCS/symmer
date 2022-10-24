@@ -199,7 +199,7 @@ class PauliwordOp:
         base_projector = get_PauliwordOp_projector('0'*n_qubits)
         P_out = cls.empty(n_qubits)
         for i,j in zip(row, col):
-            left  = np.binary_repr(i, width=n_qubits)
+            left = np.binary_repr(i, width=n_qubits)
             right = np.binary_repr(j, width=n_qubits)
             left_op = cls.from_list([left.replace('0', 'I').replace('1', 'X')])
             right_op = cls.from_list([right.replace('0', 'I').replace('1', 'X')])
@@ -1442,9 +1442,9 @@ def get_PauliwordOp_projector(projector: Union[str, List[str], np.array]) -> "Pa
     else:
         projector = np.asarray(projector)
     basis_dict = {'I':1,
-                  '0':1, '1':-1,
-                  '+':1, '-':-1,
-                  '*':1, '%':-1}
+                  '0':0, '1':1,
+                  '+':0, '-':1,
+                  '*':0, '%':1}
     assert len(projector.shape) == 1, 'projector can only be defined over a single string or single list of strings (each a single letter)'
     assert set(projector).issubset(list(basis_dict.keys())), 'unknown qubit state (must be I,X,Y,Z basis)'
 
@@ -1462,13 +1462,15 @@ def get_PauliwordOp_projector(projector: Union[str, List[str], np.array]) -> "Pa
                                                                                                         dtype=object))[
                                                                                         ::-1])) > 0).astype(int)
 
-    # assign a sign only to 'active positions' (0 in binary not relevent)
-    sign_from_binary = binary_vec * state_sign
+    # # assign a sign only to 'active positions' (0 in binary not relevent)
+    # sign_from_binary = binary_vec * state_sign
+    #
+    # # need to turn 0s in matrix to 1s before taking product across rows
+    # sign_from_binary = sign_from_binary + (sign_from_binary + 1) % 2
+    #
+    # sign = np.product(sign_from_binary, axis=1)
 
-    # need to turn 0s in matrix to 1s before taking product across rows
-    sign_from_binary = sign_from_binary + (sign_from_binary + 1) % 2
-
-    sign = np.product(sign_from_binary, axis=1)
+    sign = (-1)**((binary_vec@state_sign.T)%2)
 
     coeff = 1 / 2 ** (N_qubits_fixed) * np.ones(2 ** N_qubits_fixed)
     sym_arr = np.zeros((coeff.shape[0], 2 * N_qubits))
