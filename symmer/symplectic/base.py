@@ -1,5 +1,7 @@
 import numpy as np
+import pandas as pd
 import networkx as nx
+from tqdm import tqdm
 from copy import deepcopy
 from itertools import product
 from functools import reduce
@@ -166,14 +168,16 @@ class PauliwordOp:
 
         denominator = 2 ** n_qubits
         decomposition = cls.empty(n_qubits)
-        for op in op_basis:
-            const = np.einsum(
-                'ij,ji->', 
-                op.to_sparse_matrix.toarray(), 
-                matrix.T.conjugate(), 
-                optimize=True
-            ) / denominator
-
+        for op in tqdm(op_basis, desc='Building operator', total=4**n_qubits):
+            if isinstance(matrix, np.ndarray):
+                const = np.einsum(
+                    'ij,ij->', 
+                    op.to_sparse_matrix.toarray(), 
+                    matrix, 
+                    optimize=True
+                ) / denominator
+            else:
+                const = (op.to_sparse_matrix.multiply(matrix)).sum() / denominator
             decomposition += op.multiply_by_constant(const)
 
         operator_out = decomposition.cleanup()
@@ -205,7 +209,7 @@ class PauliwordOp:
         ).astype(bool)
 
         P_out = cls.empty(n_qubits)
-        for i,j in zip(row, col):
+        for i,j in tqdm(zip(row, col), desc='Building operator', total=len(row)):
             ij_op = get_ij_operator(i,j,n_qubits,binary_vec=binary_vec) 
             P_out += ij_op * matrix[i,j]
 
@@ -743,7 +747,7 @@ class PauliwordOp:
             raise TypeError('Unrecognised edge relation, must be one of C (commuting), AC (anticommuting) or QWC (qubitwise commuting).')
         np.fill_diagonal(adjmat,False) # avoids self-adjacency
         # convert to a networkx graph and perform colouring on complement
-        graph = nx.from_numpy_matrix(adjmat)
+        graph = nx.from_numpy_array(adjmat)
         return graph
 
     def largest_clique(self,
@@ -866,6 +870,22 @@ class PauliwordOp:
         out_dict = {symplectic_to_string(symp_vec):coeff for symp_vec, coeff
                     in zip(op_to_convert.symp_matrix, op_to_convert.coeff_vec)}
         return out_dict
+
+    @cached_property
+    def to_dataframe(self) -> pd.DataFrame:
+        """ Convert operator to pd.DataFrame for easy conversion to LaTeX
+        """
+        paulis = list(self.to_dictionary.keys())
+        DF_out = pd.DataFrame.from_dict({
+            'Pauli terms': paulis, 
+            'Coefficients (real)': self.coeff_vec.real
+            }
+        )
+        if np.any(self.coeff_vec.imag):
+            DF_out['Coefficients (imaginary)'] = self.coeff_vec.imag
+        return DF_out
+
+
 
     @cached_property
     def to_sparse_matrix(self) -> csr_matrix:
