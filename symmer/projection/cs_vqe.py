@@ -105,17 +105,23 @@ class CS_VQE(S3_projection):
         
         if self.noncontextual_form == 'diag':
             pass
-        elif self.noncontextual_form == 'legacy':            
+        elif self.noncontextual_form == 'diag_first':            
             # order the remaining terms by coefficient magnitude
             off_diag_terms = (self.operator - noncontextual_operator).sort(key='magnitude')
             # append terms that do not make the noncontextual_operator contextual!
             for term in off_diag_terms:
                 if (noncontextual_operator+term).is_noncontextual:
                     noncontextual_operator+=term
+        elif self.noncontextual_form == 'legacy':
+            noncontextual_operator = PauliwordOp.empty(self.operator.n_qubits)
+            for op in self.operator.sort(key='magnitude'):
+                test = noncontextual_operator + op
+                if test.is_noncontextual:
+                    noncontextual_operator += op
         else:
             raise ValueError('noncontextual_form not recognised: must be one of diag or legacy.')
             
-        return noncontextual_operator
+        return noncontextual_operator.sort(key='magnitude')
 
     def noncontextual_basis(self) -> StabilizerOp:
         """ Find an independent basis for the noncontextual symmetry
