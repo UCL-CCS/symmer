@@ -1,7 +1,9 @@
 import numpy as np
 from symmer.symplectic import PauliwordOp, StabilizerOp, NoncontextualOp
-from symmer.projection.utils import lp_norm, update_eigenvalues
-from symmer.projection import S3_projection, ObservableBiasing, StabilizerIdentification, stabilizer_walk
+from symmer.projection.utils import update_eigenvalues
+from symmer.projection import (
+    S3_projection, StabilizerIdentification, ObservableBiasing, stabilizer_walk
+)
 
 class ContextualSubspace(S3_projection):
     """

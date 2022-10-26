@@ -3,8 +3,61 @@ from copy import deepcopy
 from typing import Union
 from scipy.optimize import differential_evolution
 from symmer.symplectic import PauliwordOp, StabilizerOp
-from symmer.projection import QubitTapering, CS_VQE, CS_VQE_LW
+from symmer.projection import QubitTapering
 from symmer.projection.utils import basis_score
+
+class StabilizerIdentification:
+    def __init__(self,
+        weighting_operator: PauliwordOp
+        ) -> None:
+        """
+        """
+        self.weighting_operator = weighting_operator
+        self.build_basis_weighting_operator()
+
+    def build_basis_weighting_operator(self):
+        X_block = self.weighting_operator.X_block
+        X_op = PauliwordOp(
+            np.hstack([X_block, np.zeros_like(X_block)]), 
+            np.abs(self.weighting_operator.coeff_vec)
+        ).cleanup()
+        #X_op = self.weighting_operator
+        self.basis_weighting = X_op.sort(key='magnitude')
+        self.qubit_positions = np.arange(self.weighting_operator.n_qubits)
+        self.term_region = [0,self.basis_weighting.n_terms]
+        
+    def symmetry_basis_by_term_significance(self, n_preserved):
+        """ Set the number of terms to be preserved in order of coefficient magnitude
+        Then generate the largest symmetry basis that preserves them
+        """
+        preserve = self.basis_weighting[:n_preserved]
+        stabilizers = StabilizerOp.symmetry_basis(preserve, commuting_override=True)
+        mask_diag = np.where(~np.any(stabilizers.X_block, axis=1))[0]
+        return StabilizerOp(stabilizers.symp_matrix[mask_diag], stabilizers.coeff_vec[mask_diag])
+
+    def symmetry_basis_by_subspace_dimension(self, n_sim_qubits, region=None):
+        """
+        """
+        if region is None:
+            region = deepcopy(self.term_region)
+        assert(n_sim_qubits < self.basis_weighting.n_qubits), 'Number of qubits to simulate exceeds those in the operator'
+        assert(region[1]-region[0]>1), 'Search region collapsed without identifying any stabilizers'
+
+        n_terms = sum(region)//2
+        stabilizers = self.symmetry_basis_by_term_significance(n_terms)
+        current_n_qubits = self.basis_weighting.n_qubits - stabilizers.n_terms
+        sign = np.sign(current_n_qubits - n_sim_qubits)
+
+        if sign==0:
+            # i.e. n_sim_qubits == current_n_qubits
+            return stabilizers
+        elif sign==+1:
+            # i.e. n_sim_qubits < current_n_qubits
+            region[1] = n_terms
+        else:
+            region[0] = n_terms
+            
+        return self.symmetry_basis_by_subspace_dimension(n_sim_qubits, region=region)
 
 class ObservableBiasing:
     """ Class for re-weighting Hamiltonian terms based on some criteria, such as HOMO-LUMO bias
@@ -64,59 +117,6 @@ class ObservableBiasing:
         )*reweighted_operator.coeff_vec
         return reweighted_operator
 
-class StabilizerIdentification:
-    def __init__(self,
-        weighting_operator: PauliwordOp
-        ) -> None:
-        """
-        """
-        self.weighting_operator = weighting_operator
-        self.build_basis_weighting_operator()
-
-    def build_basis_weighting_operator(self):
-        X_block = self.weighting_operator.X_block
-        X_op = PauliwordOp(
-            np.hstack([X_block, np.zeros_like(X_block)]), 
-            np.abs(self.weighting_operator.coeff_vec)
-        ).cleanup()
-        #X_op = self.weighting_operator
-        self.basis_weighting = X_op.sort(key='magnitude')
-        self.qubit_positions = np.arange(self.weighting_operator.n_qubits)
-        self.term_region = [0,self.basis_weighting.n_terms]
-        
-    def symmetry_basis_by_term_significance(self, n_preserved):
-        """ Set the number of terms to be preserved in order of coefficient magnitude
-        Then generate the largest symmetry basis that preserves them
-        """
-        preserve = self.basis_weighting[:n_preserved]
-        stabilizers = StabilizerOp.symmetry_basis(preserve, commuting_override=True)
-        mask_diag = np.where(~np.any(stabilizers.X_block, axis=1))[0]
-        return StabilizerOp(stabilizers.symp_matrix[mask_diag], stabilizers.coeff_vec[mask_diag])
-
-    def symmetry_basis_by_subspace_dimension(self, n_sim_qubits, region=None):
-        """
-        """
-        if region is None:
-            region = deepcopy(self.term_region)
-        assert(n_sim_qubits < self.basis_weighting.n_qubits), 'Number of qubits to simulate exceeds those in the operator'
-        assert(region[1]-region[0]>1), 'Search region collapsed without identifying any stabilizers'
-
-        n_terms = sum(region)//2
-        stabilizers = self.symmetry_basis_by_term_significance(n_terms)
-        current_n_qubits = self.basis_weighting.n_qubits - stabilizers.n_terms
-        sign = np.sign(current_n_qubits - n_sim_qubits)
-
-        if sign==0:
-            # i.e. n_sim_qubits == current_n_qubits
-            return stabilizers
-        elif sign==+1:
-            # i.e. n_sim_qubits < current_n_qubits
-            region[1] = n_terms
-        else:
-            region[0] = n_terms
-            
-        return self.symmetry_basis_by_subspace_dimension(n_sim_qubits, region=region)
-      
 def stabilizer_walk(
         n_sim_qubits,
         biasing_operator: ObservableBiasing, 
