@@ -73,12 +73,12 @@ class StabilizerIdentification:
         self.build_basis_weighting_operator()
 
     def build_basis_weighting_operator(self):
-        #X_block = self.weighting_operator.X_block
-        #X_op = PauliwordOp(
-        #    np.hstack([X_block, np.zeros_like(X_block)]), 
-        #    np.abs(self.weighting_operator.coeff_vec)
-        #).cleanup()
-        X_op = self.weighting_operator
+        X_block = self.weighting_operator.X_block
+        X_op = PauliwordOp(
+            np.hstack([X_block, np.zeros_like(X_block)]), 
+            np.abs(self.weighting_operator.coeff_vec)
+        ).cleanup()
+        #X_op = self.weighting_operator
         self.basis_weighting = X_op.sort(key='magnitude')
         self.qubit_positions = np.arange(self.weighting_operator.n_qubits)
         self.term_region = [0,self.basis_weighting.n_terms]

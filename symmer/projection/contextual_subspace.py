@@ -1,18 +1,25 @@
 import numpy as np
 from symmer.symplectic import PauliwordOp, StabilizerOp, NoncontextualOp
-from symmer.projection.utils import lp_norm
+from symmer.projection.utils import lp_norm, update_eigenvalues
 from symmer.projection import S3_projection, ObservableBiasing, StabilizerIdentification, stabilizer_walk
 
 class ContextualSubspace(S3_projection):
+    """
+    """
     def __init__(self,
             operator: PauliwordOp,
-            noncontextual_strategy: str = 'diag'
+            noncontextual_strategy: str = 'diag',
+            unitary_partitioning_method = 'LCU',
         ):
+        """
+        """
+        self.operator = operator
         self.noncontextual_operator = NoncontextualOp.from_hamiltonian(
             operator, strategy=noncontextual_strategy
         )
-        self.contextual_operator = operator - self.noncontextual_operator
-
+        self.contextual_operator = self.noncontextual_operator - self.operator
+        self.unitary_partitioning_method = unitary_partitioning_method
+        
     def update_stabilizers(self, 
             n_qubits: int, 
             strategy: str = 'aux_preserving',
@@ -22,8 +29,10 @@ class ContextualSubspace(S3_projection):
         ) -> StabilizerOp:
         """
         """
-        assert(n_qubits<=self.noncontextual_operator.n_qubits), 'Cannot define a contextual subspace larger than the base Hamiltonian'
-        
+        assert(n_qubits<=self.operator.n_qubits), (
+            'Cannot define a contextual subspace larger than the base Hamiltonian'
+        )
+
         if strategy == 'aux_preserving':
             S = self._aux_operator_preserving_stabilizer_search(
                 n_qubits=n_qubits, aux_operator=aux_operator
@@ -43,12 +52,15 @@ class ContextualSubspace(S3_projection):
         else:
             raise ValueError('Unrecognised stabilizer search strategy.')
 
+        self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
         self.stabilizers = S
 
     def _greedy_stabilizer_search(self,
             n_qubits: int, 
             depth: int=2
         ) -> StabilizerOp:
+        """
+        """
         raise NotImplementedError
 
     def _aux_operator_preserving_stabilizer_search(self,
@@ -63,47 +75,110 @@ class ContextualSubspace(S3_projection):
         SI = StabilizerIdentification(aux_operator)
         S = SI.symmetry_basis_by_subspace_dimension(n_qubits)
 
-        # if any of the stabilizers anticommute with a clique...
-        clique_commutation = S.commutes_termwise(self.noncontextual_operator.clique_operator)
-        if np.any(~clique_commutation):
-            S_index = int(np.where(np.any(~clique_commutation, axis=1))[0][0])
-            self.clique_index = int(np.where(clique_commutation[S_index])[0][0])
-            S_clique = S[S_index]
-            
-            force_symmetry = self.noncontextual_operator.clique_operator.copy()
-            force_symmetry.coeff_vec[:] = 2*np.max(abs(aux_operator.coeff_vec))
-            
-            SI = StabilizerIdentification(aux_operator+force_symmetry)
-            S_symmetry = SI.symmetry_basis_by_subspace_dimension(n_qubits+1)
-            S = StabilizerOp.from_PauliwordOp(S_clique+S_symmetry)
-
         return S
 
-    def _chemistry_HOMO_LUMO_biasing(self,
+    def _HOMO_LUMO_biasing(self,
             n_qubits: int,
             HOMO_LUMO_index: int
         ) -> StabilizerOp:
+        """
+        """
         raise NotImplementedError
 
     def _random_stabilizers(self, 
             n_qubits: int
         )  -> StabilizerOp:
+        """
+        """
         raise NotImplementedError
 
-    def project_onto_subspace(self) -> PauliwordOp:
+    def _prepare_stabilizers(self):
+        """
+        """
+        if self.noncontextual_operator.n_cliques > 0:
+            # mask stabilizers that lie within one of the noncontextual cliques
+            clique_commutation = self.stabilizers.commutes_termwise(self.noncontextual_operator.clique_operator)
+            mask_which_clique = np.all(clique_commutation, axis=0)
+        else:
+            mask_which_clique = []
+
+        if ~np.all(mask_which_clique):
+            # we may only enforce stabilizers that live within the same clique, not accross them:
+            assert(sum(mask_which_clique)==1), (
+                'Cannot enforce stabilizers from different cliques since '+
+                'unitary partitioning collapses onto just one of them.'
+            )
+            # generate the unitary partitioning rotations that map onto the 
+            # clique representative correpsonding with the given stabilizers
+            (
+                self.mapped_clique_rep, 
+                self.unitary_partitioning_rotations,        
+                clique_normalizaion, # always normalized in contextual subspace...
+                normalized_clique # therefore will be the same as the clique_operator
+
+            ) = self.noncontextual_operator.clique_operator.unitary_partitioning(
+                up_method=self.unitary_partitioning_method, s_index=int(np.where(mask_which_clique)[0][0])
+            )
+            # add the clique representative to the noncontextual basis in order to 
+            # update the eigenvalue assignments of the chosen stablizers so they are 
+            # consistent with the noncontextual ground state configuration
+            augmented_basis = (
+                StabilizerOp.from_PauliwordOp(self.mapped_clique_rep) + 
+                self.noncontextual_operator.symmetry_generators
+            )
+            update_eigenvalues(basis=augmented_basis, stabilizers=self.stabilizers)
+            self.perform_unitary_partitioning = True
+        else:
+            update_eigenvalues(
+                basis=self.noncontextual_operator.symmetry_generators, 
+                stabilizers=self.stabilizers
+            )
+            self.perform_unitary_partitioning = False
+
+    def project_onto_subspace(self, operator_to_project=None) -> PauliwordOp:
         """ Projects with respect to the current stabilizers; these are 
         updated using the ContextualSubspace.update_stabilizers method.
         """
+        # if not supplied with an alternative operator for projection, use the internal operator 
+        if operator_to_project is None:
+            operator_to_project = self.operator.copy()    
+        # first prepare the stabilizers, which is particularly relevant when 
+        # one wishes to enforce stabilizer(s) lying within a noncontextual clique
+        self._prepare_stabilizers()
+        # instantiate the parent S3_projection class that handles the subspace projection
         super().__init__(self.stabilizers)
-        #TODO s3 projection
+        # perform unitary partitioning
+        if self.perform_unitary_partitioning:
+            # the rotation is implemented differently depending on the choice of LCU or seq_rot
+            if self.unitary_partitioning_method=='LCU':
+                # linear-combination-of-unitaries approach
+                rotated_op = (self.unitary_partitioning_rotations * operator_to_project
+                        * self.unitary_partitioning_rotations.dagger).cleanup()
+            elif self.unitary_partitioning_method=='seq_rot':
+                # sequence-of-rotations approach
+                rotated_op = operator_to_project.perform_rotations(self.unitary_partitioning_rotations)
+            else:
+                raise ValueError('Unrecognised unitary partitioning rotation method, must be one of LCU or seq_rot.')
+        else:
+            rotated_op = operator_to_project
+        # finally, project the operator before returning
+        cs_operator = self.perform_projection(rotated_op)
+
+        return cs_operator
 
     def hamiltonian(self, 
             n_qubits: int, 
-            strategy: str = '',
-            aux_operator = None
+            strategy: str = 'aux_preserving',
+            aux_operator: PauliwordOp = None,
+            depth:int  = 2
         ) -> PauliwordOp:
-
-        self.get_stabilizers(n_qubits, strategy, aux_operator)
+        """ Wraps all the above methods for ease of use
+        """
+        self.update_stabilizers(
+            n_qubits=n_qubits, 
+            strategy=strategy, 
+            aux_operator=aux_operator, 
+            depth=depth
+        )
         cs_operator = self.project_onto_subspace()
-
         return cs_operator

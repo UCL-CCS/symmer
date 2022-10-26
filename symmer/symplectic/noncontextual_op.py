@@ -283,5 +283,4 @@ class NoncontextualOp(PauliwordOp):
         else:
             self.energy = self.noncontextual_objective_function(
                 nu = self.symmetry_generators.coeff_vec, r=None
-            )
-    
+            )    
