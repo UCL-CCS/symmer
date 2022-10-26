@@ -11,7 +11,8 @@ class ContextualSubspace(S3_projection):
     def __init__(self,
             operator: PauliwordOp,
             noncontextual_strategy: str = 'diag',
-            unitary_partitioning_method = 'LCU',
+            unitary_partitioning_method: str = 'LCU',
+            reference_state: np.array = None
         ):
         """
         """
@@ -19,6 +20,7 @@ class ContextualSubspace(S3_projection):
         self.noncontextual_operator = NoncontextualOp.from_hamiltonian(
             operator, strategy=noncontextual_strategy
         )
+        self.noncontextual_operator.solve(strategy='brute_force', ref_state=reference_state)
         self.contextual_operator = self.noncontextual_operator - self.operator
         self.unitary_partitioning_method = unitary_partitioning_method
         
@@ -29,7 +31,7 @@ class ContextualSubspace(S3_projection):
             depth: int = 2,
             HF_array: np.array = None
         ) -> StabilizerOp:
-        """
+        """ Update the stabilizers that will be used for the subspace projection
         """
         assert(n_qubits<=self.operator.n_qubits), (
             'Cannot define a contextual subspace larger than the base Hamiltonian'
