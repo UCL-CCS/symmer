@@ -84,6 +84,8 @@ class ContextualSubspace(S3_projection):
         ) -> StabilizerOp:
         """
         """
+        assert(HF_array is not None), 'Must supply the Hartree-Fock state for this strategy'
+        
         OB = ObservableBiasing(
             base_operator=self.contextual_operator, 
             HOMO_LUMO_gap=np.where(HF_array==0)[0][0]-.5 # currently assumes JW mapping!
@@ -100,7 +102,22 @@ class ContextualSubspace(S3_projection):
         )  -> StabilizerOp:
         """
         """
-        raise NotImplementedError
+        # TODO better approach that does not rely on this *potentially infinite* while loop!
+        found_stabilizers=False
+        while not found_stabilizers:
+            try:
+                S = PauliwordOp.random(
+                    self.operator.n_qubits,
+                    self.operator.n_qubits-n_qubits,
+                    diagonal=True
+                )
+                S.coeff_vec[:] = 1
+                S = StabilizerOp.from_PauliwordOp(S)
+                found_stabilizers = True
+            except:
+                pass
+        
+        return S
 
     def _prepare_stabilizers(self):
         """
