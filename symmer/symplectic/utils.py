@@ -278,3 +278,11 @@ def mul_symplectic(
     phase_mod = sign_change * (1j) ** ((3 * (Y_count1 + Y_count2) + Y_count_out) % 4)  # mod 4 as roots of unity
     coeff_vec = phase_mod * coeff1 * coeff2
     return output_symplectic_vec, coeff_vec #, Y_count_out
+
+def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
+    """ Input an array of angles of length n, returns the n+1 cartesian coordinates 
+    of the corresponding unit n-sphere in (n+1)-dimensional Euclidean space.
+    """
+    cartesians = [np.prod(np.sin(angles[:i]))*np.cos(angles[i]) for i in range(len(angles))]
+    cartesians.append(np.prod(np.sin(angles)))
+    return np.array(cartesians)

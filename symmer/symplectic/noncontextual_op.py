@@ -4,7 +4,7 @@ from functools import reduce
 from cached_property import cached_property
 from scipy.optimize import differential_evolution, shgo
 from symmer.symplectic import PauliwordOp, StabilizerOp, AntiCommutingOp
-from symmer.projection.utils import unit_n_sphere_cartesian_coords
+from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
 import itertools
 
 class NoncontextualOp(PauliwordOp):
@@ -20,7 +20,7 @@ class NoncontextualOp(PauliwordOp):
         assert(self.is_noncontextual), 'Specified operator is contextual.'
         self.symmetry_generators, self.clique_operator = self.noncontextual_basis()
         # Reconstruct the noncontextual Hamiltonian into its G and C(r) components
-        self.G_indices, self.r_indices, self.pauli_mult_signs = self.noncontextual_reconstruction()
+        self.noncontextual_reconstruction()
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
         
@@ -223,7 +223,7 @@ class NoncontextualOp(PauliwordOp):
             if all_factors.n_terms > 0:
                 gen_mult = reduce(lambda x,y:x*y, list(all_factors))
                 pauli_mult_signs[index] = int(gen_mult.coeff_vec.real[0])
-        return G_part, r_part, pauli_mult_signs
+        self.G_indices, self.r_indices, self.pauli_mult_signs = G_part, r_part, pauli_mult_signs
 
     def noncontextual_objective_function(self, 
             nu: np.array, 
@@ -236,7 +236,7 @@ class NoncontextualOp(PauliwordOp):
         r_part[np.where(r_part==0)]=1
         return np.sum(self.coeff_vec*G_prod*r_part*self.pauli_mult_signs).real
 
-    def solve_noncontextual(self, strategy='binary_relaxation', ref_state: np.array = None) -> None:
+    def solve(self, strategy='binary_relaxation', ref_state: np.array = None) -> None:
         """ Minimize the classical objective function, yielding the noncontextual ground state
         """
         def convex_problem(nu):
@@ -278,10 +278,10 @@ class NoncontextualOp(PauliwordOp):
         if self.n_cliques != 0:
             # optimize the clique operator coefficients
             fix_nu = self.symmetry_generators.coeff_vec
-            self.noncontextual_energy, r = convex_problem(fix_nu)
+            self.energy, r = convex_problem(fix_nu)
             self.clique_operator.coeff_vec = r
         else:
-            self.noncontextual_energy = self.noncontextual_objective_function(
+            self.energy = self.noncontextual_objective_function(
                 nu = self.symmetry_generators.coeff_vec, r=None
             )
     

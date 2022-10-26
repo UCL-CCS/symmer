@@ -4,7 +4,8 @@ import warnings
 import numpy as np
 from functools import reduce
 from scipy.optimize import shgo, differential_evolution
-from symmer.projection.utils import unit_n_sphere_cartesian_coords, lp_norm
+from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
+from symmer.projection.utils import lp_norm
 from symmer.symplectic import (
     PauliwordOp, StabilizerOp, AntiCommutingOp, symplectic_to_string
 )
