@@ -341,9 +341,9 @@ class PauliwordOp:
         dim = operator_basis.n_terms
         basis_op_stack = np.vstack([operator_basis.symp_matrix, self.symp_matrix])
         reduced = cref_binary(basis_op_stack)
-        index_successfully_reconstructed = np.where(np.all(~reduced[dim:,dim:], axis=1))[0]
+        mask_successfully_reconstructed = np.all(~reduced[dim:,dim:], axis=1)
         op_reconstruction = reduced[dim:,:dim]
-        return op_reconstruction, index_successfully_reconstructed
+        return op_reconstruction, mask_successfully_reconstructed
 
     @cached_property
     def Y_count(self) -> np.array:
