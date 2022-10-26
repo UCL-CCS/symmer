@@ -35,3 +35,21 @@ def basis_score(
         lp_norm(weighting_operator.coeff_vec[mask_preserved], p=p) /
         lp_norm(weighting_operator.coeff_vec, p=p)
     )
+
+def update_eigenvalues(
+        basis: StabilizerOp, 
+        stabilizers: StabilizerOp
+    ) -> None:
+    """ Update the +/-1 eigenvalue assigned to the input stabilizer
+    according to the noncontextual ground state configuration
+    """
+    reconstruction, successfully_reconstructed = stabilizers.basis_reconstruction(basis)
+    if ~np.all(successfully_reconstructed):
+        raise ValueError('Basis not sufficient to reconstruct symmetry operators')
+    stabilizers.coeff_vec = (-1) ** np.count_nonzero(
+        np.bitwise_and(
+            reconstruction, 
+            basis.coeff_vec==-1
+        ),
+        axis=1
+    )
