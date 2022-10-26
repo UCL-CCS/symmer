@@ -24,7 +24,6 @@ class NoncontextualOp(PauliwordOp):
         # determine the noncontextual ground state - this updates the coefficients of the clique 
         # representative operator C(r) and symmetry generators G with the optimal configuration
         
-
     @classmethod
     def from_PauliwordOp(cls, H):
         """

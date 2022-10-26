@@ -4,6 +4,7 @@ from typing import Union
 from scipy.optimize import differential_evolution
 from symmer.symplectic import PauliwordOp, StabilizerOp
 from symmer.projection import QubitTapering, CS_VQE, CS_VQE_LW
+from symmer.projection.utils import basis_score
 
 class ObservableBiasing:
     """ Class for re-weighting Hamiltonian terms based on some criteria, such as HOMO-LUMO bias
@@ -119,13 +120,16 @@ class StabilizerIdentification:
 def stabilizer_walk(
         n_sim_qubits,
         biasing_operator: ObservableBiasing, 
-        cs_vqe_object: Union[CS_VQE, CS_VQE_LW],
         tapering_object: QubitTapering = None,
         reference_state: np.array = None,
-        print_info: bool = False
+        print_info: bool = False,
+        weighting_operator: PauliwordOp = None
     ) -> StabilizerOp:
     """
     """
+    if weighting_operator is None:
+        weighting_operator = biasing_operator.base_operator
+        
     def get_stabilizers(x):
         biasing_operator.HOMO_bias,biasing_operator.LUMO_bias = x
         biased_op = biasing_operator.HOMO_LUMO_biased_operator()
@@ -140,7 +144,7 @@ def stabilizer_walk(
     
     def objective(x):
         S = get_stabilizers(x)
-        stab_score = cs_vqe_object.basis_score(S)
+        stab_score = basis_score(weighting_operator, S)
         return -stab_score
     
     opt_out = differential_evolution(objective, bounds=[(0,1),(0,1)])

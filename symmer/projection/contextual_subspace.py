@@ -25,7 +25,7 @@ class ContextualSubspace(S3_projection):
             strategy: str = 'aux_preserving',
             aux_operator: PauliwordOp = None,
             depth: int = 2,
-            HOMO_LUMO_index: int = None
+            HF_array: np.array = None
         ) -> StabilizerOp:
         """
         """
@@ -46,8 +46,8 @@ class ContextualSubspace(S3_projection):
                 n_qubits=n_qubits
             )
         elif strategy == 'HOMO_LUMO_biasing':
-            S = self._chemistry_HOMO_LUMO_biasing(
-                n_qubits=n_qubits, HOMO_LUMO_index=HOMO_LUMO_index
+            S = self._HOMO_LUMO_biasing(
+                n_qubits=n_qubits, HF_array=HF_array, weighting_operator=aux_operator
             )
         else:
             raise ValueError('Unrecognised stabilizer search strategy.')
@@ -79,11 +79,21 @@ class ContextualSubspace(S3_projection):
 
     def _HOMO_LUMO_biasing(self,
             n_qubits: int,
-            HOMO_LUMO_index: int
+            HF_array: np.array,
+            weighting_operator: PauliwordOp = None
         ) -> StabilizerOp:
         """
         """
-        raise NotImplementedError
+        OB = ObservableBiasing(
+            base_operator=self.contextual_operator, 
+            HOMO_LUMO_gap=np.where(HF_array==0)[0][0]-.5 # currently assumes JW mapping!
+        )
+        S = stabilizer_walk(
+            n_sim_qubits=n_qubits, 
+            biasing_operator=OB, 
+            weighting_operator=weighting_operator,
+        )
+        return S
 
     def _random_stabilizers(self, 
             n_qubits: int
@@ -170,7 +180,8 @@ class ContextualSubspace(S3_projection):
             n_qubits: int, 
             strategy: str = 'aux_preserving',
             aux_operator: PauliwordOp = None,
-            depth:int  = 2
+            depth: int = 2,
+            HF_array: np.array = None
         ) -> PauliwordOp:
         """ Wraps all the above methods for ease of use
         """
@@ -178,7 +189,8 @@ class ContextualSubspace(S3_projection):
             n_qubits=n_qubits, 
             strategy=strategy, 
             aux_operator=aux_operator, 
-            depth=depth
+            depth=depth,
+            HF_array = HF_array
         )
         cs_operator = self.project_onto_subspace()
         return cs_operator
