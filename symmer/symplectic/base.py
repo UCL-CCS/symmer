@@ -485,6 +485,24 @@ class PauliwordOp:
             )
         return pauli_mult_out
 
+    def _multiply_by_operator_parallel(self, 
+            PwordOp: Union["PauliwordOp", "QuantumState", complex],
+            zero_threshold: float = 1e-15
+        ) -> "PauliwordOp":
+        """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
+        """
+        assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
+
+        # multiplication is performed at the symplectic level, before being stacked and cleaned
+        
+        symp_matrix, coeff_vec = collect_multiplication_stack(self, PwordOp)
+        pauli_mult_out = PauliwordOp(
+            *symplectic_cleanup_parallel(
+                symp_matrix, coeff_vec, zero_threshold=zero_threshold
+            )
+        )
+        return pauli_mult_out
+
     def __mul__(self, 
             mul_obj: Union["PauliwordOp", "QuantumState", complex],
             zero_threshold: float = 1e-15
