@@ -4,6 +4,7 @@ from symmer.projection.utils import (
     update_eigenvalues, StabilizerIdentification, ObservableBiasing, stabilizer_walk
 )
 from symmer.projection import S3_projection
+from typing import List, Union
 
 class ContextualSubspace(S3_projection):
     """
@@ -23,14 +24,22 @@ class ContextualSubspace(S3_projection):
         self.noncontextual_operator.solve(strategy='brute_force', ref_state=reference_state)
         self.contextual_operator = self.noncontextual_operator - self.operator
         self.unitary_partitioning_method = unitary_partitioning_method
-        
+    
+    def manual_stabilizers(self, S: Union[List[str], StabilizerOp]) -> None:
+        """
+        """
+        if isinstance(S, list):
+            S = StabilizerOp.from_list(S_list)
+        self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
+        self.stabilizers = S
+
     def update_stabilizers(self, 
             n_qubits: int, 
             strategy: str = 'aux_preserving',
             aux_operator: PauliwordOp = None,
             depth: int = 2,
             HF_array: np.array = None
-        ) -> StabilizerOp:
+        ) -> None:
         """ Update the stabilizers that will be used for the subspace projection
         """
         assert(n_qubits<=self.operator.n_qubits), (
