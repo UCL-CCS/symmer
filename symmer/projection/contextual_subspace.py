@@ -152,11 +152,14 @@ class ContextualSubspace(S3_projection):
             )
             # add the clique representative to the noncontextual basis in order to 
             # update the eigenvalue assignments of the chosen stablizers so they are 
-            # consistent with the noncontextual ground state configuration
+            # consistent with the noncontextual ground state configuration - this is 
+            # G U {RARdag} in the original CS-VQE notation. 
             augmented_basis = (
                 StabilizerOp.from_PauliwordOp(self.mapped_clique_rep) + 
                 self.noncontextual_operator.symmetry_generators
             )
+            # given this new basis, we reconstruct the given stabilizers to identify
+            # the correct subspace corresponding with the noncontextual ground state (nu, r)
             update_eigenvalues(basis=augmented_basis, stabilizers=self.stabilizers)
             self.perform_unitary_partitioning = True
         else:

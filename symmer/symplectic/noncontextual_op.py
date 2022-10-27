@@ -230,18 +230,20 @@ class NoncontextualOp(PauliwordOp):
         ) -> float:
         """ The classical objective function that encodes the noncontextual energies
         """
+        nu = np.asarray(nu) # must be an array!
         G_prod = (-1)**np.count_nonzero(np.logical_and(self.G_indices==1, nu == -1), axis=1)
         r_part = np.sum(self.r_indices*r, axis=1)
         r_part[np.where(r_part==0)]=1
         return np.sum(self.coeff_vec*G_prod*r_part*self.pauli_mult_signs).real
 
-    def solve(self, strategy='binary_relaxation', ref_state: np.array = None) -> None:
-        """ Minimize the classical objective function, yielding the noncontextual ground state
+    def _convex_problem(self, nu):
+        """ given +/-1 value assignments nu, solve for the clique operator coefficients.
+        Note that, with nu fixed, the optimization problem is now convex.
         """
-        def convex_problem(nu):
-            """ given +/-1 value assignments nu, solve for the clique operator coefficients.
-            Note that, with nu fixed, the optimization problem is now convex.
-            """
+        if self.n_cliques==0:
+            optimized_energy = self.noncontextual_objective_function(nu=nu, r=None)
+            r_optimal = None
+        else:
             # given M cliques, optimize over the unit (M-1)-sphere and convert to cartesians for the r vector
             r_bounds = [(0, np.pi)]*(self.n_cliques-2)+[(0, 2*np.pi)]
             optimizer_output = differential_evolution(
@@ -253,33 +255,52 @@ class NoncontextualOp(PauliwordOp):
             optimized_energy = optimizer_output['fun']
             optimized_angles = optimizer_output['x']
             r_optimal = unit_n_sphere_cartesian_coords(optimized_angles)
-            return optimized_energy, r_optimal
 
+        return optimized_energy, r_optimal
+
+    def _energy_via_ref_state(self, ref_state):
+        """
+        """
+        # update the symmetry generator G coefficients w.r.t. the reference state
+        self.symmetry_generators.update_sector(ref_state=ref_state)
+        fix_nu = self.symmetry_generators.coeff_vec
+        energy, r_optimal = self._convex_problem(fix_nu)
+        return energy, fix_nu, r_optimal
+
+    def _energy_via_relaxation(self):
+        """
+        """
+        # optimize discrete value assignments nu by relaxation to continuous variables
+        nu_bounds = [(0, np.pi)]*self.symmetry_generators.n_terms
+        optimizer_output = shgo(func=lambda angles:self._convex_problem(np.cos(angles))[0], bounds=nu_bounds)
+        # if optimization was successful the optimal angles should consist of 0 and pi
+        fix_nu = np.sign(np.array(np.cos(optimizer_output['x']))).astype(int)
+        self.symmetry_generators.coeff_vec = fix_nu 
+        energy, r_optimal = self._convex_problem(fix_nu)
+        return energy, fix_nu, r_optimal
+
+    def _energy_via_brute_force(self):
+        # optimize over all discrete value assignments of nu
+        tracker = []
+        for nu in itertools.product([-1,1],repeat=self.symmetry_generators.n_terms):
+            energy, r = self._convex_problem(np.array(nu))
+            tracker.append((energy, r, np.array(nu)))
+        energy, r_optimal, fix_nu = min(tracker, key=lambda x:x[0])
+        return energy, fix_nu, r_optimal
+
+    def solve(self, strategy='binary_relaxation', ref_state: np.array = None) -> None:
+        """ Minimize the classical objective function, yielding the noncontextual ground state
+        """
         if ref_state is not None:
-            # update the symmetry generator G coefficients w.r.t. the reference state
-            self.symmetry_generators.update_sector(ref_state=ref_state)
+            self.energy, nu, r = self._energy_via_ref_state(ref_state)
         elif strategy=='binary_relaxation' :
-            # optimize discrete value assignments nu by relaxation to continuous variables
-            nu_bounds = [(0, np.pi)]*self.symmetry_generators.n_terms
-            optimizer_output = shgo(func=lambda angles:convex_problem(np.cos(angles))[0], bounds=nu_bounds)
-            # if optimization was successful the optimal angles should consist of 0 and pi
-            self.symmetry_generators.coeff_vec = np.sign(np.array(np.cos(optimizer_output['x']))).astype(int)
+            self.energy, nu, r = self._energy_via_relaxation()
         elif strategy=='brute_force' :
-            # optimize over all discrete value assignments of nu
-            nu_energies = [
-                (convex_problem(np.array(nu))[0], nu)
-                for nu in itertools.product([-1,1],repeat=self.symmetry_generators.n_terms)
-            ]
-            self.symmetry_generators.coeff_vec = np.array(min(nu_energies, key=lambda x:x[0])[1])
+            self.energy, nu, r = self._energy_via_brute_force()
         else:
             raise ValueError(f'unknown optimization strategy: {strategy}')
         
-        if self.n_cliques != 0:
-            # optimize the clique operator coefficients
-            fix_nu = self.symmetry_generators.coeff_vec
-            self.energy, r = convex_problem(fix_nu)
+        # optimize the clique operator coefficients
+        self.symmetry_generators.coeff_vec = nu
+        if r is not None:
             self.clique_operator.coeff_vec = r
-        else:
-            self.energy = self.noncontextual_objective_function(
-                nu = self.symmetry_generators.coeff_vec, r=None
-            )    
