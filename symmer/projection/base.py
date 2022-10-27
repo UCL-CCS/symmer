@@ -103,5 +103,3 @@ class S3_projection:
         self.rotated_flag = True
         # ...and finally perform the stabilizer subspace projection
         return self._perform_projection(operator=op_rotated)
-
-#class S3_projection_maj:

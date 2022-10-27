@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import networkx as nx
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from copy import deepcopy
 from itertools import product
 from functools import reduce
@@ -341,9 +341,9 @@ class PauliwordOp:
         dim = operator_basis.n_terms
         basis_op_stack = np.vstack([operator_basis.symp_matrix, self.symp_matrix])
         reduced = cref_binary(basis_op_stack)
-        index_successfully_reconstructed = np.where(np.all(~reduced[dim:,dim:], axis=1))[0]
+        mask_successfully_reconstructed = np.all(~reduced[dim:,dim:], axis=1)
         op_reconstruction = reduced[dim:,:dim]
-        return op_reconstruction, index_successfully_reconstructed
+        return op_reconstruction, mask_successfully_reconstructed
 
     @cached_property
     def Y_count(self) -> np.array:
@@ -483,6 +483,24 @@ class PauliwordOp:
                     np.vstack(symp_stack), np.hstack(coeff_stack), zero_threshold=zero_threshold
                 )
             )
+        return pauli_mult_out
+
+    def _multiply_by_operator_parallel(self, 
+            PwordOp: Union["PauliwordOp", "QuantumState", complex],
+            zero_threshold: float = 1e-15
+        ) -> "PauliwordOp":
+        """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
+        """
+        assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
+
+        # multiplication is performed at the symplectic level, before being stacked and cleaned
+        
+        symp_matrix, coeff_vec = collect_multiplication_stack(self, PwordOp)
+        pauli_mult_out = PauliwordOp(
+            *symplectic_cleanup_parallel(
+                symp_matrix, coeff_vec, zero_threshold=zero_threshold
+            )
+        )
         return pauli_mult_out
 
     def __mul__(self, 
