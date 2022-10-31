@@ -168,7 +168,7 @@ class PauliwordOp:
 
         denominator = 2 ** n_qubits
         decomposition = cls.empty(n_qubits)
-        for op in tqdm(op_basis, desc='Building operator', total=4**n_qubits):
+        for op in tqdm(op_basis, desc='Building operator via full basis', total=op_basis.n_terms):
             if isinstance(matrix, np.ndarray):
                 const = np.einsum(
                     'ij,ij->', 
@@ -209,7 +209,7 @@ class PauliwordOp:
         ).astype(bool)
 
         P_out = cls.empty(n_qubits)
-        for i,j in tqdm(zip(row, col), desc='Building operator', total=len(row)):
+        for i,j in tqdm(zip(row, col), desc='Building operator via projectors', total=len(row)):
             ij_op = get_ij_operator(i,j,n_qubits,binary_vec=binary_vec) 
             P_out += ij_op * matrix[i,j]
 
