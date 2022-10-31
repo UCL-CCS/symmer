@@ -477,7 +477,7 @@ test = ["nose (>=0.10.1)", "requests", "testpath", "pygments", "nbformat", "ipyk
 
 [[package]]
 name = "ipywidgets"
-version = "8.0.2"
+version = "7.7.2"
 description = "Jupyter interactive widgets"
 category = "main"
 optional = false
