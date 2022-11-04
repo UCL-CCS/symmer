@@ -267,9 +267,12 @@ class FermionicHamiltonian:
 
     @cached_property
     def hf_fermionic_basis_state(self):
-        hf_comp_basis_state = np.zeros(self.n_qubits, dtype=int)
-        hf_comp_basis_state[:self.n_electrons] = 1
-        return hf_comp_basis_state
+        n_alpha, n_beta = self.scf_method.nelec
+        hf_array = np.zeros(self.n_qubits)
+        hf_array[::2] = np.hstack([np.ones(n_alpha), np.zeros(self.n_qubits//2-n_alpha)])
+        hf_array[1::2] = np.hstack([np.ones(n_beta), np.zeros(self.n_qubits//2-n_beta)])
+
+        return hf_array.astype(int)
 
 
     @cached_property
@@ -337,7 +340,7 @@ class FermioniCC:
     def _single_amplitudes(self) -> FermionOperator:
         """ Calculate CC amplitudes for single excitations
         """
-        t1 = spatial2spin(self.cc_obj.t1)
+        t1 = spatial2spin(self.cc_obj.t1, orbspin=self.orbspin)
         no, nv = t1.shape
         nmo = no + nv
         ccsd_single_amps = np.zeros((nmo, nmo))
@@ -358,7 +361,7 @@ class FermioniCC:
     def _double_amplitudes(self) -> FermionOperator:
         """ Calculate CC amplitudes for double excitations
         """
-        t2 = spatial2spin(self.cc_obj.t2)
+        t2 = spatial2spin(self.cc_obj.t2, orbspin=self.orbspin)
         no, nv = t2.shape[1:3]
         nmo = no + nv
         double_amps = np.zeros((nmo, nmo, nmo, nmo))
@@ -378,9 +381,10 @@ class FermioniCC:
 
         return generator_t2
 
-    def build_operator(self) -> None:
+    def build_operator(self, orbspin=None) -> None:
         """ builds the CCSD operator
         """
+        self.orbspin = orbspin
         T1 = self._single_amplitudes
         T2 = self._double_amplitudes
         self.fermionic_cc_operator = T1 + 0.5 * T2
