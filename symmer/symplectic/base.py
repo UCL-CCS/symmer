@@ -293,27 +293,27 @@ class PauliwordOp:
         return deepcopy(self)
 
     def sort(self, 
-            by: str = 'decreasing',
-            key:str = 'magnitude'
+            by:  str = 'magnitude',
+            key: str = 'decreasing'
         ) -> "PauliwordOp":
         """
-        Sort the terms by some key, either magnitude, weight X, Y or Z
+        Sort the terms either by magnitude, weight X, Y or Z
         """
-        if key=='magnitude':
+        if by=='magnitude':
             sort_order = np.argsort(-abs(self.coeff_vec))
-        elif key=='weight':
-            sort_order = np.argsort(-np.sum(self.symp_matrix, axis=1))
-        elif key=='Z':
-            sort_order = np.argsort(np.sum((self.n_qubits+1)*self.X_block + self.Z_block, axis=1))
-        elif key=='X':
-            sort_order = np.argsort(np.sum(self.X_block + (self.n_qubits+1)*self.Z_block, axis=1))
-        elif key=='Y':
-            sort_order = np.argsort(np.sum(abs(self.X_block - self.Z_block), axis=1))
+        elif by=='weight':
+            sort_order = np.argsort(-np.sum(self.symp_matrix.astype(int), axis=1))
+        elif by=='Z':
+            sort_order = np.argsort(np.sum((self.n_qubits+1)*self.X_block.astype(int) + self.Z_block.astype(int), axis=1))
+        elif by=='X':
+            sort_order = np.argsort(np.sum(self.X_block.astype(int) + (self.n_qubits+1)*self.Z_block.astype(int), axis=1))
+        elif by=='Y':
+            sort_order = np.argsort(np.sum(abs(self.X_block.astype(int) - self.Z_block.astype(int)), axis=1))
         else:
-            raise ValueError('Only permitted sort key values are magnitude, weight, X, Y or Z')
-        if by=='increasing':
+            raise ValueError('Only permitted sort by values are magnitude, weight, X, Y or Z')
+        if key=='increasing':
             sort_order = sort_order[::-1]
-        elif by!='decreasing':
+        elif key!='decreasing':
             raise ValueError('Only permitted sort by values are increasing or decreasing')
         return PauliwordOp(self.symp_matrix[sort_order], self.coeff_vec[sort_order])
 
@@ -572,6 +572,10 @@ class PauliwordOp:
             if stop is None:
                 stop=self.n_terms
             mask = np.arange(start, stop, key.step)
+        elif isinstance(key, (list, np.ndarray)):
+            mask = np.asarray(key)
+        else:
+            raise ValueError('Unrecognised input, must be an integer, slice, list or np.array')
         
         symp_items = self.symp_matrix[mask]
         coeff_items = self.coeff_vec[mask]
@@ -809,7 +813,7 @@ class PauliwordOp:
             if colouring_interchange is not False:
                 warnings.warn(f'{strategy} is not a graph colouring method, so colouring_interchange flag is ignored')
 
-            sorted_op_list = list(self.sort(by='decreasing', key='magnitude'))
+            sorted_op_list = list(self.sort(by='magnitude', key='decreasing'))
 
             check_dic = {
                 'C': lambda x, y: np.all(x.commutes_termwise(y)),

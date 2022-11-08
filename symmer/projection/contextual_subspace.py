@@ -29,7 +29,7 @@ class ContextualSubspace(S3_projection):
         """
         """
         if isinstance(S, list):
-            S = StabilizerOp.from_list(S_list)
+            S = StabilizerOp.from_list(S)
         self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
         self.stabilizers = S
 

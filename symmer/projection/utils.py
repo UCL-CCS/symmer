@@ -72,7 +72,7 @@ class StabilizerIdentification:
             np.abs(self.weighting_operator.coeff_vec)
         ).cleanup()
         #X_op = self.weighting_operator
-        self.basis_weighting = X_op.sort(key='magnitude')
+        self.basis_weighting = X_op.sort(by='magnitude')
         self.qubit_positions = np.arange(self.weighting_operator.n_qubits)
         self.term_region = [0,self.basis_weighting.n_terms]
         

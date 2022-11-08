@@ -68,7 +68,7 @@ class NoncontextualOp(PauliwordOp):
         cutoff time ensures if the number of possibilities is large the function will STOP and not take too long
 
         """
-        operator = H.sort(key='magnitude')
+        operator = H.sort(by='magnitude')
         noncontextual_ops = []
 
         n=0
@@ -102,7 +102,7 @@ class NoncontextualOp(PauliwordOp):
         """
         noncontextual_operator = cls._diag_noncontextual_op(H)
         # order the remaining terms by coefficient magnitude
-        off_diag_terms = (H - noncontextual_operator).sort(key='magnitude')
+        off_diag_terms = (H - noncontextual_operator).sort(by='magnitude')
         # append terms that do not make the noncontextual_operator contextual!
         for term in off_diag_terms:
             if (noncontextual_operator+term).is_noncontextual:
@@ -117,7 +117,7 @@ class NoncontextualOp(PauliwordOp):
         noncontextual_operator = PauliwordOp.empty(H.n_qubits)
         
         if strategy=='magnitude':
-            operator = H.sort(key='magnitude')
+            operator = H.sort(by='magnitude')
         elif strategy=='random':
             order = np.arange(H.n_terms)
             np.random.shuffle(order)
