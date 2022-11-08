@@ -5,7 +5,7 @@ from pyscf import gto
 from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
 from pyscf.tools import cubegen
-from openfermion import FermionOperator, count_qubits
+from openfermion import FermionOperator, count_qubits, hermitian_conjugated
 from openfermion.transforms import jordan_wigner, bravyi_kitaev#, parity_code
 from symmer.symplectic.utils import QubitOperator_to_dict
 from symmer.symplectic import PauliwordOp
@@ -166,6 +166,53 @@ def get_fermionic_up_down_parity_operators(N_qubits: int) -> Tuple[FermionOperat
         parity_down *= FermionOperator('', 1) - 2 * FermionOperator(f'{spin_down_ind}^ {spin_down_ind}', 1)
 
     return parity_up, parity_down
+
+
+def get_fermionic_spin_operators(N_qubits: int) -> Tuple[FermionOperator, FermionOperator]:
+    """ https://aip.scitation.org/doi/pdf/10.1063/1.5110682 eq 35-40
+    
+    The multiplicity of a given state is 2<Sz> + 1, but this is only valid for singlets
+    The reason why is consider a triplet solution (has two underpaired e-)
+    therefore (up,up), (up, down) or (down, down) giving Sz of -1,0,+1
+    
+    When measuring Sz on superposition, combinitionos of -1,0,1 possible leading to meaningless info
+    
+    As Sz can only be 0 in singlet states this is still useful.
+    
+    Likewise for doublets (aka one unpaired electron), we can have (up) or (down)
+    thus Sz can be -0.5 or +0.5 and in a superposition state measuring Sz will lead to weird results
+    
+    NOTE: measuring the invidual kets of a superposition state we must get an allowed value of Sz
+    that depends on the multiplicity
+    (e.g. for triplets: -1, 0, +1  AND for doublets: -0.5 or +0.5)
+    
+    
+    In general, given a spin quantum number s, we may observe 
+    the values {s, s-1, ..., -s+1, -s} == 2S+1 possible values
+    
+    Therefore, projecting out Sz=0 ensures you CANNOT get a singlet solution
+    (e.g. for triplets: now we can only get -1, +1 solutions (as 0 part projected out))
+    
+    HOWEVER, projecting onto Sz=0 does NOT! ensure you cannot get a singlet solution
+    (e.g. you can get triplet terms with Sz=0... == [up, down] unpaired combo)
+
+    """
+    Sz = FermionOperator()
+    S_plus = FermionOperator()
+
+    for p in range(N_qubits//2):
+        # Sz term
+        ap = FermionOperator(f'{2*p}^ {2*p}')
+        bp = FermionOperator(f'{2*p+1}^ {2*p+1}')
+        Sz += (ap-bp)
+        # S_plus term
+        S_plus += FermionOperator(f'{2*p}^ {2*p+1}')
+    Sz /= 2
+
+    S_minus = hermitian_conjugated(S_plus)
+    S2 = S_plus * S_minus + Sz + Sz ** 2
+    
+    return S2, Sz
 
 
 def build_bk_matrix(n_qubits):

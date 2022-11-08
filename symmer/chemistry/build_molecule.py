@@ -3,8 +3,9 @@ from symmer.symplectic import PauliwordOp
 from symmer.symplectic.utils import QubitOperator_to_dict, safe_PauliwordOp_to_dict
 from symmer.chemistry import FermionicHamiltonian, FermioniCC, PySCFDriver
 from symmer.chemistry.utils import (
-    build_bk_matrix, fermion_to_qubit_operator, get_fermionic_number_operator, get_parity_operators_JW, get_parity_operators_BK
+    build_bk_matrix, fermion_to_qubit_operator, get_fermionic_number_operator, get_fermionic_spin_operators, get_parity_operators_JW, get_parity_operators_BK
     )
+from pyscf.scf.addons import get_ghf_orbspin
 from openfermion import get_fermion_operator, jordan_wigner, FermionOperator
 from typing import Tuple, List
 
@@ -47,12 +48,18 @@ class MoleculeBuilder:
         self.print_info = print_info
         self.calculate(run_fci=run_fci, hf_method=hf_method)
         self.n_particles = self.pyscf_obj.pyscf_hf.mol.nelectron
+        self.n_alpha, self.n_beta = self.pyscf_obj.pyscf_hf.nelec
+        orbspin = get_ghf_orbspin(
+            self.pyscf_obj.pyscf_hf.mo_energy,
+            self.pyscf_obj.pyscf_hf.mo_occ, 
+            is_rhf=True
+        )
 
         # build the fermionic hamiltonian/CC operator
         self.H_fermion = FermionicHamiltonian(self.pyscf_obj.pyscf_hf)
         self.T_fermion = FermioniCC(self.pyscf_obj.pyscf_ccsd)
         self.H_fermion.build_fermionic_hamiltonian_operator()
-        self.T_fermion.build_operator()
+        self.T_fermion.build_operator(orbspin)
 
         self.n_qubits = self.H_fermion.n_qubits
         self.hf_array = self.H_fermion.hf_fermionic_basis_state
@@ -65,10 +72,13 @@ class MoleculeBuilder:
 
         self.H = get_fermion_operator(self.H_fermion.fermionic_molecular_hamiltonian)
         self.T = self.T_fermion.fermionic_cc_operator
-        
+
         # map to QubitOperator via fermion -> qubit mapping and convert to PauliwordOp
         self.H_q = fermion_to_qubit_operator(self.H, self.qubit_mapping_str, N_qubits=self.n_qubits)
-        self.T_q = fermion_to_qubit_operator(self.T, self.qubit_mapping_str, N_qubits=self.n_qubits)
+        if len(self.T.terms)==0:
+            self.T_q = PauliwordOp.empty(self.n_qubits)
+        else:
+            self.T_q = fermion_to_qubit_operator(self.T, self.qubit_mapping_str, N_qubits=self.n_qubits)
 
         self.UCC_q = self.T_q - self.T_q.dagger
         self.UCC_q.coeff_vec = self.UCC_q.coeff_vec.imag
@@ -171,6 +181,16 @@ class MoleculeBuilder:
         )
 
     @cached_property
+    def spin_operators(self):
+        """
+        """
+        S2, Sz = get_fermionic_spin_operators(self.n_qubits)
+        S2_q = fermion_to_qubit_operator(S2, self.qubit_mapping_str, N_qubits=self.n_qubits)
+        Sz_q = fermion_to_qubit_operator(Sz, self.qubit_mapping_str, N_qubits=self.n_qubits)
+
+        return S2_q, Sz_q
+
+    @cached_property
     def up_down_parity_operators(self):
         """ Assumes alternating up/down spin orbitals
         """
@@ -192,7 +212,10 @@ class MoleculeBuilder:
             'spin': int(self.spin),
             'hf_array': self.hf_array.tolist(),
             'hf_method': f'{self.pyscf_obj.pyscf_hf.__module__}.{self.pyscf_obj.pyscf_hf.__class__.__name__}',
-            'n_particles': int(self.n_particles),
+            'n_particles': {
+                'total':int(self.n_particles), 
+                'alpha':int(self.n_alpha), 'beta':int(self.n_beta)
+            },
             'n_qubits': int(self.n_qubits),
             'convergence_threshold':self.pyscf_obj.convergence,
             'point_group':{
@@ -205,6 +228,8 @@ class MoleculeBuilder:
             'auxiliary_operators':{
                 #'HF_operator': safe_PauliwordOp_to_dict(self.HF_fermionic_op_q),
                 'number_operator': safe_PauliwordOp_to_dict(self.number_operator),
+                'S^2_operator': safe_PauliwordOp_to_dict(self.spin_operators[0]),
+                'Sz_operator': safe_PauliwordOp_to_dict(self.spin_operators[1]),
                 'alpha_parity_operator': safe_PauliwordOp_to_dict(self.up_down_parity_operators[0]),
                 'beta_parity_operator': safe_PauliwordOp_to_dict(self.up_down_parity_operators[1])
             }    
