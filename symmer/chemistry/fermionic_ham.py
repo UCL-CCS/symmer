@@ -267,7 +267,7 @@ class FermionicHamiltonian:
 
     @cached_property
     def hf_fermionic_basis_state(self):
-        n_alpha, n_beta = self.scf_method.nelec
+        n_alpha, n_beta = self.scf_method.mol.nelec
         hf_array = np.zeros(self.n_qubits)
         hf_array[::2] = np.hstack([np.ones(n_alpha), np.zeros(self.n_qubits//2-n_alpha)])
         hf_array[1::2] = np.hstack([np.ones(n_beta), np.zeros(self.n_qubits//2-n_beta)])
