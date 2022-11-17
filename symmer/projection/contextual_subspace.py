@@ -13,14 +13,18 @@ class ContextualSubspace(S3_projection):
             operator: PauliwordOp,
             noncontextual_strategy: str = 'diag',
             unitary_partitioning_method: str = 'LCU',
-            reference_state: np.array = None
+            reference_state: np.array = None,
+            noncontextual_operator: NoncontextualOp = None
         ):
         """
         """
         self.operator = operator
-        self.noncontextual_operator = NoncontextualOp.from_hamiltonian(
-            operator, strategy=noncontextual_strategy
-        )
+        if noncontextual_operator is None:
+            self.noncontextual_operator = NoncontextualOp.from_hamiltonian(
+                operator, strategy=noncontextual_strategy
+            )
+        else:
+            self.noncontextual_operator = noncontextual_operator
         self.noncontextual_operator.solve(strategy='brute_force', ref_state=reference_state)
         self.contextual_operator = self.noncontextual_operator - self.operator
         self.unitary_partitioning_method = unitary_partitioning_method
