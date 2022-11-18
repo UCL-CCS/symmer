@@ -2,6 +2,7 @@ from symmer.symplectic import PauliwordOp, QuantumState
 import numpy as np
 import scipy as sp
 from typing import Union, List, Tuple
+from functools import reduce
 
 def exact_gs_energy(
         sparse_matrix, 
@@ -52,7 +53,7 @@ def exact_gs_energy(
         raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
 
 
-def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_clifford=True):
+def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_unitary=True):
     """ Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
         with normally distributed coefficients. Generates in structured way then uses Clifford rotation (default)
         to try and make more random (can stop this to allow FAST build, but inherenet structure
@@ -75,14 +76,16 @@ def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_cliffor
     P_anticomm = PauliwordOp.from_dictionary((dict(zip(P_list, coeff_vec))))
 
     # random rotations to get rid of structure
-    if apply_clifford:
-        for _ in range(10):
-            P_rand = PauliwordOp.random(n_qubits, 1, complex_coeffs=complex_coeff)
-            P_rand.coeff_vec[0] = 1
-            P_anticomm = P_anticomm._rotate_by_single_Pword(P_rand,
-                                                            None)
+    if apply_unitary:
+        U = PauliwordOp.haar_random(n_qubits=n_qubits)
+        P_anticomm = U * P_anticomm * U.dagger
 
     anti_comm_check = P_anticomm.adjacency_matrix.astype(int) - np.eye(P_anticomm.adjacency_matrix.shape[0])
     assert(np.sum(anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
 
     return P_anticomm
+
+def tensor_list(factor_list:List[PauliwordOp]) -> PauliwordOp:
+    """ Given a list of PauliwordOps, recursively tensor from the right
+    """
+    return reduce(lambda x,y:x.tensor(y), factor_list)
