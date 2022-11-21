@@ -1,6 +1,7 @@
 from typing import Optional, Union
 from pathlib import Path
 import os
+from scipy.sparse import csr_matrix
 import numpy as np
 from scipy.special import comb
 from cached_property import cached_property
@@ -216,7 +217,6 @@ class FermionicHamiltonian:
         Fock_spin_mo = self.core_h_spin_basis + (pm_qm - pm_mq)
         return Fock_spin_mo
 
-
     def manual_T2_mp2(self) -> FermionOperator:
         """
         Get T2 mp2 fermionic operator
@@ -264,7 +264,6 @@ class FermionicHamiltonian:
 
         return T2_phys
 
-
     @cached_property
     def hf_fermionic_basis_state(self):
         n_alpha, n_beta = self.scf_method.mol.nelec
@@ -274,7 +273,6 @@ class FermionicHamiltonian:
 
         return hf_array.astype(int)
 
-
     @cached_property
     def hf_ket(self):
         binary_int_list = 1 << np.arange(self.n_qubits)[::-1]
@@ -282,17 +280,160 @@ class FermionicHamiltonian:
         hf_ket[self.hf_fermionic_basis_state @ binary_int_list] = 1
         return hf_ket
 
-
     def mp2_ket(self, pyscf_mp2_t2_amps):
         T2_mp2_mat = get_sparse_operator(self.get_T2_mp2(pyscf_mp2_t2_amps), n_qubits=self.n_qubits)
         mp2_state = T2_mp2_mat @ self.hf_ket
         return mp2_state
 
-
     def get_sparse_ham(self):
         if self.fermionic_molecular_hamiltonian is None:
             raise ValueError('need to build operator first')
         return get_sparse_operator(self.fermionic_molecular_hamiltonian)
+
+    def get_cisd_fermionic(self):
+        """
+
+        Note does NOT INCLUDE NUCLEAR ENERGY
+
+        See page 6 of https://iopscience.iop.org/article/10.1088/2058-9565/aa9463/pdf
+        for how to determine matrix element of FCI H given particular Slater determinants
+
+        """
+        double_dets = []
+        double_excitations = []
+        single_dets = []
+        single_excitations = []
+        for i in range(self.n_electrons):
+            for a in range(self.n_electrons, self.n_qubits):
+                single_excitations.append((i, a))
+
+                det = self.hf_fermionic_basis_state.copy()
+                det[[i, a]] = det[[a, i]]
+                single_dets.append(det)
+                for j in range(i + 1, self.n_electrons):
+                    for b in range(a + 1, self.n_qubits):
+                        double_excitations.append((i, j, a, b))
+
+                        det = self.hf_fermionic_basis_state.copy()
+                        det[[i, a]] = det[[a, i]]
+                        det[[j, b]] = det[[b, j]]
+                        double_dets.append(det)
+
+        allowed_dets = [self.hf_fermionic_basis_state, *single_dets, *double_dets]
+
+        data = []
+        row = []
+        col = []
+        for det_i in allowed_dets:
+            for det_j in allowed_dets:
+
+                bit_diff = np.logical_xor(det_i, det_j)
+                n_diff = int(sum(bit_diff))
+
+                if n_diff > 4:
+                    pass
+                else:
+                    index_i = int(''.join(det_i.astype(str)), 2)
+                    index_j = int(''.join(det_j.astype(str)), 2)
+
+                    mat_element = 0
+                    if n_diff == 0:
+                        # <i | H | i>
+                        occ_inds_i = np.where(det_i)[0]
+                        for i in occ_inds_i:
+                            mat_element += self.core_h_spin_basis[i, i]
+
+                        for ind1, i in enumerate(occ_inds_i[:-1]):
+                            for ind2 in range(ind1 + 1, len(occ_inds_i)):
+                                j = occ_inds_i[ind2]
+                                mat_element += (self.eri_spin_basis[i, j, i, j] - self.eri_spin_basis[i, j, j, i])
+                        sign = 1
+
+                    elif n_diff == 2:
+                        # order matters!
+                        k = np.logical_and(det_i, bit_diff).nonzero()[0]
+                        l = np.logical_and(det_j, bit_diff).nonzero()[0]
+                        mat_element += self.core_h_spin_basis[k, l]
+
+                        common_bits = np.where(np.logical_and(det_i, det_j))[0]
+                        for i in common_bits:
+                            mat_element += (self.eri_spin_basis[k, i, l, i]
+                                            - self.eri_spin_basis[k, i, i, l])
+
+                        sign = get_sign(det_i, det_j, bit_diff)
+
+                    elif n_diff == 4:
+                        ij = np.logical_and(det_i, bit_diff).nonzero()[0]
+                        kl = np.logical_and(det_j, bit_diff).nonzero()[0]
+                        i, j = ij[0], ij[1]
+                        k, l = kl[0], kl[1]
+                        mat_element += (self.eri_spin_basis[i, j, k, l] - self.eri_spin_basis[i, j, l, k])
+                        sign = get_sign(det_i, det_j, bit_diff)
+
+                    data.append(float(mat_element * sign))
+                    row.append(index_i)
+                    col.append(index_j)
+
+        H_ci = csr_matrix((data, (row, col)), shape=(2 ** (self.n_qubits), 2 ** (self.n_qubits)))
+        #
+        return H_ci
+
+
+def sort_det(array):
+    """
+    sort list of numbers counting number of swaps (bubble sort)
+    """
+
+    arr = np.asarray(array)
+    n_sites = arr.shape[0]
+    sign_dict = {0: +1, 1: -1}
+    # Traverse through all array elements
+    swap_counter = 0
+    for i in range(n_sites):
+        swapped = False
+        for j in range(0, n_sites - i - 1):
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+                swapped = True
+                swap_counter += 1
+
+        if swapped == False:
+            break
+
+    #     return np.abs(arr.tolist()), sign_dict[swap_counter%2]
+    return sign_dict[swap_counter % 2]
+
+
+def get_sign(i_det, j_det, bit_differ):
+    # first put unique part to start of list (count if swap needed!)
+    # then order RHS that contains common elements!
+
+    nonzero_i = i_det.nonzero()[0]
+    nonzero_j = j_det.nonzero()[0]
+
+    unique = bit_differ.nonzero()[0]
+    i_unique = np.intersect1d(nonzero_i, unique)
+    j_unique = np.intersect1d(nonzero_j, unique)
+
+    count_i = 0
+    count_j = 0
+    for ind, unique_i in enumerate(i_unique):
+        swap_ind_i = np.where(unique_i == nonzero_i)[0]
+
+        unique_j = j_unique[ind]
+        swap_ind_j = np.where(unique_j == nonzero_j)[0]
+
+        # swap
+        if ind != swap_ind_i:
+            count_i += 1
+            nonzero_i[ind], nonzero_i[swap_ind_i] = nonzero_i[swap_ind_i], nonzero_i[ind]
+        if ind != swap_ind_j:
+            count_j += 1
+            nonzero_j[ind], nonzero_j[swap_ind_j] = nonzero_j[swap_ind_j], nonzero_j[ind]
+
+    sign_i = sort_det(nonzero_i[len(i_unique):])
+    sign_j = sort_det(nonzero_j[len(j_unique):])
+    return sign_i * sign_j * (-1) ** (count_i + count_j)
 
 
 def get_T2_mp2(pyscf_mp2_t2_amps) -> FermionOperator:
