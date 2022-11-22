@@ -293,7 +293,7 @@ class FermionicHamiltonian:
     def get_cisd_fermionic(self):
         """
 
-        Note does NOT INCLUDE NUCLEAR ENERGY
+        Note does NOT INCLUDE NUCLEAR ENERGY (maybe add constant to diagonal elements in for loop)
 
         See page 6 of https://iopscience.iop.org/article/10.1088/2058-9565/aa9463/pdf
         for how to determine matrix element of FCI H given particular Slater determinants
