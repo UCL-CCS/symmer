@@ -14,19 +14,30 @@ class ContextualSubspace(S3_projection):
             noncontextual_strategy: str = 'diag',
             unitary_partitioning_method: str = 'LCU',
             reference_state: np.array = None,
-            noncontextual_operator: NoncontextualOp = None
+            noncontextual_operator: NoncontextualOp = None,
         ):
         """
         """
+        # noncontextual startegy will have the form x_y, where x is the actual strategy
+        # and y is some supplementary method indicating a sorting key such as magnitude
+        extract_noncon_strat = noncontextual_strategy.split('_')
+        self.nc_strategy = extract_noncon_strat[0]
+        if self.nc_strategy=='StabilizeFirst':
+            self.stabilize_first_method = extract_noncon_strat[1]
+
+        # With the exception of the StabilizeFirst noncontextual strategy, here we build
+        # the noncontextual Hamiltonian in line with the specified strategy
         self.operator = operator
-        if noncontextual_operator is None:
+        if noncontextual_operator is None and self.nc_strategy != 'StabilizeFirst':
             self.noncontextual_operator = NoncontextualOp.from_hamiltonian(
                 operator, strategy=noncontextual_strategy
             )
+            self.contextual_operator = self.noncontextual_operator - self.operator
+            self.noncontextual_operator.solve(strategy='brute_force', ref_state=reference_state)
+            self.n_cliques = self.noncontextual_operator.n_cliques
         else:
             self.noncontextual_operator = noncontextual_operator
-        self.noncontextual_operator.solve(strategy='brute_force', ref_state=reference_state)
-        self.contextual_operator = self.noncontextual_operator - self.operator
+            
         self.unitary_partitioning_method = unitary_partitioning_method
     
     def manual_stabilizers(self, S: Union[List[str], StabilizerOp]) -> None:
@@ -42,6 +53,8 @@ class ContextualSubspace(S3_projection):
             strategy: str = 'aux_preserving',
             aux_operator: PauliwordOp = None,
             depth: int = 2,
+            n_cliques: int = 2,
+            n_stabilizers_in_clique: int = 1,
             HF_array: np.array = None
         ) -> None:
         """ Update the stabilizers that will be used for the subspace projection
@@ -49,6 +62,11 @@ class ContextualSubspace(S3_projection):
         assert(n_qubits<=self.operator.n_qubits), (
             'Cannot define a contextual subspace larger than the base Hamiltonian'
         )
+        # will ensure one too few stabilizers will be selected, with the 
+        # additional one identified via the following clique expansion step
+        if self.nc_strategy=='StabilizeFirst':
+            if self.stabilize_first_method=='magnitude':
+                n_qubits += 1
 
         if strategy == 'aux_preserving':
             S = self._aux_operator_preserving_stabilizer_search(
@@ -71,6 +89,37 @@ class ContextualSubspace(S3_projection):
 
         self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
         self.stabilizers = S
+
+        # the StabilizeFirst strategy differs from the others in that the noncontextual
+        # Hamiltonian is constructed AFTER selecting stabilizers, which is what we do next:
+        if self.nc_strategy == 'StabilizeFirst':
+            if self.stabilize_first_method == 'commuting':
+                assert n_stabilizers_in_clique < self.stabilizers.n_terms, 'At least one stabilizer must be assigned to the symmetry generating set.'
+                # move stabilizers into a clique by increasing commutativity with full Hamiltonian
+                stabilizer_commutativity_count = np.count_nonzero(
+                    self.stabilizers.commutes_termwise(self.operator), axis=1
+                )
+                order_by_commutativity = np.argsort(stabilizer_commutativity_count)
+                force_clique_rep = self.stabilizers[order_by_commutativity][:n_stabilizers_in_clique]
+                force_symmetries = self.stabilizers[order_by_commutativity][1+n_stabilizers_in_clique:]
+                sum_clique_reps = self._get_clique_representatives(
+                    symmetry_terms=force_symmetries, n_cliques=n_cliques, clique_reps=[force_clique_rep]
+                )
+            elif self.stabilize_first_method == 'magnitude':
+                # find list of anticommuting operators that commute with the stabilizers, selected by coefficient magnitude
+                sum_clique_reps = self._get_clique_representatives(n_cliques=n_cliques, clique_reps=[])
+                # choose the dominant term to be enforced in noncontextual solution
+                extra_stabilizer = sum_clique_reps.sort(by='magnitude')[0]
+                extra_stabilizer.coeff_vec[0]=1
+                self.stabilizers += extra_stabilizer
+
+            # find symmetry generators given a sum of anticommuting operators
+            symgen = StabilizerOp.symmetry_basis(sum_clique_reps+self.stabilizers)
+            # this forms a noncontextual generating set under the Jordan product
+            noncon_basis = symgen*1 + sum_clique_reps
+            self.noncontextual_operator = NoncontextualOp.from_hamiltonian(strategy='basis', H=self.operator, basis=noncon_basis)
+            # finally, solve the noncontextual optimization problem
+            self.noncontextual_operator.solve(strategy='brute_force')
 
     def _greedy_stabilizer_search(self,
             n_qubits: int, 
@@ -104,7 +153,7 @@ class ContextualSubspace(S3_projection):
         assert(HF_array is not None), 'Must supply the Hartree-Fock state for this strategy'
         
         OB = ObservableBiasing(
-            base_operator=self.contextual_operator, 
+            base_operator=self.operator, 
             HOMO_LUMO_gap=np.where(HF_array==0)[0][0]-.5 # currently assumes JW mapping!
         )
         S = stabilizer_walk(
@@ -135,6 +184,31 @@ class ContextualSubspace(S3_projection):
                 pass
         
         return S
+
+    def _get_clique_representatives(self, symmetry_terms=None, n_cliques=2, clique_reps = []):
+        """"
+        """
+        assert n_cliques > 1, 'Must specify more than one clique.'
+        if symmetry_terms is None:
+            symmetry_terms = self.stabilizers
+        non_identity = self.operator[np.any(self.operator.symp_matrix, axis=1)]
+        commutes_with_stabilizers_mask = np.all(symmetry_terms.commutes_termwise(non_identity), axis=0)
+        non_symmetry_mask = ~non_identity.basis_reconstruction(symmetry_terms)[1]
+        valid_terms = non_identity[non_symmetry_mask & commutes_with_stabilizers_mask]
+        if clique_reps != []:
+            clique_elements = sum(clique_reps, PauliwordOp.empty(self.operator.n_qubits))
+            anticom_with_existing_clique_reps_mask = (
+                ~np.any(clique_elements.commutes_termwise(valid_terms), axis=0)
+            )
+            valid_terms = valid_terms[anticom_with_existing_clique_reps_mask]
+        
+        if len(clique_reps)==n_cliques:
+            return sum(clique_reps)
+        elif valid_terms.n_terms == 0:
+            raise ValueError(f'Cannot identify {n_cliques} cliques, try lowering n_cliques.')
+        else:
+            clique_reps.append(valid_terms.sort()[0])
+            return self._get_clique_representatives(symmetry_terms, n_cliques, clique_reps)
 
     def _prepare_stabilizers(self):
         """

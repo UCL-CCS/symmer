@@ -2,6 +2,7 @@ import numpy as np
 from time import time
 from functools import reduce
 from cached_property import cached_property
+from deco import concurrent, synchronized
 from scipy.optimize import differential_evolution, shgo
 from symmer.symplectic import PauliwordOp, StabilizerOp, AntiCommutingOp
 from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
@@ -35,9 +36,16 @@ class NoncontextualOp(PauliwordOp):
         return noncontextual_operator
 
     @classmethod
-    def from_hamiltonian(cls, H, strategy='diag', DFS_runtime=10):
+    def from_hamiltonian(cls, 
+            H: PauliwordOp, 
+            strategy: str = 'diag', 
+            basis: PauliwordOp = None, 
+            DFS_runtime: int = 10
+        ) -> "NoncontextualOp":
         if strategy == 'diag':
             return cls._diag_noncontextual_op(H)
+        elif strategy == 'basis':
+            return cls._from_basis_noncontextual_op(H, basis)
         elif strategy.find('DFS') != -1:
             _, strategy = strategy.split('_')
             return cls._dfs_noncontextual_op(H, strategy=strategy, runtime=DFS_runtime)
@@ -48,7 +56,7 @@ class NoncontextualOp(PauliwordOp):
             raise ValueError(f'Unrecognised noncontextual operator strategy {strategy}')
 
     @classmethod
-    def _diag_noncontextual_op(cls, H):
+    def _diag_noncontextual_op(cls, H: PauliwordOp):
         """
         """
         mask_diag = np.where(~np.any(H.X_block, axis=1))
@@ -136,6 +144,21 @@ class NoncontextualOp(PauliwordOp):
                 noncontextual_operator += op
         
         return cls.from_PauliwordOp(noncontextual_operator)
+
+    @classmethod
+    def _from_basis_noncontextual_op(cls, H: PauliwordOp, basis: PauliwordOp):
+        """ Construct a noncontextual operator given a noncontextual basis.
+        """
+        assert basis is not None, 'Must specify a noncontextual basis.'
+        assert basis.is_noncontextual, 'Basis is contextual.'
+        
+        symmetry_mask = np.all(basis.adjacency_matrix, axis=1)
+        S = basis[symmetry_mask]
+        aug_basis_reconstruction_masks = [
+            H.basis_reconstruction(S+c)[1]  for c in basis[~symmetry_mask]
+        ]
+        noncontextual_terms_mask = np.any(np.array(aug_basis_reconstruction_masks), axis=0)
+        return cls.from_PauliwordOp(H[noncontextual_terms_mask])
 
     def noncontextual_basis(self) -> StabilizerOp:
         """ Find an independent basis for the noncontextual symmetry
@@ -280,15 +303,29 @@ class NoncontextualOp(PauliwordOp):
         return energy, fix_nu, r_optimal
 
     def _energy_via_brute_force(self):
-        # optimize over all discrete value assignments of nu
-        tracker = []
-        for nu in itertools.product([-1,1],repeat=self.symmetry_generators.n_terms):
-            energy, r = self._convex_problem(np.array(nu))
-            tracker.append((energy, r, np.array(nu)))
-        energy, r_optimal, fix_nu = min(tracker, key=lambda x:x[0])
+
+        global _func # so concurrent object is avialable in synchronized routine
+
+        # wrap the convex optimization problem for compatibility with deco
+        @concurrent
+        def _func(obj, nu):
+            return obj._convex_problem(nu)
+
+        @synchronized
+        def func(self):
+            # optimize over all discrete value assignments of nu in parallel
+            tracker = []
+            nu_list = list(itertools.product([-1,1],repeat=self.symmetry_generators.n_terms))
+            for nu in nu_list:
+                tracker.append(_func(self, np.array(nu)))
+            return zip(tracker, nu_list)
+        
+        full_search_results = func(self)
+        (energy, r_optimal), fix_nu = min(full_search_results, key=lambda x:x[0][0])
+        
         return energy, fix_nu, r_optimal
 
-    def solve(self, strategy='binary_relaxation', ref_state: np.array = None) -> None:
+    def solve(self, strategy='brute_force', ref_state: np.array = None) -> None:
         """ Minimize the classical objective function, yielding the noncontextual ground state
         """
         if ref_state is not None:
