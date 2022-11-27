@@ -89,3 +89,43 @@ def tensor_list(factor_list:List[PauliwordOp]) -> PauliwordOp:
     """ Given a list of PauliwordOps, recursively tensor from the right
     """
     return reduce(lambda x,y:x.tensor(y), factor_list)
+
+
+def gram_schmidt_from_quantum_state(state) ->np.array:
+    """
+    build a unitary to build a quantum state from the zero state (aka state defines first column of unitary)
+    uses gram schmidt to find other (orthogonal) columns of matrix
+
+    Args:
+        state (np.array): 1D array of quantum state (size 2^N qubits)
+    Returns:
+        M (np.array): unitary matrix preparing input state from zero state
+    """
+    state = np.asarray(state).reshape([-1])
+
+    N_qubits = round(np.log2(state.shape[0]))
+
+    missing_amps = 2**N_qubits - state.shape[0]
+    state = np.hstack((state, np.zeros(missing_amps, dtype=complex)))
+
+    assert len(state) == 2**N_qubits, 'state is not defined on power of two'
+    assert np.isclose(np.linalg.norm(state), 1), 'state is not normalized'
+
+    M = np.eye(2**N_qubits, dtype=complex)
+
+    # reorder if state has 0 amp on zero index
+    if np.isclose(state[0], 0):
+        max_amp_ind = np.argmax(state)
+        M[:, [0, max_amp_ind]] = M[:, [max_amp_ind,0]]
+
+    # defines first column
+    M[:, 0] = state
+    for a in range(M.shape[0]):
+        for b in range(a):
+            M[:, a]-= (M[:, b].conj().T @ M[:, a]) * M[:, b]
+
+        # normalize
+        M[:, a] = M[:, a] / np.linalg.norm( M[:, a])
+
+    return M
+    
