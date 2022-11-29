@@ -10,6 +10,7 @@ from openfermion.chem.molecular_data import spinorb_from_spatial
 from openfermion.ops.representations import get_active_space_integrals
 from pyscf import ao2mo, gto, scf, mp, ci, cc, fci
 from pyscf.lib import StreamObject
+from symmer.chemistry.utils import get_excitations
 from pyscf.cc.addons import spatial2spin
 import warnings
 
@@ -228,7 +229,7 @@ class FermionicHamiltonian:
 
         """
         #TODO fix bg
-        warnings.warn('currently note woring as well as taking t2 amps from pyscf object')
+        warnings.warn('currently note working as well as taking t2 amps from pyscf object')
 
         # phys order
         e_orbs_occ = np.diag(self.fock_spin_mo_basis)[:self.n_electrons]
@@ -290,7 +291,7 @@ class FermionicHamiltonian:
             raise ValueError('need to build operator first')
         return get_sparse_operator(self.fermionic_molecular_hamiltonian)
 
-    def get_cisd_fermionic(self):
+    def get_ci_fermionic(self, method:str='CISD',S:int=0):
         """
 
         Note does NOT INCLUDE NUCLEAR ENERGY (maybe add constant to diagonal elements in for loop)
@@ -298,34 +299,36 @@ class FermionicHamiltonian:
         See page 6 of https://iopscience.iop.org/article/10.1088/2058-9565/aa9463/pdf
         for how to determine matrix element of FCI H given particular Slater determinants
 
+        # TODO can add higher order excitations to get_excitations function for higher order excitations
+
+        Args:
+            method (str): CIS, CID, CISD
+            S (int): The S in multiplicity (2S+1)
         """
-        double_dets = []
-        double_excitations = []
-        single_dets = []
-        single_excitations = []
-        for i in range(self.n_electrons):
-            for a in range(self.n_electrons, self.n_qubits):
-                single_excitations.append((i, a))
 
-                det = self.hf_fermionic_basis_state.copy()
-                det[[i, a]] = det[[a, i]]
-                single_dets.append(det)
-                for j in range(i + 1, self.n_electrons):
-                    for b in range(a + 1, self.n_qubits):
-                        double_excitations.append((i, j, a, b))
-
-                        det = self.hf_fermionic_basis_state.copy()
-                        det[[i, a]] = det[[a, i]]
-                        det[[j, b]] = det[[b, j]]
-                        double_dets.append(det)
-
-        allowed_dets = [self.hf_fermionic_basis_state, *single_dets, *double_dets]
+        if method == 'CISD':
+            HF, singles, doubles = get_excitations(self.hf_fermionic_basis_state,
+                                                   self.n_qubits, S=S, excitations='sd')
+            det_list = [HF, *singles, *doubles]
+        elif method == 'CIS':
+            # does NOT include HF array
+            # det_list = self._gen_single_excitations_singlet()
+            HF, singles, doubles = get_excitations(self.hf_fermionic_basis_state,
+                                                   self.n_qubits, S=S, excitations='s')
+            det_list = [HF, *singles]
+        elif method == 'CID':
+            # include HF array
+            HF, singles, doubles = get_excitations(self.hf_fermionic_basis_state,
+                                                   self.n_qubits, S=S, excitations='d')
+            det_list = [HF, *doubles]
+        else:
+            raise ValueError(f'unknown / not implemented CI method: {method}')
 
         data = []
         row = []
         col = []
-        for det_i in allowed_dets:
-            for det_j in allowed_dets:
+        for det_i in det_list:
+            for det_j in det_list:
 
                 bit_diff = np.logical_xor(det_i, det_j)
                 n_diff = int(sum(bit_diff))
@@ -374,8 +377,8 @@ class FermionicHamiltonian:
                     row.append(index_i)
                     col.append(index_j)
 
+        # TODO: build smaller FCI matrix (aka on subspace of allowed determinants rather than 2^n by 2^n !!!
         H_ci = csr_matrix((data, (row, col)), shape=(2 ** (self.n_qubits), 2 ** (self.n_qubits)))
-        #
         return H_ci
 
 

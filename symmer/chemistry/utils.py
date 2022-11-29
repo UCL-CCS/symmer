@@ -316,4 +316,109 @@ def get_parity_operators_BK(n_qubits):
     full_parity_op = PauliwordOp.from_list([full_parity_str])
     spin_down_parity_op = full_parity_op * spin_up_parity_op
 
-    return spin_up_parity_op, spin_down_parity_op 
+    return spin_up_parity_op, spin_down_parity_op
+
+
+def get_excitations(hf_fermionic_arr: np.array, n_spin_orbs: int, excitations:str='sd', S:int=0):
+    """
+    Build single and or doulbe excitations from HF state
+    assumes alpha,beta,alpha,beta ordering
+    Args:
+        hf_fermionic_arr (np.array): fermionic Hartree-Fock array
+        n_spin_orbs (int): number of spin orbitals
+        excitations (str): type of allowed excitation
+        S (int): value in multiplicity (aka 2S+1)
+    """
+    assert excitations in ['s', 'd', 'sd'], 'can only do singles, doubles or single_and_doubles excitations'
+
+    hf_fermionic_arr = np.asarray(hf_fermionic_arr)
+    n_electrons = int(np.sum(hf_fermionic_arr))
+
+    ## spin on each site
+    # alpha_beta_Sz_vals = np.ones(n_spin_orbs) * 0.5
+    # alpha_beta_Sz_vals[1::2] *= -1
+
+    allowed_multi = np.arange(-1 * S, S + 1, 1)
+    assert len(allowed_multi) == 2 * S + 1, f'multiplicity not correct: {len(allowed_multi)}!= {2 * S + 1}'
+
+    single_slater_excitations = []
+    if excitations in ['s', 'sd']:
+        for i in range(n_electrons):
+            for a in range(n_electrons, n_spin_orbs):
+                # singles.append([i,a])
+                det = hf_fermionic_arr.copy()
+                det[[i, a]] = det[[a, i]]
+
+                # check singlet, doublet,... etc
+                S = 0.5 * (np.sum(det[0::2]) - np.sum(det[1::2]))
+                if S in allowed_multi:
+                    single_slater_excitations.append(det)
+
+    double_slater_excitations = []
+    if excitations in ['d', 'sd']:
+        for i in range(n_electrons - 1):
+            for j in range(i + 1, n_electrons):
+                for a in range(n_electrons, n_spin_orbs - 1):
+                    for b in range(a + 1, n_spin_orbs):
+                        # double_excitations.append((i, j, a, b))
+                        det = hf_fermionic_arr.copy()
+                        det[[i, a]] = det[[a, i]]
+                        det[[j, b]] = det[[b, j]]
+                        # check singlet, doublet,... etc
+                        S = 0.5 * (np.sum(det[0::2]) - np.sum(det[1::2]))
+                        if S in allowed_multi:
+                            double_slater_excitations.append(det)
+
+    return hf_fermionic_arr, single_slater_excitations, double_slater_excitations
+
+# def get_excitations(hf_fermionic_arr, n_spin_orbs, Sz_diff=0, excitations='sd', S=0):
+#     """
+#     Build single and or doulbe excitations from HF state
+#
+#     assumes alpha,beta,alpha,beta ordering
+#
+#     """
+#     assert excitations in ['s','d', 'sd'], 'can only do singles, doubles or single_and_doubles excitations'
+#
+#     hf_fermionic_arr = np.asarray(hf_fermionic_arr)
+#     n_electrons = int(np.sum(hf_fermionic_arr))
+#     # spin on each site
+#     alpha_beta_Sz_vals = np.ones(n_spin_orbs) * 0.5
+#     alpha_beta_Sz_vals[1::2] *= -1
+#
+#     allowed_multi = np.linspace(-1*S, S, 1)
+#     assert len(allowed_multi) == 2*S+1, 'multiplicity not correct'
+#
+#     single_slater_excitations = []
+#     if excitations in ['s', 'sd']:
+#         for i in range(n_electrons):
+#             for a in range(n_electrons, n_spin_orbs):
+#                 if alpha_beta_Sz_vals[a] - alpha_beta_Sz_vals[i] == Sz_diff:
+#                     # singles.append([i,a])
+#                     det = hf_fermionic_arr.copy()
+#                     det[[i, a]] = det[[a, i]]
+#
+#                     # check singlet, doublet,... etc
+#                     S = 0.5*(np.sum(det[0::2]) - np.sum(det[1::2]))
+#                     if S in allowed_multi:
+#                         single_slater_excitations.append(det)
+#
+#     double_slater_excitations = []
+#     if excitations in ['d', 'sd']:
+#         for i in range(n_electrons-1):
+#             for j in range(i+1, n_electrons):
+#                 for a in range(n_electrons, n_spin_orbs-1):
+#                     for b in range(a+1, n_spin_orbs):
+#                         if ((alpha_beta_Sz_vals[a] + alpha_beta_Sz_vals[b] -
+#                             alpha_beta_Sz_vals[i] + alpha_beta_Sz_vals[j]) == Sz_diff):
+#                             # double_excitations.append((i, j, a, b))
+#                             det = hf_fermionic_arr.copy()
+#                             det[[i, a]] = det[[a, i]]
+#                             det[[j, b]] = det[[b, j]]
+#                             # check singlet, doublet,... etc
+#                             S = 0.5 * (np.sum(det[0::2]) - np.sum(det[1::2]))
+#                             if S in allowed_multi:
+#                                 double_slater_excitations.append(det)
+#
+#
+#     return hf_fermionic_arr, single_slater_excitations, double_slater_excitations
