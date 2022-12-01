@@ -1,16 +1,10 @@
 from typing import Optional, Union, List
-from pathlib import Path
-import os
 from scipy.sparse import csr_matrix
 import numpy as np
 from cached_property import cached_property
-from openfermion import InteractionOperator, get_sparse_operator, FermionOperator, count_qubits
-from openfermion.chem.molecular_data import spinorb_from_spatial
-from openfermion.ops.representations import get_active_space_integrals
-from pyscf import ao2mo, gto, scf, mp, ci, cc, fci
-from pyscf.lib import StreamObject
-from pyscf.cc.addons import spatial2spin
+from openfermion import get_sparse_operator, FermionOperator, count_qubits
 import warnings
+from symmer.chemistry.fermionic_ham import get_sign
 
 
 class ClosedShellChemistry:
@@ -136,10 +130,10 @@ class ClosedShellChemistry:
                             ## pg 82 Szabo
                             #  up up down down (chemist notation)
                             ERI_MO_basis_spin_chemist[2*p,2*q,
-                                              2*r+1,2*s+1] = AO_term[p,q,r,s]
+                                              2*r+1,2*s+1] = AO_term
                             # down, down, up, up  (chemist notation)
                             ERI_MO_basis_spin_chemist[2*p+1,2*q+1,
-                                                      2*r,2*s] = AO_term[p,q,r,s]
+                                                      2*r,2*s] = AO_term
         return ERI_MO_basis_spin_chemist
 
     @cached_property
@@ -148,13 +142,11 @@ class ClosedShellChemistry:
                                                                    zero_threshold=zero_threshold)
         return ERI_MO_basis_spin_chemist
 
-
     @cached_property
     def phys_eri_spin_MO(self, zero_threshold=1e-12):
         n_spatial_orbs = self.phys_eri_spatial_MO.shape[0]
         n_spin_orbs = 2 * n_spatial_orbs
         ERI_mo_basis_spin_phys = np.zeros((n_spin_orbs, n_spin_orbs, n_spin_orbs, n_spin_orbs))
-
 
         for p in range(n_spatial_orbs):
             for q in range(n_spatial_orbs):
@@ -178,7 +170,6 @@ class ClosedShellChemistry:
                                               2 * r + 1, 2 * s] = AO_term
 
         return ERI_mo_basis_spin_phys
-
 
     def active_space(self,
                       active_spatial_MOs_inds,
@@ -243,7 +234,6 @@ class ClosedShellChemistry:
 
         return FOCK
 
-
     def get_perturbation_correlation_potential(self):
         """
         V = H_full - H_Hartree-Fock
@@ -264,7 +254,6 @@ class ClosedShellChemistry:
         V_fermionic_mat = (get_sparse_operator(self.fermionic_molecular_hamiltonian, n_qubits=n_qu) -
                            get_sparse_operator(self.fermionic_fock_operator, n_qubits=n_qu))
         return V_fermionic_mat
-
 
     def build_fermionic_hamiltonian_operator(self, spatial_occupied_inds=None, active_spatial_MOs_inds=None) -> None:
         """Build fermionic Hamiltonian"""
@@ -298,7 +287,6 @@ class ClosedShellChemistry:
 
         return fermionic_molecular_hamiltonian
 
-
     @cached_property
     def fock_spin_mo_basis(self):
 
@@ -311,7 +299,6 @@ class ClosedShellChemistry:
 
         Fock_spin_mo = self.hcore_spin_MO + (pm_qm - pm_mq)
         return Fock_spin_mo
-
 
     def manual_T2_mp2(self) -> FermionOperator:
         """
@@ -359,7 +346,6 @@ class ClosedShellChemistry:
 
         return T2_phys
 
-
     @cached_property
     def hf_fermionic_basis_state(self):
         hf_array = np.zeros(self.n_qubits)
@@ -368,14 +354,12 @@ class ClosedShellChemistry:
 
         return hf_array.astype(int)
 
-
     @cached_property
     def hf_ket(self):
         binary_int_list = 1 << np.arange(self.n_qubits)[::-1]
         hf_ket = np.zeros(2 ** self.n_qubits, dtype=int)
         hf_ket[self.hf_fermionic_basis_state @ binary_int_list] = 1
         return hf_ket
-
 
     def mp2_ket(self, pyscf_mp2_t2_amps):
         T2_mp2_mat = get_sparse_operator(self.get_T2_mp2(pyscf_mp2_t2_amps), n_qubits=self.n_qubits)
@@ -475,7 +459,6 @@ class ClosedShellChemistry:
         #
         return H_ci
 
-
 class OpenShellChemistry:
     """Class to build Fermionic molecular hamiltonians.
 
@@ -515,15 +498,16 @@ class OpenShellChemistry:
 
 
 class FermionicOp:
-    """Class to build Fermionic molecular hamiltonians.
+    """
+    TODO: build class that holds all operator info
 
-      Holds fermionic operators + integrals
-      coefficients assume a particular convention which depends on how integrals are labeled:
-      h[p,q]=\int \phi_p(x)* (T + V_{ext}) \phi_q(x) dx
-      h[p,q,r,s]=\int \phi_p(x)* \phi_q(y)* V_{elec-elec} \phi_r(y) \phi_s(x) dxdy
-      In this labelling convention, the molecular Hamiltonian becomes:
-      H =\sum_{p,q} h[p,q] a_p^\dagger a_q
-        + 0.5 * \sum_{p,q,r,s} h[p,q,r,s] a_p^\dagger a_q^\dagger a_r a_s
+    .number_op
+    .spinz_op
+    .spin2_op
+    .second_quant_H_op
+    .MP2_ansatz_op
+    .CCSD_ansatz_op
+    ...etc...
 
     """
 
