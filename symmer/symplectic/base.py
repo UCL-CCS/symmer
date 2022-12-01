@@ -752,6 +752,17 @@ class PauliwordOp:
             op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle).cleanup()
         return op_copy
 
+    def tensor(self, right_op: "PauliwordOp") -> "PauliwordOp":
+        """ Tensor current Pauli operator with another on the right (cannot interlace currently)
+        """
+        identity_block_right = np.zeros([right_op.n_terms, self.n_qubits]).astype(int)
+        identity_block_left  = np.zeros([self.n_terms,  right_op.n_qubits]).astype(int)
+        padded_left_symp = np.hstack([self.X_block, identity_block_left, self.Z_block, identity_block_left])
+        padded_right_symp = np.hstack([identity_block_right, right_op.X_block, identity_block_right, right_op.Z_block])
+        left_factor = PauliwordOp(padded_left_symp, self.coeff_vec)
+        right_factor = PauliwordOp(padded_right_symp, right_op.coeff_vec)
+        return left_factor * right_factor
+
     def get_graph(self, 
             edge_relation = 'C'
         ) -> nx.graph:
@@ -1060,7 +1071,7 @@ class QuantumState:
     @classmethod
     def haar_random(cls,
                     n_qubits: int,
-                    vec_type: str) -> "QuantumState":
+                    vec_type: str='ket') -> "QuantumState":
         """
         Generate a Haar random quantum state - (uniform random quantum state).
 
@@ -1081,10 +1092,24 @@ class QuantumState:
 
         qstate_random = cls.from_array(haar_vec)
         return qstate_random
+    
+    @classmethod
+    def random_state(cls, num_qubits: int, num_terms: int, vec_type: str='ket') -> "QuantumState":
+        """ Generates a random normalized QuantumState, but not from Haar distribution
+        """
+        # random binary array with N columns, M rows
+        random_state = np.random.randint(0,2,(num_terms,num_qubits))
+        # random vector of coefficients
+        coeff_vec = (
+            np.random.rand(num_terms) + 
+            np.random.rand(num_terms)*1j
+        )
+        return QuantumState(random_state, coeff_vec, vec_type=vec_type).normalize
+    
     @classmethod
     def zero_state(cls,
                     n_qubits: int,
-                    vec_type: str) -> "QuantumState":
+                    vec_type: str='ket') -> "QuantumState":
         """
         Generate the all zero state on N qubits
 
@@ -1428,15 +1453,24 @@ class QuantumState:
         Qstate = cls(state_matrix, coeff_vector, vec_type=vec_type)
         return Qstate
 
-    def plot_state(self, logscale:bool = False):
+    def plot_state(self, 
+            logscale:bool = False, 
+            probability_threshold:float=None,
+            dpi:int=100
+        ):
 
         assert self._is_normalized(), 'should only plot normalized quantum states'
 
         # clean duplicate states and set amplitdue threshold
-        q_state = self.cleanup()
+        if probability_threshold is not None:
+            assert probability_threshold>=0 and probability_threshold<=1, 'Probability threshold is a number between 0 and 1.'
+            zero_threshold = np.sqrt(probability_threshold)
+        else:
+            zero_threshold = None
+        q_state = self.cleanup(zero_threshold=zero_threshold)
         prob = np.abs(q_state.state_op.coeff_vec) ** 2
 
-        fig, ax = plt.subplots(1, 1)
+        fig, ax = plt.subplots(1, 1, dpi=dpi)
 
         if q_state.state_op.n_qubits<64:
             x_binary_ints = q_state.state_matrix @ (1 << np.arange(q_state.state_matrix.shape[1])[::-1])
@@ -1446,6 +1480,7 @@ class QuantumState:
         if prob.shape[0]<2**8:
             # bar chart
             ax.bar(x_binary_ints, prob, width=1, edgecolor="white", linewidth=0.8)
+            ax.set_xticks(x_binary_ints, labels=x_binary_ints.astype(str))
         else:
             # line plot
             sort_inds = np.argsort(x_binary_ints)
@@ -1453,7 +1488,7 @@ class QuantumState:
             y_data = prob[sort_inds]
             ax.plot(x_data, y_data)
         ax.set(xlabel='binary output', ylabel='probability amplitude')
-
+        
         if logscale:
             ax.set_yscale('log')
 
