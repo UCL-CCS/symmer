@@ -8,6 +8,7 @@ from symmer.chemistry.utils import (
 from pyscf.scf.addons import get_ghf_orbspin
 from openfermion import get_fermion_operator, jordan_wigner, FermionOperator
 from typing import Tuple, List
+import numpy as np
 
 def list_to_xyz(geometry: List[Tuple[str, Tuple[float, float, float]]]) -> str:
     """ Convert the geometry stored as a list to xyz string
@@ -32,6 +33,7 @@ class MoleculeBuilder:
         run_fci  = True,
         qubit_mapping_str = 'jordan_wigner',
         hf_method = 'RHF',
+        CI_ansatz = 'CISD',
         symmetry = False,
         print_info = True) -> None:
         """
@@ -49,6 +51,7 @@ class MoleculeBuilder:
         self.qubit_mapping_str = qubit_mapping_str
         self.symmetry = symmetry
         self.print_info = print_info
+        self.CI_ansatz = CI_ansatz
         self.calculate(
             run_mp2=run_mp2,run_cisd=run_cisd,run_ccsd=run_ccsd,run_fci=run_fci, 
             hf_method=hf_method)
@@ -81,7 +84,11 @@ class MoleculeBuilder:
 
         self.H = get_fermion_operator(self.H_fermion.fermionic_molecular_hamiltonian)
         self.T = self.T_fermion.fermionic_cc_operator
-
+        self.CI, self.total_CI_energy, self.psi_CI = self.H_fermion.get_fermionic_CI_ansatz(
+            S=spin/2, method=CI_ansatz
+        )
+        if run_cisd and self.CI_ansatz == 'CISD':
+                assert(np.isclose(self.total_CI_energy,self.cisd_energy)), 'Manual CISD calculation does not match PySCF'
         # map to QubitOperator via fermion -> qubit mapping and convert to PauliwordOp
         self.H_q = fermion_to_qubit_operator(self.H, self.qubit_mapping_str, N_qubits=self.n_qubits)
         if len(self.T.terms)==0:
@@ -89,6 +96,7 @@ class MoleculeBuilder:
         else:
             self.T_q = fermion_to_qubit_operator(self.T, self.qubit_mapping_str, N_qubits=self.n_qubits)
 
+        self.CI_q = fermion_to_qubit_operator(self.CI, self.qubit_mapping_str, N_qubits=self.n_qubits)
         self.UCC_q = self.T_q - self.T_q.dagger
         self.UCC_q.coeff_vec = self.UCC_q.coeff_vec.imag
         self.SOR_q = self.second_order_response()
@@ -263,6 +271,10 @@ class MoleculeBuilder:
             mol_data['calculated_properties']['CCSD'] = {
                 'energy':self.ccsd_energy, 'converged':bool(self.pyscf_obj.pyscf_ccsd.converged)}
             mol_data['auxiliary_operators']['UCCSD_operator'] = safe_PauliwordOp_to_dict(self.UCC_q)
+        if self.pyscf_obj.run_cisd:
+            mol_data['calculated_properties'][self.CI_ansatz] = {
+                'energy':self.total_CI_energy, 'converged':bool(self.pyscf_obj.pyscf_cisd.converged)}
+            mol_data['auxiliary_operators'][f'{self.CI_ansatz}_operator'] = safe_PauliwordOp_to_dict(self.CI_q)
         if self.pyscf_obj.run_fci:
             mol_data['calculated_properties']['FCI'] = {
                 'energy':self.fci_energy, 'converged':bool(self.pyscf_obj.pyscf_fci.converged)}        

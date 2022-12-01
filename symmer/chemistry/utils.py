@@ -362,7 +362,6 @@ def get_excitations(hf_fermionic_arr: np.array, n_spin_orbs: int, excitations:st
     if excitations in ['s', 'sd']:
         for i in range(n_electrons):
             for a in range(n_electrons, n_spin_orbs):
-                # singles.append([i,a])
                 det = hf_fermionic_arr.copy()
                 det[[i, a]] = det[[a, i]]
 
@@ -371,6 +370,7 @@ def get_excitations(hf_fermionic_arr: np.array, n_spin_orbs: int, excitations:st
                 S = 0.5 * (np.sum(det[0::2]) - np.sum(det[1::2]))
                 if S in allowed_multi:
                     single_slater_excitations.append(det)
+                    # singles.append([i,a])
 
     double_slater_excitations = []
     if excitations in ['d', 'sd']:
@@ -378,7 +378,6 @@ def get_excitations(hf_fermionic_arr: np.array, n_spin_orbs: int, excitations:st
             for j in range(i + 1, n_electrons):
                 for a in range(n_electrons, n_spin_orbs - 1):
                     for b in range(a + 1, n_spin_orbs):
-                        # double_excitations.append((i, j, a, b))
                         det = hf_fermionic_arr.copy()
                         det[[i, a]] = det[[a, i]]
                         det[[j, b]] = det[[b, j]]
@@ -386,5 +385,6 @@ def get_excitations(hf_fermionic_arr: np.array, n_spin_orbs: int, excitations:st
                         S = 0.5 * (np.sum(det[0::2]) - np.sum(det[1::2]))
                         if S in allowed_multi:
                             double_slater_excitations.append(det)
+                            # double_excitations.append((i, j, a, b))
 
     return hf_fermionic_arr, single_slater_excitations, double_slater_excitations

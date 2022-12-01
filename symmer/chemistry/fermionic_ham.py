@@ -11,6 +11,8 @@ from openfermion.ops.representations import get_active_space_integrals
 from pyscf import ao2mo, gto, scf, mp, ci, cc, fci
 from pyscf.lib import StreamObject
 from symmer.chemistry.utils import get_excitations
+from symmer.symplectic import QuantumState
+from symmer.utils import exact_gs_energy
 from pyscf.cc.addons import spatial2spin
 import warnings
 
@@ -296,7 +298,7 @@ class FermionicHamiltonian:
             raise ValueError('need to build operator first')
         return get_sparse_operator(self.fermionic_molecular_hamiltonian)
 
-    def get_ci_fermionic(self, method:str='CISD',S:int=0):
+    def get_ci_fermionic(self, method:str='CISD',S:float=0):
         """
 
         Note does NOT INCLUDE NUCLEAR ENERGY (maybe add constant to diagonal elements in for loop)
@@ -308,7 +310,7 @@ class FermionicHamiltonian:
 
         Args:
             method (str): CIS, CID, CISD
-            S (int): The S in multiplicity (2S+1)
+            S (float): The S in multiplicity (2S+1)
         """
 
         if method == 'CISD':
@@ -385,6 +387,44 @@ class FermionicHamiltonian:
         # TODO: build smaller FCI matrix (aka on subspace of allowed determinants rather than 2^n by 2^n !!!
         H_ci = csr_matrix((data, (row, col)), shape=(2 ** (self.n_qubits), 2 ** (self.n_qubits)))
         return H_ci
+
+    def get_fermionic_CI_ansatz(self, 
+            method:str='CISD',
+            S:float=0, 
+            zero_threshold:float=1e-10
+        ):
+        """
+        """
+        H_CI_matrix = self.get_ci_fermionic(S=S, method=method)
+        e_ci, psi_ci = exact_gs_energy(H_CI_matrix)
+        total_CI_energy = e_ci + self.scf_method.energy_nuc()
+
+        psi = QuantumState.from_array(psi_ci).cleanup(zero_threshold=zero_threshold).sort()
+
+        CI_ferm=FermionOperator()
+
+        for det, coeff in zip(psi.state_matrix, psi.state_op.coeff_vec):
+
+            bit_diff = np.logical_xor(self.hf_fermionic_basis_state, det)
+            indices = bit_diff.nonzero()[0]
+            
+            if len(indices)==0:
+                new_term = FermionOperator('', coeff)
+            elif len(indices)==2:
+                sign = get_sign(self.hf_fermionic_basis_state, det, bit_diff)
+                ferm_string = f'{indices[1]}^ {indices[0]}' 
+                new_term = FermionOperator(ferm_string, coeff*sign)
+            elif len(indices)==4:
+                sign = get_sign(self.hf_fermionic_basis_state, det, bit_diff)
+                ferm_string_1 = f'{indices[2]}^ {indices[3]}^ {indices[1]} {indices[0]}'
+                new_term = FermionOperator(ferm_string_1, coeff*sign)
+            else:
+                raise NotImplementedError('Excitations above doubles not currently implemented.')
+            # add extra elif statements for higher order excitations
+            
+            CI_ferm += new_term
+
+        return CI_ferm, total_CI_energy, psi
 
 
 def sort_det(array):
