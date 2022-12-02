@@ -9,7 +9,13 @@ from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
 import itertools
 
 class NoncontextualOp(PauliwordOp):
-    """
+    """ Class for representing noncontextual Hamiltonians
+
+    Noncontextual Hamiltonians are precisely those whose terms may be reconstructed 
+    under the Jordan product (AB = {A, B}/2) from a generating set of the form 
+    G ∪ {C_1, ..., C_M} where {C_i, C_j}=0 for i != j and G commutes universally.
+    Refer to https://arxiv.org/abs/1904.02260 for further details. 
+    
     """
     def __init__(self,
             symp_matrix,
@@ -27,7 +33,7 @@ class NoncontextualOp(PauliwordOp):
         
     @classmethod
     def from_PauliwordOp(cls, H):
-        """
+        """ for convenience, initialize from an existing PauliwordOp
         """
         noncontextual_operator = cls(
             H.symp_matrix,
@@ -42,6 +48,8 @@ class NoncontextualOp(PauliwordOp):
             basis: PauliwordOp = None, 
             DFS_runtime: int = 10
         ) -> "NoncontextualOp":
+        """ Given a PauliwordOp, extract from it a noncontextual sub-Hamiltonian by the specified strategy
+        """
         if strategy == 'diag':
             return cls._diag_noncontextual_op(H)
         elif strategy == 'basis':
@@ -57,7 +65,7 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _diag_noncontextual_op(cls, H: PauliwordOp):
-        """
+        """ Return the diagonal terms of the PauliwordOp - this is the simplest noncontextual operator
         """
         mask_diag = np.where(~np.any(H.X_block, axis=1))
         noncontextual_operator = cls(
@@ -106,7 +114,8 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _diag_first_noncontextual_op(cls, H: PauliwordOp):
-        """
+        """ Start from the diagonal noncontextual form and append additional off-diagonal
+        contributions with respect to their coefficient magnitude.
         """
         noncontextual_operator = cls._diag_noncontextual_op(H)
         # order the remaining terms by coefficient magnitude
@@ -120,7 +129,9 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _single_sweep_noncontextual_operator(cls, H, strategy='magnitude'):
-        """
+        """ Order the operator by some sorting key (magnitude, random or CurrentOrder)
+        and then sweep accross the terms, appending to a growing noncontextual operator
+        whenever possible.
         """
         noncontextual_operator = PauliwordOp.empty(H.n_qubits)
         
@@ -161,7 +172,8 @@ class NoncontextualOp(PauliwordOp):
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
 
     def noncontextual_basis(self) -> StabilizerOp:
-        """ Find an independent basis for the noncontextual symmetry
+        """ Find an independent *generating set* for the noncontextual symmetry
+        * technically not a basis!
         """
         self.decomposed = {}
         # identify a basis of universally commuting operators
@@ -282,7 +294,7 @@ class NoncontextualOp(PauliwordOp):
         return optimized_energy, r_optimal
 
     def _energy_via_ref_state(self, ref_state):
-        """
+        """ Given a reference state such as Hartree-Fock, fix the symmetry generator eigenvalues
         """
         # update the symmetry generator G coefficients w.r.t. the reference state
         self.symmetry_generators.update_sector(ref_state=ref_state)
@@ -291,7 +303,7 @@ class NoncontextualOp(PauliwordOp):
         return energy, fix_nu, r_optimal
 
     def _energy_via_relaxation(self):
-        """
+        """ Relax the binary value assignment of symmetry generators to continuous variables
         """
         # optimize discrete value assignments nu by relaxation to continuous variables
         nu_bounds = [(0, np.pi)]*self.symmetry_generators.n_terms
@@ -303,6 +315,10 @@ class NoncontextualOp(PauliwordOp):
         return energy, fix_nu, r_optimal
 
     def _energy_via_brute_force(self):
+        """ Does what is says on the tin! Try every single eigenvalue assignment in parallel
+        and return the minimizing noncontextual configuration. This scales exponentially in 
+        the number of qubits.
+        """
 
         global _func # so concurrent object is avialable in synchronized routine
 

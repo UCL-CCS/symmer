@@ -7,7 +7,21 @@ from symmer.projection import S3_projection
 from typing import List, Union
 
 class ContextualSubspace(S3_projection):
-    """
+    """ Class for performing contextual subspace methods as per https://quantum-journal.org/papers/q-2021-05-14-456/.
+    Reduces the number of qubits in the problem while aiming to control the systematic error incurred along the way.
+
+    This class handles the following:
+    1. Identify a set of operators one wishes to enforce as stabilizers over the contextual subspace,
+        one might think ofthese as 'pseudo-symmetries', as opposed to the true, physical symmetries of qubit tapering.
+    2. Construct a noncontextual Hamiltoinian that respects the stabilizers selecting in (1),
+        the NoncontextualOp class handles the decomposition into a generating set and classical optimization over the noncontextual objective function 
+    NOTE: the order in which (1) and (2) are performed depends on the noncontextual strategy specified
+    3. Apply unitary partitioning (either sequence of rotations or linear combination of unitaries) to collapse noncontextual cliques
+    
+    The remaining steps are handled by the parent S3_projection class:
+    4. rotate each stabilizer onto a single-qubit Pauli operator, 
+    5. drop the corresponding qubits from the Hamiltonian whilst
+    6. fixing the +/-1 eigenvalues
     """
     def __init__(self,
             operator: PauliwordOp,
@@ -41,7 +55,7 @@ class ContextualSubspace(S3_projection):
         self.unitary_partitioning_method = unitary_partitioning_method
     
     def manual_stabilizers(self, S: Union[List[str], StabilizerOp]) -> None:
-        """
+        """ Specify a set of operators to enforce manually
         """
         if isinstance(S, list):
             S = StabilizerOp.from_list(S)
@@ -133,7 +147,8 @@ class ContextualSubspace(S3_projection):
             n_qubits: int,
             aux_operator: PauliwordOp
         ) -> StabilizerOp:
-        """
+        """ Choose stabilizers that preserve some auxiliary operator.
+        This could be an Ansatz operator such as UCCSD, for example.
         """
         if aux_operator is None:
             aux_operator = self.contextual_operator
@@ -148,7 +163,8 @@ class ContextualSubspace(S3_projection):
             HF_array: np.array,
             weighting_operator: PauliwordOp = None
         ) -> StabilizerOp:
-        """
+        """ Bias the Hamiltonian with respect to the HOMO-LUMO gap 
+        and preserve terms in the resulting operator as above.
         """
         assert(HF_array is not None), 'Must supply the Hartree-Fock state for this strategy'
         
@@ -166,7 +182,7 @@ class ContextualSubspace(S3_projection):
     def _random_stabilizers(self, 
             n_qubits: int
         )  -> StabilizerOp:
-        """
+        """ Generate a random set of stabilizers
         """
         # TODO better approach that does not rely on this *potentially infinite* while loop!
         found_stabilizers=False
@@ -185,8 +201,14 @@ class ContextualSubspace(S3_projection):
         
         return S
 
-    def _get_clique_representatives(self, symmetry_terms=None, n_cliques=2, clique_reps = []):
-        """"
+    def _get_clique_representatives(self, 
+            symmetry_terms: StabilizerOp = None, 
+            n_cliques: int = 2, 
+            clique_reps: List[PauliwordOp] = []
+        ) -> PauliwordOp:
+        """" For use with the StabilizeFirst noncontextual strategy. Given a set of terms we wish
+        to ensure are symmetries and potentially some initial clique representatives, grow the clique_reps
+        until we achieve the desired number n_cliques.
         """
         assert n_cliques > 1, 'Must specify more than one clique.'
         if symmetry_terms is None:
@@ -210,8 +232,10 @@ class ContextualSubspace(S3_projection):
             clique_reps.append(valid_terms.sort()[0])
             return self._get_clique_representatives(symmetry_terms, n_cliques, clique_reps)
 
-    def _prepare_stabilizers(self):
-        """
+    def _prepare_stabilizers(self) -> None:
+        """ Prepare the chosen stabilizers for projection into the contextual subspace.
+        This includes eigenvalue assignment (obtained from the solution of the noncontextual Hamiltonian),
+        and application of unitary partitioning if enforcing a clique element.
         """
         if self.noncontextual_operator.n_cliques > 0:
             # mask stabilizers that lie within one of the noncontextual cliques
@@ -256,7 +280,7 @@ class ContextualSubspace(S3_projection):
             )
             self.perform_unitary_partitioning = False
 
-    def project_onto_subspace(self, operator_to_project=None) -> PauliwordOp:
+    def project_onto_subspace(self, operator_to_project:PauliwordOp=None) -> PauliwordOp:
         """ Projects with respect to the current stabilizers; these are 
         updated using the ContextualSubspace.update_stabilizers method.
         """
