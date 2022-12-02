@@ -158,7 +158,7 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _from_basis_noncontextual_op(cls, H: PauliwordOp, basis: PauliwordOp):
-        """ Construct a noncontextual operator given a noncontextual basis.
+        """ Construct a noncontextual operator given a noncontextual basis, via the Jordan product ( regular matrix product if the operators commute, and equal to zero if the operators anticommute.)
         """
         assert basis is not None, 'Must specify a noncontextual basis.'
         assert basis.is_noncontextual, 'Basis is contextual.'
