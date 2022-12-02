@@ -2,13 +2,20 @@ import numpy as np
 from time import time
 from functools import reduce
 from cached_property import cached_property
+from deco import concurrent, synchronized
 from scipy.optimize import differential_evolution, shgo
 from symmer.symplectic import PauliwordOp, StabilizerOp, AntiCommutingOp
 from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
 import itertools
 
 class NoncontextualOp(PauliwordOp):
-    """
+    """ Class for representing noncontextual Hamiltonians
+
+    Noncontextual Hamiltonians are precisely those whose terms may be reconstructed 
+    under the Jordan product (AB = {A, B}/2) from a generating set of the form 
+    G ∪ {C_1, ..., C_M} where {C_i, C_j}=0 for i != j and G commutes universally.
+    Refer to https://arxiv.org/abs/1904.02260 for further details. 
+    
     """
     def __init__(self,
             symp_matrix,
@@ -26,7 +33,7 @@ class NoncontextualOp(PauliwordOp):
         
     @classmethod
     def from_PauliwordOp(cls, H):
-        """
+        """ for convenience, initialize from an existing PauliwordOp
         """
         noncontextual_operator = cls(
             H.symp_matrix,
@@ -35,9 +42,18 @@ class NoncontextualOp(PauliwordOp):
         return noncontextual_operator
 
     @classmethod
-    def from_hamiltonian(cls, H, strategy='diag', DFS_runtime=10):
+    def from_hamiltonian(cls, 
+            H: PauliwordOp, 
+            strategy: str = 'diag', 
+            basis: PauliwordOp = None, 
+            DFS_runtime: int = 10
+        ) -> "NoncontextualOp":
+        """ Given a PauliwordOp, extract from it a noncontextual sub-Hamiltonian by the specified strategy
+        """
         if strategy == 'diag':
             return cls._diag_noncontextual_op(H)
+        elif strategy == 'basis':
+            return cls._from_basis_noncontextual_op(H, basis)
         elif strategy.find('DFS') != -1:
             _, strategy = strategy.split('_')
             return cls._dfs_noncontextual_op(H, strategy=strategy, runtime=DFS_runtime)
@@ -48,8 +64,8 @@ class NoncontextualOp(PauliwordOp):
             raise ValueError(f'Unrecognised noncontextual operator strategy {strategy}')
 
     @classmethod
-    def _diag_noncontextual_op(cls, H):
-        """
+    def _diag_noncontextual_op(cls, H: PauliwordOp):
+        """ Return the diagonal terms of the PauliwordOp - this is the simplest noncontextual operator
         """
         mask_diag = np.where(~np.any(H.X_block, axis=1))
         noncontextual_operator = cls(
@@ -98,7 +114,8 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _diag_first_noncontextual_op(cls, H: PauliwordOp):
-        """
+        """ Start from the diagonal noncontextual form and append additional off-diagonal
+        contributions with respect to their coefficient magnitude.
         """
         noncontextual_operator = cls._diag_noncontextual_op(H)
         # order the remaining terms by coefficient magnitude
@@ -112,7 +129,9 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _single_sweep_noncontextual_operator(cls, H, strategy='magnitude'):
-        """
+        """ Order the operator by some sorting key (magnitude, random or CurrentOrder)
+        and then sweep accross the terms, appending to a growing noncontextual operator
+        whenever possible.
         """
         noncontextual_operator = PauliwordOp.empty(H.n_qubits)
         
@@ -137,8 +156,24 @@ class NoncontextualOp(PauliwordOp):
         
         return cls.from_PauliwordOp(noncontextual_operator)
 
+    @classmethod
+    def _from_basis_noncontextual_op(cls, H: PauliwordOp, basis: PauliwordOp):
+        """ Construct a noncontextual operator given a noncontextual basis, via the Jordan product ( regular matrix product if the operators commute, and equal to zero if the operators anticommute.)
+        """
+        assert basis is not None, 'Must specify a noncontextual basis.'
+        assert basis.is_noncontextual, 'Basis is contextual.'
+        
+        symmetry_mask = np.all(basis.adjacency_matrix, axis=1)
+        S = basis[symmetry_mask]
+        aug_basis_reconstruction_masks = [
+            H.basis_reconstruction(S+c)[1]  for c in basis[~symmetry_mask]
+        ]
+        noncontextual_terms_mask = np.any(np.array(aug_basis_reconstruction_masks), axis=0)
+        return cls.from_PauliwordOp(H[noncontextual_terms_mask])
+
     def noncontextual_basis(self) -> StabilizerOp:
-        """ Find an independent basis for the noncontextual symmetry
+        """ Find an independent *generating set* for the noncontextual symmetry
+        * technically not a basis!
         """
         self.decomposed = {}
         # identify a basis of universally commuting operators
@@ -259,7 +294,7 @@ class NoncontextualOp(PauliwordOp):
         return optimized_energy, r_optimal
 
     def _energy_via_ref_state(self, ref_state):
-        """
+        """ Given a reference state such as Hartree-Fock, fix the symmetry generator eigenvalues
         """
         # update the symmetry generator G coefficients w.r.t. the reference state
         self.symmetry_generators.update_sector(ref_state=ref_state)
@@ -268,7 +303,7 @@ class NoncontextualOp(PauliwordOp):
         return energy, fix_nu, r_optimal
 
     def _energy_via_relaxation(self):
-        """
+        """ Relax the binary value assignment of symmetry generators to continuous variables
         """
         # optimize discrete value assignments nu by relaxation to continuous variables
         nu_bounds = [(0, np.pi)]*self.symmetry_generators.n_terms
@@ -280,15 +315,33 @@ class NoncontextualOp(PauliwordOp):
         return energy, fix_nu, r_optimal
 
     def _energy_via_brute_force(self):
-        # optimize over all discrete value assignments of nu
-        tracker = []
-        for nu in itertools.product([-1,1],repeat=self.symmetry_generators.n_terms):
-            energy, r = self._convex_problem(np.array(nu))
-            tracker.append((energy, r, np.array(nu)))
-        energy, r_optimal, fix_nu = min(tracker, key=lambda x:x[0])
+        """ Does what is says on the tin! Try every single eigenvalue assignment in parallel
+        and return the minimizing noncontextual configuration. This scales exponentially in 
+        the number of qubits.
+        """
+
+        global _func # so concurrent object is avialable in synchronized routine
+
+        # wrap the convex optimization problem for compatibility with deco
+        @concurrent
+        def _func(obj, nu):
+            return obj._convex_problem(nu)
+
+        @synchronized
+        def func(self):
+            # optimize over all discrete value assignments of nu in parallel
+            tracker = []
+            nu_list = list(itertools.product([-1,1],repeat=self.symmetry_generators.n_terms))
+            for nu in nu_list:
+                tracker.append(_func(self, np.array(nu)))
+            return zip(tracker, nu_list)
+        
+        full_search_results = func(self)
+        (energy, r_optimal), fix_nu = min(full_search_results, key=lambda x:x[0][0])
+        
         return energy, fix_nu, r_optimal
 
-    def solve(self, strategy='binary_relaxation', ref_state: np.array = None) -> None:
+    def solve(self, strategy='brute_force', ref_state: np.array = None) -> None:
         """ Minimize the classical objective function, yielding the noncontextual ground state
         """
         if ref_state is not None:

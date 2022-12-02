@@ -51,7 +51,7 @@ def update_eigenvalues(
     stabilizers.coeff_vec = (-1) ** np.count_nonzero(
         np.bitwise_and(
             reconstruction, 
-            basis.coeff_vec==-1
+            np.asarray(basis.coeff_vec)==-1
         ),
         axis=1
     )

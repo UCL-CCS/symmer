@@ -56,7 +56,7 @@ class MoleculeBuilder:
             run_mp2=run_mp2,run_cisd=run_cisd,run_ccsd=run_ccsd,run_fci=run_fci, 
             hf_method=hf_method)
         self.n_particles = self.pyscf_obj.pyscf_hf.mol.nelectron
-        if hf_method.find('RHF') != -1:
+        if self.pyscf_obj.pyscf_hf.__class__.__name__.find('RHF') != -1:
             n_electron = self.pyscf_obj.pyscf_hf.mol.nelectron
             self.n_alpha = self.n_beta = n_electron//2
         else:
