@@ -42,7 +42,18 @@ def test_from_list(
         coeff_vec_1,
         ):
     MPO = MPOApproximator(pauli_list_1, coeff_vec_1)
-    print(type(MPO))
+    matrix_MPO = MPO.to_matrix
+
+    WordOp = PauliwordOp.from_list(pauli_list_1, coeff_vec_1)
+    matrix_WordOp = WordOp.to_sparse_matrix.toarray()
+
+    assert(np.allclose(matrix_MPO, matrix_WordOp))
+
+def test_from_dictionary(
+        pauli_list_1,
+        coeff_vec_1):
+    pauli_dict = dict(zip(pauli_list_1, coeff_vec_1))
+    MPO = MPOApproximator.from_dictionary(pauli_dict)
     matrix_MPO = MPO.to_matrix
 
     WordOp = PauliwordOp.from_list(pauli_list_1, coeff_vec_1)
