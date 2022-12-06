@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 from symmer.approximate import MPOApproximator
+from symmer.symplectic import PauliwordOp
 
 @pytest.fixture
 def symp_matrix_1():
@@ -39,8 +40,12 @@ def coeff_vec_2():
 def test_from_list(
         pauli_list_1,
         coeff_vec_1,
-        symp_matrix_1
         ):
-    MPOApproximator(pauli_list_1, coeff_vec_1)
-    assert(True)
+    MPO = MPOApproximator(pauli_list_1, coeff_vec_1)
+    print(type(MPO))
+    matrix_MPO = MPO.to_matrix
 
+    WordOp = PauliwordOp.from_list(pauli_list_1, coeff_vec_1)
+    matrix_WordOp = WordOp.to_sparse_matrix.toarray()
+
+    assert(np.allclose(matrix_MPO, matrix_WordOp))
