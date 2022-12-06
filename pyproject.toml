@@ -19,6 +19,7 @@ py3Dmol = "^1.8.0"
 h5py = "<=3.1"
 ipywidgets = "7.7.2"
 deco = "^0.6.3"
+ncon = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
 
