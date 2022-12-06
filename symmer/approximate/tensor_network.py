@@ -3,6 +3,7 @@ from ncon import ncon
 from typing import Union, List, Dict
 from symmer.symplectic import PauliwordOp
 from copy import copy
+from cached_property import cached_property
 
 
 class MPOApproximator:
@@ -14,6 +15,10 @@ class MPOApproximator:
             pauliList: List[str],
             coeffList: List[complex],
             Dmax: int = None) -> None:
+        """Initialize an MPO to represent an operator from Pauli strings and
+        coefficients. MPO tensors are shapes as (σ, l, i, j) where σ is the
+        physical leg, l is the output leg and i and j are the remaining
+        legs."""
         self.mpo = pstrings_to_mpo(pauliList, coeffList, Dmax)
 
     @classmethod
@@ -35,6 +40,22 @@ class MPOApproximator:
         Initialize MPOApproximator using PauliwordOp
         """
         return cls.from_dictionary(WordOp.to_dictionary())
+
+    @cached_property
+    def to_matrix(self) -> np.ndarray:
+        '''
+        Contract MPO to produce matrix representation of operator.
+        '''
+        mpo = self.mpo
+        contr = mpo[0]
+        for tensor in mpo[1:]:
+            σ1, l1, i1, j1 = contr.shape
+            σ2, l2, i2, j2 = tensor.shape
+            contr = ncon([contr, tensor], ((-1, -3, -5, 1), (-2, -4, 1, -6)))
+            contr = np.reshape(contr, (σ1 * σ2, l1 * l2, i1, j2))
+
+        contr = np.squeeze(contr)
+        return contr
 
 Paulis = {
         'I': np.eye(2, dtype=np.complex64),
