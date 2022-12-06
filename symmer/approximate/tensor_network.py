@@ -1,7 +1,8 @@
 import numpy as np
 from ncon import ncon
 from typing import Union, List, Dict
-from symmer.symplectic import PauliWordOp
+from symmer.symplectic import PauliwordOp
+from copy import copy
 
 
 class MPOApproximator:
@@ -29,11 +30,21 @@ class MPOApproximator:
 
     @classmethod
     def from_WordOp(cls,
-            WordOp: PauliWordOp) -> "MPOApproximator":
+            WordOp: PauliwordOp) -> "MPOApproximator":
         """
-        Initialize MPOApproximator using PauliWordOp
+        Initialize MPOApproximator using PauliwordOp
         """
         return cls.from_dictionary(WordOp.to_dictionary())
+
+Paulis = {
+        'I': np.eye(2, dtype=np.complex64),
+        'X': np.array([[0, 1],
+                       [1, 0]], dtype=np.complex64),
+        'Y': np.array([[0, -1j],
+                       [1j, 0]], dtype=np.complex64),
+        'Z': np.array([[1, 0],
+                       [0, -1]], dtype=np.complex64),
+        }
 
 def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None, debug=False):
     ''' Convert a list of Pauli Strings into an MPO. If coeff list is given,
@@ -50,7 +61,6 @@ def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None, debug=False):
 
     mpo = pstring_to_mpo(pstrings[0], coeffs[0])
 
-    i = 0
     centre = int(len(mpo) / 2)
 
     for pstr, coeff in zip(pstrings[1:], coeffs[1:]):
@@ -65,8 +75,23 @@ def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None, debug=False):
             print("Truncated centre mpo shape: {}".format(mpo[centre].shape))
             print("")
 
-
     return mpo
+
+def pstring_to_mpo(pstring, scaling=None, debug=False):
+
+    As = []
+    for p in pstring:
+        pauli = Paulis[p]
+        pauli_tensor = np.expand_dims(pauli, axis=(2, 3))
+        if debug:
+            print(p)
+            print(pauli_tensor.shape)
+        As.append(pauli_tensor)
+
+    if scaling is not None:
+        As[0] = As[0] * scaling
+    return As
+
 
 def truncated_SVD(M, Dmax=None):
     U, S, V = np.linalg.svd(M, full_matrices=False)
@@ -108,18 +133,44 @@ def truncate_MPO(mpo, Dmax, debug=False):
 
     return As
 
-def pstring_to_mpo(pstring, scaling=None, debug=False):
+def sum_mpo(mpo1, mpo2, debug=False):
+    summed = [None] * len(mpo1)
+    σ10, l10, i10, j10 = mpo1[0].shape
+    σ20, l20, i20, j20 = mpo2[0].shape
+    t10 = copy(mpo1[0])
+    t20 = copy(mpo2[0])
+    first_sum = np.zeros((σ10, l10, i10, j10+j20), dtype=complex)
+    first_sum[:, :, :, :j10] = t10
+    first_sum[:, :, :, j10:] = t20
+    summed[0] = first_sum
 
-    As = []
-    for p in pstring:
-        pauli = Paulis[p]
-        pauli_tensor = np.expand_dims(pauli, axis=(2, 3))
+    σ1l, l1l, i1l, j1l = mpo1[-1].shape
+    σ2l, l2l, i2l, j2l = mpo2[-1].shape
+    t1l = copy(mpo1[-1])
+    t2l = copy(mpo2[-1])
+    first_sum = np.zeros((σ1l, l1l, i1l + i2l, j1l), dtype=complex)
+    first_sum[:, :, :i1l, :] = t1l
+    first_sum[:, :, i1l:, :] = t2l
+    summed[-1] = first_sum
+    for i in range(1, len(mpo1) - 1):
+        σ1, l1, i1, j1 = mpo1[i].shape
+        σ2, l2, i2, j2 = mpo2[i].shape
+        t1 = copy(mpo1[i])
+        t2 = copy(mpo2[i])
+
+
+        new_shape = (σ1, l1, i1+i2, j1+j2)
+
+        new_tensor = np.zeros(new_shape, dtype=complex)
+
+        new_tensor[:, :, :i1, :j1] = t1
+        new_tensor[:, :, i1:, j1:] = t2
         if debug:
-            print(p)
-            print(pauli_tensor.shape)
-        As.append(pauli_tensor)
+            print(f"MPO1 Shape: {mpo1[i].shape}")
+            print(f"MPO2 Shape: {mpo2[i].shape}")
+            print(f"New Shape: {new_tensor.shape}")
+            print("")
+        summed[i] = new_tensor
 
-    if scaling is not None:
-        As = rescale_mpo(As, scaling)
-    return As
+    return summed
 
