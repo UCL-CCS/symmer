@@ -71,7 +71,6 @@ def test_find_groundsate_quimb(
         coeff_vec_1
         ):
     MPO = MPOOp(pauli_list_1, coeff_vec_1)
-    WordOp = PauliwordOp.from_list(pauli_list_1, coeff_vec_1)
 
     mpostate = find_groundstate_quimb(MPO)
 
