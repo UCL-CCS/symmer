@@ -20,6 +20,9 @@ h5py = "<=3.1"
 ipywidgets = "7.7.2"
 deco = "^0.6.3"
 ncon = "^1.0.0"
+quimb = "^1.4.2"
+opt-einsum = "^3.3.0"
+autoray = "^0.5.3"
 
 [tool.poetry.dev-dependencies]
 

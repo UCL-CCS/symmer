@@ -1,7 +1,8 @@
 import pytest
 import numpy as np
-from symmer.approximate import MPOApproximator
-from symmer.symplectic import PauliwordOp
+from symmer.approximate import MPOOp, find_groundstate_quimb
+from symmer.symplectic import PauliwordOp, QuantumState
+from symmer.utils import exact_gs_energy
 
 @pytest.fixture
 def symp_matrix_1():
@@ -41,7 +42,7 @@ def test_from_list(
         pauli_list_1,
         coeff_vec_1,
         ):
-    MPO = MPOApproximator(pauli_list_1, coeff_vec_1)
+    MPO = MPOOp(pauli_list_1, coeff_vec_1)
     matrix_MPO = MPO.to_matrix
 
     WordOp = PauliwordOp.from_list(pauli_list_1, coeff_vec_1)
@@ -53,10 +54,25 @@ def test_from_dictionary(
         pauli_list_1,
         coeff_vec_1):
     pauli_dict = dict(zip(pauli_list_1, coeff_vec_1))
-    MPO = MPOApproximator.from_dictionary(pauli_dict)
+    MPO = MPOOp.from_dictionary(pauli_dict)
     matrix_MPO = MPO.to_matrix
 
     WordOp = PauliwordOp.from_list(pauli_list_1, coeff_vec_1)
     matrix_WordOp = WordOp.to_sparse_matrix.toarray()
 
     assert(np.allclose(matrix_MPO, matrix_WordOp))
+
+############################################
+# Testing QUIMB dmrg sovler #
+############################################
+
+def test_find_groundsate_quimb(
+        pauli_list_1,
+        coeff_vec_1
+        ):
+    MPO = MPOOp(pauli_list_1, coeff_vec_1)
+    WordOp = PauliwordOp.from_list(pauli_list_1, coeff_vec_1)
+
+    mpostate = find_groundstate_quimb(MPO)
+
+    assert(type(mpostate) == QuantumState)
