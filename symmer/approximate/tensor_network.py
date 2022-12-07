@@ -95,7 +95,7 @@ Paulis = {
                        [0, -1]], dtype=np.complex64),
         }
 
-def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None, debug=False):
+def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None):
     ''' Convert a list of Pauli Strings into an MPO. If coeff list is given,
     rescale each Pauli string by the corresponding element of the coeff list.
     Bond dim specifies the maximum bond dimension, if None, no maximum bond
@@ -110,31 +110,19 @@ def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None, debug=False):
 
     mpo = pstring_to_mpo(pstrings[0], coeffs[0])
 
-    centre = int(len(mpo) / 2)
-
     for pstr, coeff in zip(pstrings[1:], coeffs[1:]):
         _mpo = pstring_to_mpo(pstr, coeff)
-
         mpo = sum_mpo(mpo, _mpo)
-
-        if debug:
-            print("Summed mpo centre shape: {}".format(mpo[centre].shape))
         mpo = truncate_MPO(mpo, Dmax)
-        if debug:
-            print("Truncated centre mpo shape: {}".format(mpo[centre].shape))
-            print("")
 
     return mpo
 
-def pstring_to_mpo(pstring, scaling=None, debug=False):
+def pstring_to_mpo(pstring, scaling=None):
 
     As = []
     for p in pstring:
         pauli = Paulis[p]
         pauli_tensor = np.expand_dims(pauli, axis=(2, 3))
-        if debug:
-            print(p)
-            print(pauli_tensor.shape)
         As.append(pauli_tensor)
 
     if scaling is not None:
@@ -152,9 +140,7 @@ def truncated_SVD(M, Dmax=None):
 
     return U, S, V
 
-def truncate_MPO(mpo, Dmax, debug=False):
-    if debug:
-        print(f"Curr Dmax: {Dmax}")
+def truncate_MPO(mpo, Dmax):
     As = []
     for n in range(len(mpo) - 1):  # Don't need to run on the last term
         A = mpo[n]
@@ -169,12 +155,6 @@ def truncate_MPO(mpo, Dmax, debug=False):
 
         # Update the next term
         M = np.diag(S) @ V
-        if debug:
-            print(f"n: {n}")
-            print(f"A: {mpo[n].shape}")
-            print(f"M: {M.shape}")
-            print(f"B: {mpo[n+1].shape}")
-            print(f"A': {_A.shape}")
         _A1 = ncon([M, mpo[n+1]], ((-3, 1), (-1, -2, 1, -4)))
         mpo[n+1] = _A1
 
@@ -182,7 +162,7 @@ def truncate_MPO(mpo, Dmax, debug=False):
 
     return As
 
-def sum_mpo(mpo1, mpo2, debug=False):
+def sum_mpo(mpo1, mpo2):
     summed = [None] * len(mpo1)
     σ10, l10, i10, j10 = mpo1[0].shape
     σ20, l20, i20, j20 = mpo2[0].shape
@@ -214,11 +194,6 @@ def sum_mpo(mpo1, mpo2, debug=False):
 
         new_tensor[:, :, :i1, :j1] = t1
         new_tensor[:, :, i1:, j1:] = t2
-        if debug:
-            print(f"MPO1 Shape: {mpo1[i].shape}")
-            print(f"MPO2 Shape: {mpo2[i].shape}")
-            print(f"New Shape: {new_tensor.shape}")
-            print("")
         summed[i] = new_tensor
 
     return summed
