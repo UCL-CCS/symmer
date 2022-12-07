@@ -1,14 +1,16 @@
 import numpy as np
 from ncon import ncon
 from typing import Union, List, Dict
-from symmer.symplectic import PauliwordOp
+from symmer.symplectic import PauliwordOp, QuantumState
 from copy import copy
 from cached_property import cached_property
+from quimb.tensor.tensor_1d import MatrixProductOperator
+from quimb.tensor.tensor_dmrg import DMRG2
 
 
-class MPOApproximator:
+class MPOOp:
     """
-    Class to build MPO approximator for ground states.
+    Class to build MPO operator from Pauli strings and coeffs.
     """
 
     def __init__(self,
@@ -56,6 +58,32 @@ class MPOApproximator:
 
         contr = np.squeeze(contr)
         return contr
+
+
+def find_groundstate_quimb(MPOOp: MPOOp, dmrg=None) -> QuantumState:
+    """
+    Use quimb's DMRG2 optimiser to approximate groundstate of MPOOp
+
+    Args:
+        MPOOp: MPOOp representing operator
+        dmrg: Quimb DMRG solver class
+    Returns:
+        dmrg_state (QuantumState): Approximated groundstate
+
+    """
+    mpo = [np.squeeze(m) for m in MPOOp.mpo]
+    MPO = MatrixProductOperator(mpo, 'dulr')
+
+    # Useful default for DMRG optimiser
+    if dmrg is None:
+        dmrg = DMRG2(MPO, bond_dims=[10, 20, 100, 100, 200], cutoffs=1e-10)
+    dmrg.solve(verbosity=0, tol=1e-6)
+
+    dmrg_state = dmrg.state.to_dense()
+    dmrg_state = QuantumState.from_array(dmrg_state).cleanup(zero_threshold=1e-5)
+
+    return dmrg_state
+
 
 Paulis = {
         'I': np.eye(2, dtype=np.complex64),
