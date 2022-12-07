@@ -95,6 +95,14 @@ Paulis = {
                        [0, -1]], dtype=np.complex64),
         }
 
+def coefflist_to_complex(coefflist):
+    '''
+    Convert a list of real + imaginary components into a complex vector
+    '''
+    arr = np.array(coefflist, dtype=complex)
+
+    return arr[:, 0] + 1j*arr[:, 1]
+
 def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None):
     ''' Convert a list of Pauli Strings into an MPO. If coeff list is given,
     rescale each Pauli string by the corresponding element of the coeff list.
