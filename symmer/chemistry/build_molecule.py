@@ -6,6 +6,7 @@ from symmer.chemistry.utils import (
     build_bk_matrix, fermion_to_qubit_operator, get_fermionic_number_operator, get_fermionic_spin_operators, get_parity_operators_JW, get_parity_operators_BK
     )
 from pyscf.scf.addons import get_ghf_orbspin
+from pyscf.symm import label_orb_symm
 from openfermion import get_fermion_operator, jordan_wigner, FermionOperator
 from typing import Tuple, List
 import numpy as np
@@ -100,6 +101,13 @@ class MoleculeBuilder:
         self.UCC_q = self.T_q - self.T_q.dagger
         self.UCC_q.coeff_vec = self.UCC_q.coeff_vec.imag
         self.SOR_q = self.second_order_response()
+
+        if symmetry is not False:
+            self.orb_symm_labels = label_orb_symm(self.pyscf_obj.pyscf_hf.mol, self.pyscf_obj.pyscf_hf.mol.irrep_name,
+                                            self.pyscf_obj.pyscf_hf.mol.symm_orb, self.pyscf_obj.pyscf_hf.mo_coeff)
+
+            self.groupname= self.pyscf_obj.pyscf_hf.mol.groupname
+            self.topgroup = self.pyscf_obj.pyscf_hf.mol.topgroup
 
     def calculate(self,
         run_mp2  = True, 
@@ -248,8 +256,9 @@ class MoleculeBuilder:
             'n_qubits': int(self.n_qubits),
             'convergence_threshold':self.pyscf_obj.convergence,
             'point_group':{
-                'groupname':self.pyscf_obj.pyscf_hf.mol.groupname,
-                'topgroup':self.pyscf_obj.pyscf_hf.mol.topgroup
+                'groupname':self.groupname,
+                'topgroup':self.topgroup,
+                'orbital_symm_label': self.orb_symm_labels
             },
             'calculated_properties':{
                 'HF':{'energy':self.hf_energy, 'converged':bool(self.pyscf_obj.pyscf_hf.converged)}
