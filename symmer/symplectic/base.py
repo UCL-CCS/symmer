@@ -1456,6 +1456,7 @@ class QuantumState:
     def plot_state(self, 
             logscale:bool = False, 
             probability_threshold:float=None,
+            binary_xlabels = False,
             dpi:int=100
         ):
 
@@ -1480,14 +1481,20 @@ class QuantumState:
         if prob.shape[0]<2**8:
             # bar chart
             ax.bar(x_binary_ints, prob, width=1, edgecolor="white", linewidth=0.8)
-            ax.set_xticks(x_binary_ints, labels=x_binary_ints.astype(str))
+            if binary_xlabels:
+                ax.set_xticks(x_binary_ints, labels=[np.binary_repr(x, self.n_qubits) for x in x_binary_ints])
+                plt.xticks(rotation = 90)
+            else:
+                ax.set_xticks(x_binary_ints, labels=x_binary_ints.astype(str))
         else:
             # line plot
             sort_inds = np.argsort(x_binary_ints)
             x_data = x_binary_ints[sort_inds]
             y_data = prob[sort_inds]
             ax.plot(x_data, y_data)
+            
         ax.set(xlabel='binary output', ylabel='probability amplitude')
+        
         
         if logscale:
             ax.set_yscale('log')
