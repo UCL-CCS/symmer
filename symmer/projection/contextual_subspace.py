@@ -46,7 +46,7 @@ class ContextualSubspace(S3_projection):
             self.noncontextual_operator = NoncontextualOp.from_hamiltonian(
                 operator, strategy=noncontextual_strategy
             )
-            self.contextual_operator = self.noncontextual_operator - self.operator
+            self.contextual_operator = self.operator - self.noncontextual_operator
             self.noncontextual_operator.solve(strategy='brute_force', ref_state=reference_state)
             self.n_cliques = self.noncontextual_operator.n_cliques
         else:
