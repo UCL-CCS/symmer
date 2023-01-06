@@ -4,7 +4,7 @@ from typing import Union, List, Dict
 from symmer.symplectic import PauliwordOp, QuantumState
 from copy import copy
 from cached_property import cached_property
-from quimb.tensor.tensor_1d import MatrixProductOperator
+from quimb.tensor.tensor_1d import MatrixProductOperator, MatrixProductState
 from quimb.tensor.tensor_dmrg import DMRG2
 
 
@@ -67,14 +67,19 @@ def find_groundstate_quimb(MPOOp: MPOOp, dmrg=None, gs_guess=None) -> QuantumSta
     Args:
         MPOOp: MPOOp representing operator
         dmrg: Quimb DMRG solver class
-        gs_guess (quimb.MatrixProductState): Guess for the ground state, used as intialisation for the
-                DMRG optimiser. Should be a quimb `MatrixProductState` type.
+        gs_guess: Guess for the ground state, used as intialisation for the
+                DMRG optimiser. Represented as a dense array.
     Returns:
         dmrg_state (QuantumState): Approximated groundstate
 
     """
     mpo = [np.squeeze(m) for m in MPOOp.mpo]
     MPO = MatrixProductOperator(mpo, 'dulr')
+
+    if gs_guess is not None:
+        no_qubits = int(np.log2(gs_guess.shape[0]))
+        dims = [2] * no_qubits
+        gs_guess = MatrixProductState.from_dense(gs_guess, dims)
 
     # Useful default for DMRG optimiser
     if dmrg is None:
