@@ -60,13 +60,15 @@ class MPOOp:
         return contr
 
 
-def find_groundstate_quimb(MPOOp: MPOOp, dmrg=None) -> QuantumState:
+def find_groundstate_quimb(MPOOp: MPOOp, dmrg=None, gs_guess=None) -> QuantumState:
     """
     Use quimb's DMRG2 optimiser to approximate groundstate of MPOOp
 
     Args:
         MPOOp: MPOOp representing operator
         dmrg: Quimb DMRG solver class
+        gs_guess (quimb.MatrixProductState): Guess for the ground state, used as intialisation for the
+                DMRG optimiser. Should be a quimb `MatrixProductState` type.
     Returns:
         dmrg_state (QuantumState): Approximated groundstate
 
@@ -76,7 +78,7 @@ def find_groundstate_quimb(MPOOp: MPOOp, dmrg=None) -> QuantumState:
 
     # Useful default for DMRG optimiser
     if dmrg is None:
-        dmrg = DMRG2(MPO, bond_dims=[10, 20, 100, 100, 200], cutoffs=1e-10)
+        dmrg = DMRG2(MPO, bond_dims=[10, 20, 100, 100, 200], cutoffs=1e-10, p0=gs_guess)
     dmrg.solve(verbosity=0, tol=1e-6)
 
     dmrg_state = dmrg.state.to_dense()
