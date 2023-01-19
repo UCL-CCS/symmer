@@ -34,6 +34,7 @@ class ContextualSubspace(S3_projection):
         """
         # noncontextual startegy will have the form x_y, where x is the actual strategy
         # and y is some supplementary method indicating a sorting key such as magnitude
+        self.ref_state = reference_state
         extract_noncon_strat = noncontextual_strategy.split('_')
         self.nc_strategy = extract_noncon_strat[0]
         if self.nc_strategy=='StabilizeFirst':
@@ -46,14 +47,22 @@ class ContextualSubspace(S3_projection):
             self.noncontextual_operator = NoncontextualOp.from_hamiltonian(
                 operator, strategy=noncontextual_strategy
             )
-            self.contextual_operator = self.noncontextual_operator - self.operator
-            self.noncontextual_operator.solve(strategy='brute_force', ref_state=reference_state)
-            self.n_cliques = self.noncontextual_operator.n_cliques
         else:
             self.noncontextual_operator = noncontextual_operator
+        self._noncontextual_update()
             
         self.unitary_partitioning_method = unitary_partitioning_method
     
+    def _noncontextual_update(self):
+        """ To be executed each time the noncontextual operator is updated.
+        """
+        if self.noncontextual_operator is not None:
+            self.contextual_operator = self.operator - self.noncontextual_operator
+            if self.contextual_operator.n_terms == 0:
+                raise ValueError('The Hamiltonian is noncontextual, the contextual subspace is empty.')
+            self.noncontextual_operator.solve(strategy='brute_force', ref_state=self.ref_state)
+            self.n_cliques = self.noncontextual_operator.n_cliques
+
     def manual_stabilizers(self, S: Union[List[str], StabilizerOp]) -> None:
         """ Specify a set of operators to enforce manually
         """
@@ -133,7 +142,7 @@ class ContextualSubspace(S3_projection):
             noncon_basis = symgen*1 + sum_clique_reps
             self.noncontextual_operator = NoncontextualOp.from_hamiltonian(strategy='basis', H=self.operator, basis=noncon_basis)
             # finally, solve the noncontextual optimization problem
-            self.noncontextual_operator.solve(strategy='brute_force')
+            self._noncontextual_update()
 
     def _greedy_stabilizer_search(self,
             n_qubits: int, 
@@ -151,7 +160,10 @@ class ContextualSubspace(S3_projection):
         This could be an Ansatz operator such as UCCSD, for example.
         """
         if aux_operator is None:
-            aux_operator = self.contextual_operator
+            if self.nc_strategy == 'StabilizeFirst':
+                aux_operator = self.operator
+            else:
+                aux_operator = self.contextual_operator
 
         SI = StabilizerIdentification(aux_operator)
         S = SI.symmetry_basis_by_subspace_dimension(n_qubits)
