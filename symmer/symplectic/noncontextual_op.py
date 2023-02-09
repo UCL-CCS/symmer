@@ -2,7 +2,7 @@ import numpy as np
 from time import time
 from functools import reduce
 from cached_property import cached_property
-from deco import concurrent, synchronized
+import multiprocessing as mp
 from scipy.optimize import differential_evolution, shgo
 from symmer.symplectic import PauliwordOp, StabilizerOp, AntiCommutingOp, QuantumState
 from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
@@ -334,7 +334,7 @@ class NoncontextualOp(PauliwordOp):
         and return the minimizing noncontextual configuration. This scales exponentially in 
         the number of qubits.
         """
-        
+
         # allow certain indices to be fixed while performing a brute force search over those remaining
         if fixed_indices is None:
             fixed_indices = np.array([], dtype=int)
@@ -350,26 +350,18 @@ class NoncontextualOp(PauliwordOp):
         nu = np.ones(self.symmetry_generators.n_terms, dtype=int)
         nu[fixed_indices] = fixed_eigvals
         unfixed_indices = np.setdiff1d(np.arange(self.symmetry_generators.n_terms),fixed_indices)    
-                
-        # wrap the convex optimization problem for compatibility with deco
-        @concurrent
-        def _func(obj, nu_unfixed):
-            nu[unfixed_indices] = nu_unfixed
-            return obj._convex_problem(nu)
 
-        @synchronized
-        def func(self):
-            # optimize over all discrete value assignments of nu in parallel
-            tracker = []
-            nu_list = list(itertools.product([-1,1],repeat=len(unfixed_indices)))
-            for nu_unfixed in nu_list:
-                tracker.append(_func(self, np.asarray(nu_unfixed, dtype=int)))
-            return zip(tracker, nu_list)
-
-        full_search_results = func(self)
+        # optimize over all discrete value assignments of nu in parallel
+        pool = mp.Pool(mp.cpu_count())
+        nu_list = list(itertools.product([-1,1],repeat=len(unfixed_indices)))
+        tracker = pool.map(self._convex_problem, nu_list)
+        pool.terminate() # close the multiprocessing pool
+        
+        # find the lowest energy eigenvalue assignment from the full list
+        full_search_results = zip(tracker, nu_list)
         (energy, r_optimal), fix_nu = min(full_search_results, key=lambda x:x[0][0])
         nu[unfixed_indices] = fix_nu
-        
+
         return energy, nu, r_optimal
 
     def solve(self, strategy='brute_force', ref_state: np.array = None) -> None:
