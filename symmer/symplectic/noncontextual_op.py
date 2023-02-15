@@ -298,22 +298,10 @@ class NoncontextualOp(PauliwordOp):
         Currently only implemented for single reference basis states in the Z basis
         """
         # update the symmetry generator G coefficients w.r.t. the reference state
-        fixed_indices = []
-        fixed_eigvals = []
-        unfixed_indices = []
-
-        ref_psi = QuantumState([ref_state])
-        for index, S in enumerate(self.symmetry_generators):
-            S.coeff_vec[0]=1
-            S_psi = S*ref_psi
-            # if the reference is an eigenstate of S, fix the eigenvalue
-            if np.all(S_psi.state_matrix==ref_psi.state_matrix):
-                eigval = int(S_psi.state_op.coeff_vec[0].real)
-                fixed_indices.append(index)
-                fixed_eigvals.append(eigval)
-            else:
-                unfixed_indices.append(index)
-
+        self.symmetry_generators.update_sector(ref_state)
+        ev_assignment = self.symmetry_generators.coeff_vec
+        fixed_indices = np.where(ev_assignment!=0)[0]
+        fixed_eigvals = ev_assignment[fixed_indices]
         # any remaining unfixed symmetry generators are solved via brute force:
         return self._energy_via_brute_force(fixed_indices, fixed_eigvals)
 
@@ -345,24 +333,28 @@ class NoncontextualOp(PauliwordOp):
             fixed_indices = np.asarray(fixed_indices, dtype=int)
             fixed_eigvals = np.asarray(fixed_eigvals, dtype=int)
 
-        global unfixed_indices, nu, _func # so concurrent object is avialable in synchronized routine
-
         nu = np.ones(self.symmetry_generators.n_terms, dtype=int)
         nu[fixed_indices] = fixed_eigvals
         unfixed_indices = np.setdiff1d(np.arange(self.symmetry_generators.n_terms),fixed_indices)    
 
+        if len(unfixed_indices)==0:
+            nu_list = fixed_eigvals.reshape([1,-1])
+        else:
+            search_size = 2**len(unfixed_indices)
+            nu_list = np.ones([search_size, self.symmetry_generators.n_terms], dtype=int)
+            nu_list[:,fixed_indices] = np.tile(fixed_eigvals, [search_size,1])
+            nu_list[:,unfixed_indices] = np.array(list(itertools.product([-1,1],repeat=len(unfixed_indices))))
+        
         # optimize over all discrete value assignments of nu in parallel
         pool = mp.Pool(mp.cpu_count())
-        nu_list = list(itertools.product([-1,1],repeat=len(unfixed_indices)))
         tracker = pool.map(self._convex_problem, nu_list)
         pool.terminate() # close the multiprocessing pool
         
         # find the lowest energy eigenvalue assignment from the full list
         full_search_results = zip(tracker, nu_list)
-        (energy, r_optimal), fix_nu = min(full_search_results, key=lambda x:x[0][0])
-        nu[unfixed_indices] = fix_nu
+        (energy, r_optimal), fixed_nu = min(full_search_results, key=lambda x:x[0][0])
 
-        return energy, nu, r_optimal
+        return energy, fixed_nu, r_optimal
 
     def solve(self, strategy='brute_force', ref_state: np.array = None) -> None:
         """ Minimize the classical objective function, yielding the noncontextual ground state
