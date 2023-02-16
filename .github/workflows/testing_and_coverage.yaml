@@ -7,12 +7,16 @@ jobs:
     name: Testing and Coverage
     
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.8", "3.9"]
+    #strategy:
+    #  matrix:
+    #    python-version: ["3.8", "3.9"]
       
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
+    - name: Set up python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
     - name: Installation
       run: |
         python -m pip install --upgrade pip
