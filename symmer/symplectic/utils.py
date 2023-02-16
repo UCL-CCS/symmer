@@ -1,8 +1,6 @@
 import numpy as np
 import scipy as sp
 from typing import Tuple, Dict
-from deco import concurrent, synchronized
-import multiprocessing as mp
 import openfermion as of
 from qiskit.opflow import PauliSumOp
 
@@ -147,57 +145,6 @@ def symplectic_cleanup(
 
     return reduced_symp_matrix, reduced_coeff_vec
 
-@concurrent
-def _symplectic_cleanup(
-        symp_matrix:    np.array, 
-        coeff_vec:      np.array, 
-        zero_threshold: float = None
-    ) -> Tuple[np.array, np.array]:
-    """ wraps symplectic_cleanup for parallelization
-    """
-    return symplectic_cleanup(symp_matrix, coeff_vec, zero_threshold)
-
-@synchronized
-def symplectic_cleanup_parallel(
-        symp_matrix:    np.array, 
-        coeff_vec:      np.array, 
-        zero_threshold: float = None,
-        n_terms = 0
-    ) -> Tuple[np.array, np.array]:
-    """ Recursive parallelized symplectic cleanup operation
-    """
-    new_n_terms = symp_matrix.shape[0]
-    
-    # only parallelize the cleanup operation if the number of terms 
-    # reduced at any given recursion depth exceeds some threshold
-    if (n_terms - new_n_terms > 10_000 or n_terms == 0) and new_n_terms >= 50_000:
-        # randomly shuffle the operator terms
-        order = np.arange(new_n_terms)
-        np.random.shuffle(order)
-        # chunk the symplectic matrix accross each core
-        symp_batches = np.array_split(symp_matrix[order], mp.cpu_count(), axis=0)
-        coeff_batches = np.array_split(coeff_vec[order], mp.cpu_count())
-        # clean each symplectic block in parallel
-        reduced_symp_batches, reduced_coeff_batches = zip(
-            *[
-                _symplectic_cleanup(symp_batch, coeff_batch, zero_threshold) 
-                for symp_batch, coeff_batch in zip(symp_batches, coeff_batches)
-            ]
-        )
-        # stack the resulting reduced symplectic matrix and coefficient vector
-        reduced_symp_batches, reduced_coeff_batches = (
-            np.vstack(reduced_symp_batches), np.hstack(reduced_coeff_batches)
-        )
-        # perform this process again
-        return symplectic_cleanup_parallel(
-            reduced_symp_batches, 
-            reduced_coeff_batches, 
-            zero_threshold,
-            new_n_terms
-        )
-    else:
-        return symplectic_cleanup(symp_matrix, coeff_vec, zero_threshold)
-
 def random_symplectic_matrix(n_qubits,n_terms, diagonal=False):
     """ Generates a random binary matrix of dimension (n_terms) x (2*n_qubits)
     Specifying diagonal=True will set the left hand side (X_block) to all zeros
@@ -331,37 +278,6 @@ def mul_symplectic(
     phase_mod = sign_change * (1j) ** ((3 * (Y_count1 + Y_count2) + Y_count_out) % 4)  # mod 4 as roots of unity
     coeff_vec = phase_mod * coeff1 * coeff2
     return output_symplectic_vec, coeff_vec #, Y_count_out
-
-@concurrent
-def _mul_symplectic(
-        self, 
-        symp_vec: np.array, 
-        coeff: complex, 
-        Y_count_in: np.array
-    ) -> Tuple[np.array, np.array]:
-    """ performs Pauli multiplication with phases at the level of the symplectic 
-    matrices to avoid superfluous PauliwordOp initializations. The phase compensation 
-    is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
-    """
-    # phaseless multiplication is binary addition in symplectic representation
-    phaseless_prod = np.bitwise_xor(self.symp_matrix, symp_vec)
-    # phase is determined by Y counts plus additional sign flip
-    Y_count_out = np.sum(np.bitwise_and(*np.hsplit(phaseless_prod,2)), axis=1)
-    sign_change = (-1) ** (
-        np.sum(np.bitwise_and(self.X_block, np.hsplit(symp_vec,2)[1]), axis=1) % 2
-    ) # mod 2 as only care about parity
-    # final phase modification
-    phase_mod = sign_change * (1j) ** ((3*Y_count_in + Y_count_out) % 4) # mod 4 as roots of unity
-    coeff_vec = phase_mod * self.coeff_vec * coeff
-    return phaseless_prod, coeff_vec
-
-@synchronized
-def collect_multiplication_stack(self, PwordOp):
-    symp_stack, coeff_stack = zip(
-        *[_mul_symplectic(self, symp_vec=symp_vec, coeff=coeff, Y_count_in=self.Y_count+Y_count) 
-        for symp_vec, coeff, Y_count in zip(PwordOp.symp_matrix, PwordOp.coeff_vec, PwordOp.Y_count)]
-    )
-    return np.vstack(symp_stack), np.hstack(coeff_stack)
 
 def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
     """ Input an array of angles of length n, returns the n+1 cartesian coordinates 

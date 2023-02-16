@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from typing import List, Union
 from cached_property import cached_property
@@ -53,6 +55,12 @@ class QubitTapering(S3_projection):
         one wishes to restrict to the same stabilizer subspace as the Hamiltonian for 
         use in VQE, for example.
         """
+        if self.symmetry_generators != self.stabilizers:
+            # need to update stabilizers in parent class if user decides to fix less stabilizers (e.g. doesn't want
+            # to taper all stabilizers). Could be useful in error mitigation strategies
+            warnings.warn('the defined symmetry generators have been updated from parent class stabilizers')
+            super().__init__(self.symmetry_generators)
+
         # allow an auxiliary operator (e.g. an Ansatz) to be tapered
         if aux_operator is not None:
             operator_to_taper = aux_operator.copy()

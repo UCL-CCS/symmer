@@ -485,24 +485,6 @@ class PauliwordOp:
             )
         return pauli_mult_out
 
-    def _multiply_by_operator_parallel(self, 
-            PwordOp: Union["PauliwordOp", "QuantumState", complex],
-            zero_threshold: float = 1e-15
-        ) -> "PauliwordOp":
-        """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
-        """
-        assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
-
-        # multiplication is performed at the symplectic level, before being stacked and cleaned
-        
-        symp_matrix, coeff_vec = collect_multiplication_stack(self, PwordOp)
-        pauli_mult_out = PauliwordOp(
-            *symplectic_cleanup_parallel(
-                symp_matrix, coeff_vec, zero_threshold=zero_threshold
-            )
-        )
-        return pauli_mult_out
-
     def __mul__(self, 
             mul_obj: Union["PauliwordOp", "QuantumState", complex],
             zero_threshold: float = 1e-15
@@ -1050,6 +1032,8 @@ class QuantumState:
             state_matrix = np.array(state_matrix)
         if isinstance(coeff_vector, list):
             coeff_vector = np.array(coeff_vector)
+        if len(state_matrix.shape)==1: # incase a single basis state given
+            state_matrix = state_matrix.reshape([1,-1])
         state_matrix = state_matrix.astype(int) # in case input is boolean
         assert(set(state_matrix.flatten()).issubset({0,1})) # must be binary, does not support N-ary qubits
         self.n_terms, self.n_qubits = state_matrix.shape
@@ -1456,6 +1440,7 @@ class QuantumState:
     def plot_state(self, 
             logscale:bool = False, 
             probability_threshold:float=None,
+            binary_xlabels = False,
             dpi:int=100
         ):
 
@@ -1480,14 +1465,20 @@ class QuantumState:
         if prob.shape[0]<2**8:
             # bar chart
             ax.bar(x_binary_ints, prob, width=1, edgecolor="white", linewidth=0.8)
-            ax.set_xticks(x_binary_ints, labels=x_binary_ints.astype(str))
+            if binary_xlabels:
+                ax.set_xticks(x_binary_ints, labels=[np.binary_repr(x, self.n_qubits) for x in x_binary_ints])
+                plt.xticks(rotation = 90)
+            else:
+                ax.set_xticks(x_binary_ints, labels=x_binary_ints.astype(str))
         else:
             # line plot
             sort_inds = np.argsort(x_binary_ints)
             x_data = x_binary_ints[sort_inds]
             y_data = prob[sort_inds]
             ax.plot(x_data, y_data)
+            
         ax.set(xlabel='binary output', ylabel='probability amplitude')
+        
         
         if logscale:
             ax.set_yscale('log')

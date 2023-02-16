@@ -2,9 +2,9 @@ import numpy as np
 from time import time
 from functools import reduce
 from cached_property import cached_property
-from deco import concurrent, synchronized
+import multiprocessing as mp
 from scipy.optimize import differential_evolution, shgo
-from symmer.symplectic import PauliwordOp, StabilizerOp, AntiCommutingOp
+from symmer.symplectic import PauliwordOp, StabilizerOp, AntiCommutingOp, QuantumState
 from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
 import itertools
 
@@ -295,12 +295,15 @@ class NoncontextualOp(PauliwordOp):
 
     def _energy_via_ref_state(self, ref_state):
         """ Given a reference state such as Hartree-Fock, fix the symmetry generator eigenvalues
+        Currently only implemented for single reference basis states in the Z basis
         """
         # update the symmetry generator G coefficients w.r.t. the reference state
-        self.symmetry_generators.update_sector(ref_state=ref_state)
-        fix_nu = self.symmetry_generators.coeff_vec
-        energy, r_optimal = self._convex_problem(fix_nu)
-        return energy, fix_nu, r_optimal
+        self.symmetry_generators.update_sector(ref_state)
+        ev_assignment = self.symmetry_generators.coeff_vec
+        fixed_indices = np.where(ev_assignment!=0)[0]
+        fixed_eigvals = ev_assignment[fixed_indices]
+        # any remaining unfixed symmetry generators are solved via brute force:
+        return self._energy_via_brute_force(fixed_indices, fixed_eigvals)
 
     def _energy_via_relaxation(self):
         """ Relax the binary value assignment of symmetry generators to continuous variables
@@ -314,32 +317,44 @@ class NoncontextualOp(PauliwordOp):
         energy, r_optimal = self._convex_problem(fix_nu)
         return energy, fix_nu, r_optimal
 
-    def _energy_via_brute_force(self):
+    def _energy_via_brute_force(self, fixed_indices=None, fixed_eigvals=None):
         """ Does what is says on the tin! Try every single eigenvalue assignment in parallel
         and return the minimizing noncontextual configuration. This scales exponentially in 
         the number of qubits.
         """
 
-        global _func # so concurrent object is avialable in synchronized routine
+        # allow certain indices to be fixed while performing a brute force search over those remaining
+        if fixed_indices is None:
+            fixed_indices = np.array([], dtype=int)
+            fixed_eigvals = np.array([], dtype=int)
+        else:
+            assert fixed_eigvals is not None, 'Must specify the eigenvalues to fix.'
+            assert len(fixed_indices) == len(fixed_eigvals), 'Length of eigvals does not match the fixed index list.'
+            fixed_indices = np.asarray(fixed_indices, dtype=int)
+            fixed_eigvals = np.asarray(fixed_eigvals, dtype=int)
 
-        # wrap the convex optimization problem for compatibility with deco
-        @concurrent
-        def _func(obj, nu):
-            return obj._convex_problem(nu)
+        nu = np.ones(self.symmetry_generators.n_terms, dtype=int)
+        nu[fixed_indices] = fixed_eigvals
+        unfixed_indices = np.setdiff1d(np.arange(self.symmetry_generators.n_terms),fixed_indices)    
 
-        @synchronized
-        def func(self):
-            # optimize over all discrete value assignments of nu in parallel
-            tracker = []
-            nu_list = list(itertools.product([-1,1],repeat=self.symmetry_generators.n_terms))
-            for nu in nu_list:
-                tracker.append(_func(self, np.array(nu)))
-            return zip(tracker, nu_list)
+        if len(unfixed_indices)==0:
+            nu_list = fixed_eigvals.reshape([1,-1])
+        else:
+            search_size = 2**len(unfixed_indices)
+            nu_list = np.ones([search_size, self.symmetry_generators.n_terms], dtype=int)
+            nu_list[:,fixed_indices] = np.tile(fixed_eigvals, [search_size,1])
+            nu_list[:,unfixed_indices] = np.array(list(itertools.product([-1,1],repeat=len(unfixed_indices))))
         
-        full_search_results = func(self)
-        (energy, r_optimal), fix_nu = min(full_search_results, key=lambda x:x[0][0])
+        # optimize over all discrete value assignments of nu in parallel
+        pool = mp.Pool(mp.cpu_count())
+        tracker = pool.map(self._convex_problem, nu_list)
+        pool.terminate() # close the multiprocessing pool
         
-        return energy, fix_nu, r_optimal
+        # find the lowest energy eigenvalue assignment from the full list
+        full_search_results = zip(tracker, nu_list)
+        (energy, r_optimal), fixed_nu = min(full_search_results, key=lambda x:x[0][0])
+
+        return energy, fixed_nu, r_optimal
 
     def solve(self, strategy='brute_force', ref_state: np.array = None) -> None:
         """ Minimize the classical objective function, yielding the noncontextual ground state
