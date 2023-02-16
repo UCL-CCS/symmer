@@ -2,9 +2,10 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 from functools import reduce
 import warnings
+import multiprocessing as mp
 from cached_property import cached_property
 from symmer.symplectic.utils import _rref_binary, _cref_binary
-from symmer.symplectic import PauliwordOp, symplectic_to_string
+from symmer.symplectic import PauliwordOp, QuantumState, symplectic_to_string
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
@@ -220,16 +221,35 @@ class StabilizerOp(PauliwordOp):
                 self.stabilizer_rotations.append((PauliwordOp(R_symp, [1]),None))
 
     def update_sector(self, 
-            ref_state: Union[List[int], np.array]
+            ref_state: Union[List[int], np.array, QuantumState]
         ) -> None:
         """ Given the specified reference state, e.g. Hartree-Fock |1...10...0>, 
-        determine the corresponding sector by measuring the stabilizers
-
-        TODO: currently only measures in Z basis
+        determine the corresponding sector by measuring the stabilizers.
+        will also accept a superposition of basis states, in which case it will 
+        identify the dominant sector therein, but note it will ascribe a zero
+        assignment if there is not sufficient evidence to fix a +-1 eigenvalue.
         """
-        ref_state = np.array(ref_state)
-        self.coeff_vec = (-1)**np.count_nonzero(self.Z_block & ref_state, axis=1)
+        if not isinstance(ref_state, QuantumState):
+            ref_state = QuantumState(ref_state)
 
+        global assign_value
+
+        def assign_value(S): # calculate
+            assert S.n_terms == 1, 'Supplied multiple terms'
+            S.coeff_vec[0] = 1
+            S_ref_exp = (ref_state.dagger * S * ref_state).real # take inner product w.r.t. reference state
+            assigned_value = np.round(S_ref_exp).astype(int) # round to nearest integer in {-1,0,+1}
+            return assigned_value
+        
+        pool = mp.Pool(mp.cpu_count())
+        self.coeff_vec = np.array(pool.map(assign_value, self), dtype=int)
+        pool.terminate()
+
+        if np.any(self.coeff_vec==0):
+            S_zero = self[self.coeff_vec==0]; S_zero.coeff_vec[:]=1
+            S_zero = list(S_zero.to_dictionary.keys())
+            warnings.warn(f'The stabilizers {S_zero} were assigned zero values - bad reference state.')
+        
     def rotate_onto_single_qubit_paulis(self) -> "StabilizerOp":
         """ Returns the rotated single-qubit Pauli stabilizers
         """

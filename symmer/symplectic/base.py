@@ -1032,6 +1032,8 @@ class QuantumState:
             state_matrix = np.array(state_matrix)
         if isinstance(coeff_vector, list):
             coeff_vector = np.array(coeff_vector)
+        if len(state_matrix.shape)==1: # incase a single basis state given
+            state_matrix = state_matrix.reshape([1,-1])
         state_matrix = state_matrix.astype(int) # in case input is boolean
         assert(set(state_matrix.flatten()).issubset({0,1})) # must be binary, does not support N-ary qubits
         self.n_terms, self.n_qubits = state_matrix.shape
