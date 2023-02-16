@@ -18,6 +18,10 @@ flake8 = "^4.0.1"
 py3Dmol = "^1.8.0"
 h5py = "<=3.1"
 ipywidgets = "7.7.2"
+ncon = "^1.0.0"
+quimb = "^1.4.2"
+opt-einsum = "^3.3.0"
+autoray = "^0.5.3"
 
 [tool.poetry.dev-dependencies]
 
