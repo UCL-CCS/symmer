@@ -4,7 +4,7 @@ import numpy as np
 from typing import List, Union
 from cached_property import cached_property
 from symmer.projection import S3_projection
-from symmer.symplectic import PauliwordOp, StabilizerOp
+from symmer.symplectic import PauliwordOp, StabilizerOp, QuantumState
 
 class QubitTapering(S3_projection):
     """ Class for performing qubit tapering as per https://arxiv.org/abs/1701.08213.
@@ -76,7 +76,8 @@ class QubitTapering(S3_projection):
 
         # if a reference state was supplied, taper it by dropping any
         # qubit positions fixed during the perform_projection method
-        if ref_state is not None:
+        if ref_state is not None and not isinstance(ref_state, QuantumState):
+            # TODO general implementation to project QuantumState into reduced space
             ref_state = np.array(ref_state)
             self.tapered_ref_state = ref_state[self.free_qubit_indices]
 
