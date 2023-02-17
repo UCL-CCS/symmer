@@ -1,9 +1,7 @@
 import numpy as np
 from typing import Dict, List, Tuple, Union
-from functools import reduce
 import warnings
 import multiprocessing as mp
-from cached_property import cached_property
 from symmer.symplectic.utils import _rref_binary, _cref_binary
 from symmer.symplectic import PauliwordOp, QuantumState, symplectic_to_string
 
@@ -280,3 +278,36 @@ class StabilizerOp(PauliwordOp):
             return self.perform_rotations(self.stabilizer_rotations)
         else:
             return self
+
+    def __getitem__(self,
+                    key: Union[slice, int]
+                    ) -> "StabilizerOp":
+        """ Makes the StabilizerOp subscriptable - returns a StabilizerOp constructed
+        from the indexed row and coefficient from the symplectic matrix
+        """
+        if isinstance(key, int):
+            if key < 0:
+                # allow negative subscript
+                key += self.n_terms
+            assert (key < self.n_terms), 'Index out of range'
+            mask = [key]
+        elif isinstance(key, slice):
+            start, stop = key.start, key.stop
+            if start is None:
+                start = 0
+            if stop is None:
+                stop = self.n_terms
+            mask = np.arange(start, stop, key.step)
+        elif isinstance(key, (list, np.ndarray)):
+            mask = np.asarray(key)
+        else:
+            raise ValueError('Unrecognised input, must be an integer, slice, list or np.array')
+
+        symp_items = self.symp_matrix[mask]
+        coeff_items = self.coeff_vec[mask]
+        return StabilizerOp(symp_items, coeff_items)
+
+    def __iter__(self):
+        """ Makes a PauliwordOp instance iterable
+        """
+        return iter([self[i] for i in range(self.n_terms)])
