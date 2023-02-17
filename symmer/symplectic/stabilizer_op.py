@@ -221,7 +221,8 @@ class StabilizerOp(PauliwordOp):
                 self.stabilizer_rotations.append((PauliwordOp(R_symp, [1]),None))
 
     def update_sector(self, 
-            ref_state: Union[List[int], np.array, QuantumState]
+            ref_state: Union[List[int], np.array, QuantumState],
+            threshold: float = 0.5
         ) -> None:
         """ Given the specified reference state, e.g. Hartree-Fock |1...10...0>, 
         determine the corresponding sector by measuring the stabilizers.
@@ -231,20 +232,41 @@ class StabilizerOp(PauliwordOp):
         """
         if not isinstance(ref_state, QuantumState):
             ref_state = QuantumState(ref_state)
+        assert ref_state._is_normalized(), 'Reference state is not normalized.'
 
         global assign_value
 
-        def assign_value(S): # calculate
-            assert S.n_terms == 1, 'Supplied multiple terms'
-            S.coeff_vec[0] = 1
-            S_ref_exp = (ref_state.dagger * S * ref_state).real # take inner product w.r.t. reference state
-            assigned_value = np.round(S_ref_exp).astype(int) # round to nearest integer in {-1,0,+1}
-            return assigned_value
+        def assign_value(S):
+            assert S.n_terms == 1, 'Supplied multiple stabilizers.'
+            
+            # symplectic form of the projection operator
+            proj_symplectic = np.vstack([np.zeros(S.n_qubits*2, dtype=bool), S.symp_matrix])
+            
+            # function that applies the projector onto the ±1 eigenspace of S 
+            # (given by the operator (I±S)/2) and returns norm of the resulting state
+            norm_ev = lambda ev:np.linalg.norm( 
+                ( 
+                    PauliwordOp(proj_symplectic, [.5,.5*ev]) * ref_state 
+                ).state_op.coeff_vec
+            )
+            
+            # difference of norms provides a metric for which eigenvalue is dominant within
+            # the provided reference state (e.g. if inputting a ±1 eigenvector then diff=±1)
+            eigenspace_norm_diff = norm_ev(+1) - norm_ev(-1)
+            
+            # if this difference exceeds some predefined threshold then assign the corresponding 
+            # ±1 eigenvalue. Otherwise, return 0 as insufficient evidence to fix the value.
+            if abs(eigenspace_norm_diff) > threshold:
+                return int(np.sign(eigenspace_norm_diff))
+            else:
+                return 0
         
+        # update the stabilizers assignments in parallel
         pool = mp.Pool(mp.cpu_count())
         self.coeff_vec = np.array(pool.map(assign_value, self), dtype=int)
         pool.terminate()
 
+        # raise a warning if any stabilizers are assigned a zero value
         if np.any(self.coeff_vec==0):
             S_zero = self[self.coeff_vec==0]; S_zero.coeff_vec[:]=1
             S_zero = list(S_zero.to_dictionary.keys())
