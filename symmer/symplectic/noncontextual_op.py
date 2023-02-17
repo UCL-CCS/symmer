@@ -467,7 +467,7 @@ class NoncontextualOp(PauliwordOp):
         if x =='P':
             spin_problem = COST.to_puso()
         else:
-            spin_problem = COST.to_qubo()
+            spin_problem = COST.to_quso()
 
         if method=='brute_force':
             sol = spin_problem.solve_bruteforce()
