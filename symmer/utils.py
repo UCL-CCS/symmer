@@ -31,7 +31,7 @@ def exact_gs_energy(
     
     if n_particles is None:
         # if no particle number is specified then return the smallest eigenvalue
-        return eigvals[0], eigvecs[:,0].reshape([-1,1])
+        return eigvals[0], QuantumState.from_array(eigvecs[:,0].reshape([-1,1]))
     else:
         assert(number_operator is not None), 'Must specify the number operator.'
         # otherwise, search through the first n_eig eigenvalues and check the Hamming weight
@@ -48,7 +48,7 @@ def exact_gs_energy(
                 )
                 expval_n_particle += Z_coeff * np.sum(sign * np.square(abs(psi.state_op.coeff_vec)))
             if round(expval_n_particle) == n_particles:
-                return evl, evc.reshape([-1,1])
+                return evl, QuantumState.from_array(evc.reshape([-1,1]))
         # if a solution is not found within the first n_eig eigenvalues then error
         raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
 

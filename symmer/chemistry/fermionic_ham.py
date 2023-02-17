@@ -396,10 +396,8 @@ class FermionicHamiltonian:
         """
         """
         H_CI_matrix = self.get_ci_fermionic(S=S, method=method)
-        e_ci, psi_ci = exact_gs_energy(H_CI_matrix)
+        e_ci, psi = exact_gs_energy(H_CI_matrix)
         total_CI_energy = e_ci + self.scf_method.energy_nuc()
-
-        psi = QuantumState.from_array(psi_ci).cleanup(zero_threshold=zero_threshold).sort()
 
         CI_ferm=FermionOperator()
 
