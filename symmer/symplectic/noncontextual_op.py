@@ -1,12 +1,13 @@
 import numpy as np
 from time import time
 from functools import reduce
-from cached_property import cached_property
+from typing import Optional
 import multiprocessing as mp
 from scipy.optimize import differential_evolution, shgo
 from symmer.symplectic import PauliwordOp, StabilizerOp, AntiCommutingOp, QuantumState
 from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
 import itertools
+import qubovert as qv
 
 class NoncontextualOp(PauliwordOp):
     """ Class for representing noncontextual Hamiltonians
@@ -356,15 +357,154 @@ class NoncontextualOp(PauliwordOp):
 
         return energy, fixed_nu, r_optimal
 
-    def solve(self, strategy='brute_force', ref_state: np.array = None) -> None:
+    def _energy_via_brute_force_xUSO(self, x='P'):
+        """
+       Optimize noncontextual energy by either: Polynomial unconstrained spin Optimization (x=P)
+                                                    or
+                                                Quadratic Unconstrained Spin Optimization  (x=Q)
+
+        via brute force. This method optimizes over the r-vector and finds the q_vector by brute force
+
+
+        Args:
+            x (str): Whether method is Polynomial or Quadratic optimization
+
+        Returns:
+            optimized_energy (float): minimized noncontextual ground state energy
+            q_vec_opt (np.array): q vector
+            r_optimal (np.array): r vector
+
+        """
+        r_bounds = [(0, np.pi)]*(self.n_cliques-2)+[(0, 2*np.pi)]
+
+        optimizer_output = differential_evolution(
+            func=lambda angles:self.xUSO(
+                unit_n_sphere_cartesian_coords(angles), x=x, method='brute_force'
+                ),
+            bounds=r_bounds
+        )
+        optimized_energy = optimizer_output['fun']
+        optimized_angles = optimizer_output['x']
+        r_optimal = unit_n_sphere_cartesian_coords(optimized_angles)
+
+        q_vec_opt = self.xUSO_qvec_solution
+        return optimized_energy, q_vec_opt, r_optimal
+
+    def _energy_via_annealing_xUSO(self, x='P', num_anneals:Optional[int]=1_000):
+        """
+       Optimize noncontextual energy by either: Polynomial unconstrained spin Optimization (x=P)
+                                                    or
+                                                Quadratic Unconstrained Spin Optimization  (x=Q)
+
+        via simulated annealing. This method optimizes over the r-vector and finds the q_vector by simulated annealing
+
+
+        Args:
+            x (str): Whether method is Polynomial or Quadratic optimization
+            num_anneals (optional): number of simulated anneals to do
+
+        Returns:
+            optimized_energy (float): minimized noncontextual ground state energy
+            q_vec_opt (np.array): q vector
+            r_optimal (np.array): r vector
+
+        """
+        r_bounds = [(0, np.pi)]*(self.n_cliques-2)+[(0, 2*np.pi)]
+
+        optimizer_output = differential_evolution(
+            func=lambda angles:self.xUSO(
+                unit_n_sphere_cartesian_coords(angles), x=x,
+                method='annealing',
+                num_anneals=num_anneals
+                ),
+            bounds=r_bounds
+        )
+        optimized_energy = optimizer_output['fun']
+        optimized_angles = optimizer_output['x']
+        r_optimal = unit_n_sphere_cartesian_coords(optimized_angles)
+
+        q_vec_opt = self.xUSO_qvec_solution
+        return optimized_energy, q_vec_opt, r_optimal
+
+    def xUSO(self, r_vec: np.array, x:str='P', method:str='brute_force', num_anneals:Optional[int]=1_000):
+        """
+        Get energy via either: Polynomial unconstrained spin Optimization (x=P)
+                                    or
+                               Quadratic Unconstrained Spin Optimization  (x=Q)
+
+        via a brute force search over q_vector or via simulated annealing
+
+        Note in this method the r_vector is fixed upon input! (aka just does binary optimization)
+
+        Args:
+            r_vec (np.array): array of clique expectation values <r_i>
+            x (str): Whether method is Polynomial or Quadratic optimization
+            method (str): brute force or annealing optimization
+            num_anneals (optional): number of simulated anneals to do
+
+        Returns:
+            energy (float): noncontextual energy
+
+        """
+        assert x in ['P', 'Q']
+        assert method in ['brute_force', 'annealing']
+
+        r_part = np.sum(self.r_indices * r_vec, axis=1)
+        r_part[np.where(r_part == 0)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
+        q_vec_SPIN = [qv.spin_var('x%d' % i) for i in range(self.symmetry_generators.n_terms)]
+
+        COST = 0
+        for P_index, term in enumerate(self.G_indices):
+            non_zero_inds = term.nonzero()[0]
+            # collect all the spin terms
+            G_term = 1
+            for i in non_zero_inds:
+                G_term *= q_vec_SPIN[i]
+
+            # cost function
+            COST += G_term * self.coeff_vec[P_index].real * self.pauli_mult_signs[P_index] * r_part[P_index].real
+
+        if x =='P':
+            spin_problem = COST.to_puso()
+        else:
+            spin_problem = COST.to_qubo()
+
+        if method=='brute_force':
+            sol = spin_problem.solve_bruteforce()
+        elif method == 'annealing':
+            if x == 'P':
+                puso_res = qv.sim.anneal_puso(spin_problem, num_anneals=num_anneals)
+            elif x == 'Q':
+                puso_res= qv.sim.anneal_quso(spin_problem, num_anneals=num_anneals)
+                assert COST.is_solution_valid(puso_res.best.state) is True
+            sol = puso_res.best.state
+
+        solution = COST.convert_solution(sol)
+        energy = COST.value(solution)
+        self.xUSO_qvec_solution = np.array(list(solution.values()))
+        return energy
+
+    def solve(self, strategy='brute_force', ref_state: np.array = None, num_anneals=1_000) -> None:
         """ Minimize the classical objective function, yielding the noncontextual ground state
+
+        Note most QUSO functions/methods work faster than their PUSO counterparts.
         """
         if ref_state is not None:
             self.energy, nu, r = self._energy_via_ref_state(ref_state)
-        elif strategy=='binary_relaxation' :
+        elif strategy=='binary_relaxation':
             self.energy, nu, r = self._energy_via_relaxation()
-        elif strategy=='brute_force' :
+        elif strategy=='brute_force':
             self.energy, nu, r = self._energy_via_brute_force()
+        elif strategy == 'brute_force_PUSO':
+            # PUSO = Polynomial unconstrained spin Optimization
+            self.energy, nu, r = self._energy_via_brute_force_xUSO(x='P')
+        elif strategy == 'brute_force_QUSO':
+            # QUSO: Quadratic Unconstrained Spin Optimization
+            self.energy, nu, r = self._energy_via_brute_force_xUSO(x='Q')
+        elif strategy == 'annealing_PUSO':
+            self.energy, nu, r = self._energy_via_annealing_xUSO(x='P', num_anneals=num_anneals)
+        elif strategy == 'annealing_QUSO':
+            self.energy, nu, r = self._energy_via_annealing_xUSO(x='Q', num_anneals=num_anneals)
         else:
             raise ValueError(f'unknown optimization strategy: {strategy}')
         
