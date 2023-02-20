@@ -261,10 +261,11 @@ class StabilizerOp(PauliwordOp):
             else:
                 return 0
         
-        # update the stabilizers assignments in parallel
-        pool = mp.Pool(mp.cpu_count())
-        self.coeff_vec = np.array(pool.map(assign_value, self), dtype=int)
-        pool.terminate()
+        # # update the stabilizers assignments in parallel
+        # pool = mp.Pool(mp.cpu_count())
+        # self.coeff_vec = np.array(pool.map(assign_value, self), dtype=int)
+        # pool.terminate()
+        self.coeff_vec = np.array([assign_value(s) for s in self])
 
         # raise a warning if any stabilizers are assigned a zero value
         if np.any(self.coeff_vec==0):
