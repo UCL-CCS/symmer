@@ -250,7 +250,7 @@ class StabilizerOp(PauliwordOp):
             
             # difference of norms provides a metric for which eigenvalue is dominant within
             # the provided reference state (e.g. if inputting a ±1 eigenvector then diff=±1)
-            eigenspace_norm_diff = norm_ev(+1) - norm_ev(-1)
+            eigenspace_norm_diff = norm_ev(+1)**2 - norm_ev(-1)**2
             
             # if this difference exceeds some predefined threshold then assign the corresponding 
             # ±1 eigenvalue. Otherwise, return 0 as insufficient evidence to fix the value.
@@ -278,7 +278,7 @@ class StabilizerOp(PauliwordOp):
             return self.perform_rotations(self.stabilizer_rotations)
         else:
             return self
-
+          
     def __getitem__(self,
                     key: Union[slice, int]
                     ) -> "StabilizerOp":
