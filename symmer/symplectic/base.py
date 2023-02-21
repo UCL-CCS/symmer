@@ -7,12 +7,13 @@ from itertools import product
 from functools import reduce
 from typing import Dict, List, Tuple, Union
 from numbers import Number
+import multiprocessing as mp
 from cached_property import cached_property
 from scipy.sparse import csr_matrix, csc_matrix, coo_matrix
 from symmer.symplectic.utils import *
 from openfermion import QubitOperator, count_qubits
 import matplotlib.pyplot as plt
-from qiskit.opflow import PauliOp, PauliSumOp
+from qiskit.opflow import PauliSumOp
 from scipy.stats import unitary_group
 import warnings
 warnings.simplefilter('always', UserWarning)
@@ -484,6 +485,19 @@ class PauliwordOp:
                 )
             )
         return pauli_mult_out
+    
+    def expval(self, psi: "QuantumState") -> complex:
+        """ Efficient (linear) expectation value calculation using projectors
+        See single_term_expval function below for further details.
+        """
+        if self.n_terms > 1:
+            # parallelize if number of terms greater than one
+            with mp.Pool(mp.cpu_count()) as pool:      
+                expvals = np.array(list(pool.starmap(single_term_expval, [(P, psi) for P in self])))
+        else:
+            expvals = np.array(single_term_expval(self, psi))
+
+        return np.sum(expvals * self.coeff_vec)
 
     def __mul__(self, 
             mul_obj: Union["PauliwordOp", "QuantumState", complex],
@@ -517,7 +531,6 @@ class PauliwordOp:
         else:
             return pauli_mult_out
         
-
     def __imul__(self, 
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
@@ -1078,7 +1091,7 @@ class QuantumState:
         return qstate_random
     
     @classmethod
-    def random_state(cls, num_qubits: int, num_terms: int, vec_type: str='ket') -> "QuantumState":
+    def random(cls, num_qubits: int, num_terms: int, vec_type: str='ket') -> "QuantumState":
         """ Generates a random normalized QuantumState, but not from Haar distribution
         """
         # random binary array with N columns, M rows
@@ -1091,7 +1104,7 @@ class QuantumState:
         return QuantumState(random_state, coeff_vec, vec_type=vec_type).normalize
     
     @classmethod
-    def zero_state(cls,
+    def zero(cls,
                     n_qubits: int,
                     vec_type: str='ket') -> "QuantumState":
         """
@@ -1601,3 +1614,27 @@ def get_ij_operator(i,j,n_qubits,binary_vec=None):
         ij_operator= PauliwordOp(ij_symp_matrix, XZX_sign_flips/2**n_qubits)
     
     return ij_operator
+
+def single_term_expval(P_op, psi: "QuantumState") -> float:
+        """ Expectation value calculation for a single Pauli operator given a QuantumState psi
+
+        Scales linearly in the number of basis states of psi, versus the quadratic cost of
+        evaluating <psi|P|psi> directly, taking into consideration all of the cross-terms.
+
+        Works by decomposing P = P(+) - P(-) where P(±) = (I±P)/2 projects onto the ±1-eigensapce of P. 
+        """
+        assert P_op.n_terms == 1, 'Supplied multiple Pauli terms.'
+        
+        # symplectic form of the projection operator
+        proj_symplectic = np.vstack([np.zeros(P_op.n_qubits*2, dtype=bool), P_op.symp_matrix])
+
+        # function that applies the projector onto the ±1 eigenspace of P
+        # (given by the operator (I±P)/2) and returns norm of the resulting state
+        norm_ev = lambda ev:np.linalg.norm( 
+            ( 
+                PauliwordOp(proj_symplectic, [.5,.5*ev]) * psi
+            ).state_op.coeff_vec
+        )
+        # difference of norms provides a metric for which eigenvalue is dominant within
+        # the provided reference state (e.g. if inputting a ±1 eigenvector then diff=±1)
+        return (norm_ev(+1)**2 - norm_ev(-1)**2).real

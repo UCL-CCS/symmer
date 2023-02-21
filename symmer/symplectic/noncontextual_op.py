@@ -409,6 +409,9 @@ class NoncontextualOp(PauliwordOp):
             r_optimal (np.array): r vector
 
         """
+        if not isinstance(num_anneals, int):
+            raise ValueError('Please give an integer number of anneals')
+
         r_bounds = [(0, np.pi)]*(self.n_cliques-2)+[(0, 2*np.pi)]
 
         optimizer_output = differential_evolution(
