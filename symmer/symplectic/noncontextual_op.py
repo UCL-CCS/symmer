@@ -552,6 +552,8 @@ def energy_xUSO(NC_op: NoncontextualOp, r_vec: np.array,
     return energy, nu_vec, r_vec
 
 class xUSO_storage():
+    """ This is necessary to store the nu vector obtained from an optimization over r_vec
+    """
     def __init__(self, Noncon, fixed_ev_mask, fixed_eigvals, 
                   method:str='brute_force', x:str='P', 
                   num_anneals:Optional[int]=1_000) -> None:
