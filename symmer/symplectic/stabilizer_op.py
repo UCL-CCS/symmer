@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Union
 import warnings
 import multiprocessing as mp
 from symmer.symplectic.utils import _rref_binary, _cref_binary
-from symmer.symplectic import PauliwordOp, QuantumState, symplectic_to_string
+from symmer.symplectic import PauliwordOp, QuantumState, symplectic_to_string, single_term_expval
 
 class StabilizerOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must
@@ -106,7 +106,7 @@ class StabilizerOp(PauliwordOp):
     def _check_stab(self) -> None:
         """ Checks the stabilizer coefficients are +/-1
         """
-        assert(set(self.coeff_vec).issubset({+1,-1})), f'Stabilizer coefficients not +/-1: {self.coeff_vec}'
+        assert(set(self.coeff_vec).issubset({0, +1,-1})), f'Stabilizer coefficients not +/-1: {self.coeff_vec}'
 
     def _check_independent(self) -> None:
         """ Check the supplied stabilizers are algebraically independent
@@ -290,7 +290,7 @@ class StabilizerOp(PauliwordOp):
 def assign_value(S: PauliwordOp, ref_state: QuantumState, threshold: float) -> int:
     """ Measure expectation value of stabilizer on input reference state
     """
-    expval = S.expval(ref_state)
+    expval = single_term_expval(S, ref_state)
     # if this expval exceeds some predefined threshold then assign the corresponding 
     # ±1 eigenvalue. Otherwise, return 0 as insufficient evidence to fix the value.
     if abs(expval) > threshold:
