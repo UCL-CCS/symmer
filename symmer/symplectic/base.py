@@ -1615,26 +1615,26 @@ def get_ij_operator(i,j,n_qubits,binary_vec=None):
     
     return ij_operator
 
-def single_term_expval(P_op, psi: "QuantumState") -> float:
-        """ Expectation value calculation for a single Pauli operator given a QuantumState psi
+def single_term_expval(P_op: PauliwordOp, psi: QuantumState) -> float:
+    """ Expectation value calculation for a single Pauli operator given a QuantumState psi
 
-        Scales linearly in the number of basis states of psi, versus the quadratic cost of
-        evaluating <psi|P|psi> directly, taking into consideration all of the cross-terms.
+    Scales linearly in the number of basis states of psi, versus the quadratic cost of
+    evaluating <psi|P|psi> directly, taking into consideration all of the cross-terms.
 
-        Works by decomposing P = P(+) - P(-) where P(±) = (I±P)/2 projects onto the ±1-eigensapce of P. 
-        """
-        assert P_op.n_terms == 1, 'Supplied multiple Pauli terms.'
-        
-        # symplectic form of the projection operator
-        proj_symplectic = np.vstack([np.zeros(P_op.n_qubits*2, dtype=bool), P_op.symp_matrix])
+    Works by decomposing P = P(+) - P(-) where P(±) = (I±P)/2 projects onto the ±1-eigensapce of P. 
+    """
+    assert P_op.n_terms == 1, 'Supplied multiple Pauli terms.'
+    
+    # symplectic form of the projection operator
+    proj_symplectic = np.vstack([np.zeros(P_op.n_qubits*2, dtype=bool), P_op.symp_matrix])
 
-        # function that applies the projector onto the ±1 eigenspace of P
-        # (given by the operator (I±P)/2) and returns norm of the resulting state
-        norm_ev = lambda ev:np.linalg.norm( 
-            ( 
-                PauliwordOp(proj_symplectic, [.5,.5*ev]) * psi
-            ).state_op.coeff_vec
-        )
-        # difference of norms provides a metric for which eigenvalue is dominant within
-        # the provided reference state (e.g. if inputting a ±1 eigenvector then diff=±1)
-        return (norm_ev(+1)**2 - norm_ev(-1)**2).real
+    # function that applies the projector onto the ±1 eigenspace of P
+    # (given by the operator (I±P)/2) and returns norm of the resulting state
+    norm_ev = lambda ev:np.linalg.norm( 
+        ( 
+            PauliwordOp(proj_symplectic, [.5,.5*ev]) * psi
+        ).state_op.coeff_vec
+    )
+    # difference of norms provides a metric for which eigenvalue is dominant within
+    # the provided reference state (e.g. if inputting a ±1 eigenvector then diff=±1)
+    return (norm_ev(+1)**2 - norm_ev(-1)**2).real
