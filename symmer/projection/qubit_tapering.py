@@ -4,7 +4,9 @@ import numpy as np
 from typing import List, Union
 from cached_property import cached_property
 from symmer.projection import S3_projection
-from symmer.symplectic import PauliwordOp, StabilizerOp, QuantumState
+from symmer.symplectic import PauliwordOp, IndependentOp, QuantumState
+from symmer.evolution import trotter, Had
+from functools import reduce
 
 class QubitTapering(S3_projection):
     """ Class for performing qubit tapering as per https://arxiv.org/abs/1701.08213.
@@ -33,10 +35,10 @@ class QubitTapering(S3_projection):
         super().__init__(self.symmetry_generators)
         
     @cached_property
-    def symmetry_generators(self) -> StabilizerOp:
+    def symmetry_generators(self) -> IndependentOp:
         """ Find an independent basis for the input operator symmetry
         """
-        stabilizers = StabilizerOp.symmetry_basis(self.operator)
+        stabilizers = IndependentOp.symmetry_generators(self.operator)
         stabilizers.target_sqp = self.target_sqp
         return stabilizers
 
@@ -55,6 +57,11 @@ class QubitTapering(S3_projection):
         one wishes to restrict to the same stabilizer subspace as the Hamiltonian for 
         use in VQE, for example.
         """
+        if ref_state is not None:
+            if not isinstance(ref_state, QuantumState):
+                ref_state = QuantumState(ref_state)
+            assert ref_state._is_normalized(), 'Reference state is not normalized.'
+
         if self.symmetry_generators != self.stabilizers:
             # need to update stabilizers in parent class if user decides to fix less stabilizers (e.g. doesn't want
             # to taper all stabilizers). Could be useful in error mitigation strategies
@@ -74,11 +81,36 @@ class QubitTapering(S3_projection):
             sector=sector
         )
 
-        # if a reference state was supplied, taper it by dropping any
-        # qubit positions fixed during the perform_projection method
-        if ref_state is not None and not isinstance(ref_state, QuantumState):
-            # TODO general implementation to project QuantumState into reduced space
-            ref_state = np.array(ref_state)
-            self.tapered_ref_state = ref_state[self.free_qubit_indices]
+        # if a reference state was supplied, project it into the stabilizer subspace
+        if ref_state is not None:
+            self.tapered_ref_state = self.taper_state(ref_state)
 
         return tapered_operator
+    
+    def taper_state(self, state: QuantumState) -> QuantumState:
+        """ Project a state into the stabilizer subspace
+        """
+        transformation_list = []
+        # Hadamards where rotated onto Pauli X operators
+        transformation_list += [
+            Had(self.stabilizers.n_qubits, i) for i in np.where(
+                np.sum(
+                    self.stabilizers.rotate_onto_single_qubit_paulis().X_block & 
+                    ~self.stabilizers.rotate_onto_single_qubit_paulis().Z_block,
+                    axis=0
+            )
+                )[0]
+        ]
+        # Projections onto the stabilizer subspace
+        #transformation_list += list(map(lambda x:(x**2 + x)*.5,self.stabilizers.rotate_onto_single_qubit_paulis()))
+        # Rotations mapping stabilizers onto single-qubit Pauli operators
+        transformation_list += list(map(lambda s:trotter(s[0]*(np.pi/4*1j)), self.stabilizers.stabilizer_rotations))
+        # Product over the transformation list yields final transformation operator
+        transformation = reduce(lambda x,y:x*y, transformation_list)
+        # apply transformation to the reference state
+        transformed_state = transformation * state
+        # drop stabilized qubit positions and sum over potential duplicates
+        return QuantumState(
+            transformed_state.state_matrix[:, self.free_qubit_indices], 
+            transformed_state.state_op.coeff_vec
+        ).cleanup(zero_threshold=1e-12)
