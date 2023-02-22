@@ -216,7 +216,7 @@ class NoncontextualOp(PauliwordOp):
         """
         if self.n_cliques > 0:
             reconstruction_ind_matrix = np.zeros(
-                [self.n_terms, self.symmetry_generators.n_terms + self.n_cliques]
+                [self.n_terms, self.symmetry_generators.n_terms + self.n_cliques], dtype=int
             )
             # Cannot simultaneously know eigenvalues of cliques so zero rows with more than one clique
             # therefore, we decompose the noncontextual terms in the respective independent bases
@@ -260,16 +260,17 @@ class NoncontextualOp(PauliwordOp):
                 pauli_mult_signs[index] = int(gen_mult.coeff_vec.real[0])
         self.G_indices, self.r_indices, self.pauli_mult_signs = G_part, r_part, pauli_mult_signs
 
+
     def noncontextual_objective_function(self, 
             nu: np.array, 
             r: np.array
         ) -> float:
         """ The classical objective function that encodes the noncontextual energies
         """
-        nu = np.asarray(nu) # must be an array!
+        nu = np.asarray(nu, dtype=int) # must be an array!
         G_prod = (-1)**np.count_nonzero(np.logical_and(self.G_indices==1, nu == -1), axis=1)
         r_part = np.sum(self.r_indices*r, axis=1)
-        r_part[np.where(r_part==0)]=1
+        r_part[~np.any(self.r_indices, axis=1)]=1
         return np.sum(self.coeff_vec*G_prod*r_part*self.pauli_mult_signs).real
 
     def _convex_problem(self, nu):
@@ -547,9 +548,9 @@ def energy_xUSO(NC_op: NoncontextualOp, r_vec: np.array,
     energy = COST.value(solution)
     nu_vec = np.ones(NC_op.symmetry_generators.n_terms)
     nu_vec[fixed_ev_mask] = fixed_eigvals
-    nu_vec[~fixed_ev_mask] = np.array(list(solution.values()), dtype=int)
+    nu_vec[~fixed_ev_mask] = np.array(list(solution.values()))
 
-    return energy, nu_vec, r_vec
+    return energy, nu_vec.astype(int), r_vec
 
 class xUSO_storage():
     """ This is necessary to store the nu vector obtained from an optimization over r_vec

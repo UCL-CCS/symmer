@@ -344,7 +344,7 @@ class PauliwordOp:
         reduced = cref_binary(basis_op_stack)
         mask_successfully_reconstructed = np.all(~reduced[dim:,dim:], axis=1)
         op_reconstruction = reduced[dim:,:dim]
-        return op_reconstruction, mask_successfully_reconstructed
+        return op_reconstruction.astype(int), mask_successfully_reconstructed
 
     @cached_property
     def Y_count(self) -> np.array:
