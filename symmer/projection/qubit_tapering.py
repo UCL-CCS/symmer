@@ -5,8 +5,6 @@ from typing import List, Union
 from cached_property import cached_property
 from symmer.projection import S3_projection
 from symmer.symplectic import PauliwordOp, IndependentOp, QuantumState
-from symmer.evolution import trotter, Had
-from functools import reduce
 
 class QubitTapering(S3_projection):
     """ Class for performing qubit tapering as per https://arxiv.org/abs/1701.08213.
@@ -83,34 +81,6 @@ class QubitTapering(S3_projection):
 
         # if a reference state was supplied, project it into the stabilizer subspace
         if ref_state is not None:
-            self.tapered_ref_state = self.taper_state(ref_state)
+            self.tapered_ref_state = self.project_state(ref_state)
 
         return tapered_operator
-    
-    def taper_state(self, state: QuantumState) -> QuantumState:
-        """ Project a state into the stabilizer subspace
-        """
-        transformation_list = []
-        # Hadamards where rotated onto Pauli X operators
-        transformation_list += [
-            Had(self.stabilizers.n_qubits, i) for i in np.where(
-                np.sum(
-                    self.stabilizers.rotate_onto_single_qubit_paulis().X_block & 
-                    ~self.stabilizers.rotate_onto_single_qubit_paulis().Z_block,
-                    axis=0
-            )
-                )[0]
-        ]
-        # Projections onto the stabilizer subspace
-        #transformation_list += list(map(lambda x:(x**2 + x)*.5,self.stabilizers.rotate_onto_single_qubit_paulis()))
-        # Rotations mapping stabilizers onto single-qubit Pauli operators
-        transformation_list += list(map(lambda s:trotter(s[0]*(np.pi/4*1j)), self.stabilizers.stabilizer_rotations))
-        # Product over the transformation list yields final transformation operator
-        transformation = reduce(lambda x,y:x*y, transformation_list)
-        # apply transformation to the reference state
-        transformed_state = transformation * state
-        # drop stabilized qubit positions and sum over potential duplicates
-        return QuantumState(
-            transformed_state.state_matrix[:, self.free_qubit_indices], 
-            transformed_state.state_op.coeff_vec
-        ).cleanup(zero_threshold=1e-12)
