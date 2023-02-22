@@ -502,7 +502,7 @@ def energy_xUSO(NC_op: NoncontextualOp, r_vec: np.array,
     assert method in ['brute_force', 'annealing']
     
     r_part = np.sum(NC_op.r_indices * r_vec, axis=1)
-    r_part[np.where(r_part == 0)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
+    r_part[~np.any(NC_op.r_indices, axis=1)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
     
     # setup spin variables
     fixed_indices = np.where(fixed_ev_mask)[0] # bool to indices
