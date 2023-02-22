@@ -23,20 +23,19 @@ Qubit reduction techniques such as [tapering](https://arxiv.org/abs/1701.08213) 
 `.symplectic` contains the following classes (in resolution order):
 - [`PauliwordOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/base.py) for representing general Pauli operators.
 - [`QuantumState`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/base.py) for representing quantum statevectors.
+- [`IndependentOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/independent_op.py) represents algebraically independent sets of Pauli operators for stabilizer manipulation/projections.
+- [`AnticommutingOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/anticommuting_op.py) represents sets of anticommuting Pauli operators for the purposes of Unitary Partitioning and Linear Combination of Unitaries as in [this](https://arxiv.org/abs/2207.03451) paper.
+- [`NoncontextualOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/noncontextual_op.py) represents noncontextual Hamiltonians (defined [here](https://arxiv.org/abs/2002.05693)) that may be mapped onto a hidden-variable model and solved classically; various solvers are supplied in `NoncontextualSolver`.
 - [`ObservableOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/observable_op.py) for representing Hermitian operators, including expectation values and VQE functionality.
 - [`AnsatzOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/ansatz_op.py) is input into ObservableOp.VQE and contains a method for converting excitation terms to a quantum circuit.
-- [`StabilizerOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/stabilizer_op.py) represents algebraically independent sets of Pauli operators for stabilizer manipulation/projections.
-- [`AnticommutingOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/anticommuting_op.py) represents sets of anticommuting Pauli operators for the purposes of Unitary Partitioning and Linear Combination of Unitaries as in [this](https://arxiv.org/abs/2207.03451) paper.
 - [`MajoranaOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/majorana_op.py) represents operators in the Majorana basis instead of Paulis, though the underlying symplectic structure is analogous.
 
 `.projection` contains stabilizer subspace projection classes (in resolution order):
 - [`S3_projection`](https://github.com/UCL-CCS/symmer/tree/main/symmer/projection/base.py) for rotating a StabilizerOp onto some basis of single-qubit Pauli operators via Clifford operations and projecting into the corresponding stabilizer subspace.
-
 - [`QubitTapering`](https://github.com/UCL-CCS/symmer/tree/main/symmer/projection/qubit_tapering.py) 
   - Performs the [qubit tapering](https://arxiv.org/abs/1701.08213) technique, exploiting $\mathbb{Z}_2$ symmetries to reduce the number of qubits in the input Hamiltonian while preserving the ground state energy _exactly_.
   - The stablizers are chosen to be an independent generating set of a Hamiltonian symmetry.
-  
-- [`CS_VQE`](https://github.com/UCL-CCS/symmer/tree/main/symmer/projection/cs_vqe.py) 
+- [`ContextualSubspace`](https://github.com/UCL-CCS/symmer/tree/main/symmer/projection/contextual_subspace.py) 
   - Performs [Contextual-Subspace VQE](https://quantum-journal.org/papers/q-2021-05-14-456/), allowing one to specify precisely how many qubits they would like in the output Hamiltonian. Despite this process incurring some systematic error, it is possible to retain sufficient information to permit high precision simulations at a significant reduction in quantum resource. This is the updated approach to [ContextualSubspaceVQE](https://github.com/wmkirby1/ContextualSubspaceVQE).
   - Here, the stabilizers are taken to be an independent generating set of a sub-Hamiltonian symmetry (defined by a noncontextual subset of terms) with an additional contribution encapsulating the remaining anticommuting terms therein.
 
@@ -66,5 +65,5 @@ All this allows us to approach significantly larger systems than was previously 
 When you use in a publication or other work, please cite as:
 
 > William M. Kirby, Andrew Tranter, and Peter J. Love, *Contextual Subspace Variational Quantum Eigensolver*, [Quantum 5, 456](https://doi.org/10.22331/q-2021-05-14-456) (2021).
-> Tim J. Weaving, Alexis Ralli, William M. Kirby, Andrew Tranter, Peter J. Love, and Peter V. Coveney, *A stabilizer framework for Contextual Subspace VQE and the noncontextual projection ansatz*, arxiv preprint (2022), [arxiv:2204.02150](https://arxiv.org/abs/2204.02150).
-> Alexis Ralli, Tim Weaving, Andrew Tranter, William M. Kirby, Peter J. Love, and Peter V. Coveney, *Unitary Partitioning and the Contextual Subspace Variational Quantum Eigensolver*, arxiv preprint (2022), [arxiv:2207.03451](https://arxiv.org/abs/2207.03451).
+> Weaving, Tim, Alexis Ralli, William M. Kirby, Andrew Tranter, Peter J. Love, and Peter V. Coveney. "A Stabilizer Framework for the Contextual Subspace Variational Quantum Eigensolver and the Noncontextual Projection Ansatz." [J. Chem. Theory Comput. 2023, 19, 3, 808–821](https://doi.org/10.1021/acs.jctc.2c00910) (2023).
+> Ralli, Alexis, Tim Weaving, Andrew Tranter, William M. Kirby, Peter J. Love, and Peter V. Coveney. "Unitary partitioning and the contextual subspace variational quantum eigensolver." [Phys. Rev. Research 5, 013095](https://doi.org/10.1103/PhysRevResearch.5.013095) (2023).
