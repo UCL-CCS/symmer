@@ -4,7 +4,7 @@ from functools import reduce
 from typing import Optional, Union, Tuple
 import multiprocessing as mp
 from scipy.optimize import differential_evolution, shgo
-from symmer.symplectic import PauliwordOp, StabilizerOp, AntiCommutingOp, QuantumState
+from symmer.symplectic import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
 from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
 import itertools
 import qubovert as qv
@@ -172,13 +172,13 @@ class NoncontextualOp(PauliwordOp):
         noncontextual_terms_mask = np.any(np.array(aug_basis_reconstruction_masks), axis=0)
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
 
-    def noncontextual_basis(self) -> StabilizerOp:
+    def noncontextual_basis(self) -> IndependentOp:
         """ Find an independent *generating set* for the noncontextual symmetry
         * technically not a basis!
         """
         self.decomposed = {}
         # identify a basis of universally commuting operators
-        symmetry_generators = StabilizerOp.symmetry_basis(self)
+        symmetry_generators = IndependentOp.symmetry_generators(self)
         # try to reconstruct the noncontextual operator in this basis
         # not all terms can be decomposed in this basis, so check which can
         reconstructed_indices, succesfully_reconstructed = self.basis_reconstruction(symmetry_generators)
@@ -226,7 +226,7 @@ class NoncontextualOp(PauliwordOp):
                     np.arange(self.symmetry_generators.n_terms), clique_column_index
                 )
                 GuCi_symp = np.vstack([self.symmetry_generators.symp_matrix, Ci.symp_matrix])
-                GuCi = StabilizerOp(GuCi_symp)
+                GuCi = IndependentOp(GuCi_symp)
                 reconstructed, row_mask_inds = self.basis_reconstruction(GuCi)
                 row_col_mask = np.ix_(row_mask_inds, col_mask_inds)
                 reconstruction_ind_matrix[row_col_mask] = reconstructed[row_mask_inds]

@@ -1270,7 +1270,7 @@ class QuantumState:
         return QuantumState(self.state_matrix[sort_order], self.state_op.coeff_vec[sort_order])
 
     def sectors_present(self, symmetry):
-        """ return the sectors present within the QuantumState w.r.t. a StabilizerOp
+        """ return the sectors present within the QuantumState w.r.t. a IndependentOp
         """
         symmetry_copy = symmetry.copy()
         symmetry_copy.coeff_vec = np.ones(symmetry.n_terms)

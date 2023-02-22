@@ -1,4 +1,4 @@
-from symmer.symplectic import PauliwordOp
+from symmer.symplectic import PauliwordOp, IndependentOp
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
 import warnings
@@ -38,7 +38,7 @@ class AntiCommutingOp(PauliwordOp):
     @classmethod
     def from_PauliwordOp(cls,
             PwordOp: PauliwordOp
-        ) -> "StabilizerOp":
+        ) -> IndependentOp:
         return cls(PwordOp.symp_matrix, PwordOp.coeff_vec)
 
     def lexicographical_sort(self) -> None:

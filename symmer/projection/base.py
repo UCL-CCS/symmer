@@ -1,6 +1,6 @@
 import numpy as np
 from typing import List, Tuple, Union
-from symmer.symplectic import PauliwordOp, StabilizerOp
+from symmer.symplectic import PauliwordOp, IndependentOp
 
 class S3_projection:
     """ Base class for enabling qubit reduction techniques derived from
@@ -22,7 +22,7 @@ class S3_projection:
     rotated_flag = False
 
     def __init__(self,
-                stabilizers: StabilizerOp
+                stabilizers: IndependentOp
                 ) -> None:
         """
         - stabilizers
