@@ -28,6 +28,7 @@ class ContextualSubspace(S3_projection):
             noncontextual_strategy: str = 'diag',
             noncontextual_solver: str = 'brute_force',
             num_anneals:Optional[int] = 1000,
+            discrete_optimization_order = 'first',
             unitary_partitioning_method: str = 'LCU',
             reference_state: np.array = None,
             noncontextual_operator: NoncontextualOp = None,
@@ -41,6 +42,7 @@ class ContextualSubspace(S3_projection):
         self.nc_strategy = extract_noncon_strat[0]
         self.noncontextual_solver = noncontextual_solver
         self.num_anneals = num_anneals
+        self.discrete_optimization_order = discrete_optimization_order
         if self.nc_strategy=='StabilizeFirst':
             self.stabilize_first_method = extract_noncon_strat[1]
 
@@ -64,7 +66,12 @@ class ContextualSubspace(S3_projection):
             self.contextual_operator = self.operator - self.noncontextual_operator
             if self.contextual_operator.n_terms == 0:
                 raise ValueError('The Hamiltonian is noncontextual, the contextual subspace is empty.')
-            self.noncontextual_operator.solve(strategy=self.noncontextual_solver, ref_state=self.ref_state, num_anneals=self.num_anneals)
+            self.noncontextual_operator.solve(
+                strategy=self.noncontextual_solver, 
+                ref_state=self.ref_state, 
+                num_anneals=self.num_anneals,
+                discrete_optimization_order=self.discrete_optimization_order
+            )
             self.n_cliques = self.noncontextual_operator.n_cliques
 
     def manual_stabilizers(self, S: Union[List[str], IndependentOp]) -> None:
