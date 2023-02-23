@@ -1,6 +1,8 @@
 import numpy as np
 from typing import List, Tuple, Union
-from symmer.symplectic import PauliwordOp, StabilizerOp
+from symmer.symplectic import PauliwordOp, IndependentOp, QuantumState
+from symmer.evolution import trotter, Had
+from functools import reduce
 
 class S3_projection:
     """ Base class for enabling qubit reduction techniques derived from
@@ -22,7 +24,7 @@ class S3_projection:
     rotated_flag = False
 
     def __init__(self,
-                stabilizers: StabilizerOp
+                stabilizers: IndependentOp
                 ) -> None:
         """
         - stabilizers
@@ -103,3 +105,31 @@ class S3_projection:
         self.rotated_flag = True
         # ...and finally perform the stabilizer subspace projection
         return self._perform_projection(operator=op_rotated)
+    
+    def project_state(self, state: QuantumState) -> QuantumState:
+        """ Project a state into the stabilizer subspace
+        """
+        transformation_list = []
+        # Hadamards where rotated onto Pauli X operators
+        transformation_list += [
+            Had(self.stabilizers.n_qubits, i) for i in np.where(
+                np.sum(
+                    self.stabilizers.rotate_onto_single_qubit_paulis().X_block & 
+                    ~self.stabilizers.rotate_onto_single_qubit_paulis().Z_block,
+                    axis=0
+            )
+                )[0]
+        ]
+        # Projections onto the stabilizer subspace
+        #transformation_list += list(map(lambda x:(x**2 + x)*.5,self.stabilizers.rotate_onto_single_qubit_paulis()))
+        # Rotations mapping stabilizers onto single-qubit Pauli operators
+        transformation_list += list(map(lambda s:trotter(s[0]*(np.pi/4*1j)), self.stabilizers.stabilizer_rotations))
+        # Product over the transformation list yields final transformation operator
+        transformation = reduce(lambda x,y:x*y, transformation_list)
+        # apply transformation to the reference state
+        transformed_state = transformation * state
+        # drop stabilized qubit positions and sum over potential duplicates
+        return QuantumState(
+            transformed_state.state_matrix[:, self.free_qubit_indices], 
+            transformed_state.state_op.coeff_vec
+        ).cleanup(zero_threshold=1e-12)

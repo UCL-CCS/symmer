@@ -344,7 +344,7 @@ class PauliwordOp:
         reduced = cref_binary(basis_op_stack)
         mask_successfully_reconstructed = np.all(~reduced[dim:,dim:], axis=1)
         op_reconstruction = reduced[dim:,:dim]
-        return op_reconstruction, mask_successfully_reconstructed
+        return op_reconstruction.astype(int), mask_successfully_reconstructed
 
     @cached_property
     def Y_count(self) -> np.array:
@@ -1270,7 +1270,7 @@ class QuantumState:
         return QuantumState(self.state_matrix[sort_order], self.state_op.coeff_vec[sort_order])
 
     def sectors_present(self, symmetry):
-        """ return the sectors present within the QuantumState w.r.t. a StabilizerOp
+        """ return the sectors present within the QuantumState w.r.t. a IndependentOp
         """
         symmetry_copy = symmetry.copy()
         symmetry_copy.coeff_vec = np.ones(symmetry.n_terms)

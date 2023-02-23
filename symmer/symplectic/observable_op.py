@@ -196,7 +196,7 @@ class ObservableOp(PauliwordOp):
     def _ansatz_expectation_statevector(self, 
             ansatz_op: AnsatzOp, 
             ref_state: np.array,
-            sparse = False
+            sparse = True
         ) -> float:
         """ Exact expectation value - expensive! Converts the ansatz operator to a sparse vector | psi >
         and return the quantity < psi | Observable | psi >

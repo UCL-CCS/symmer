@@ -1,7 +1,7 @@
 import numpy as np
 from copy import deepcopy
 from scipy.optimize import differential_evolution
-from symmer.symplectic import PauliwordOp, StabilizerOp
+from symmer.symplectic import PauliwordOp, IndependentOp
 
 def norm(vector: np.array) -> float:
     """
@@ -19,7 +19,7 @@ def lp_norm(vector: np.array, p:int=2) -> float:
 
 def basis_score(
         weighting_operator: PauliwordOp,
-        basis: StabilizerOp,
+        basis: IndependentOp,
         p:int=1
     ) -> float:
     """ Evaluate the score of an input basis according 
@@ -39,8 +39,8 @@ def basis_score(
     )
 
 def update_eigenvalues(
-        basis: StabilizerOp, 
-        stabilizers: StabilizerOp
+        basis: IndependentOp, 
+        stabilizers: IndependentOp
     ) -> None:
     """ Update the +/-1 eigenvalue assigned to the input stabilizer
     according to the noncontextual ground state configuration
@@ -76,16 +76,16 @@ class StabilizerIdentification:
         self.qubit_positions = np.arange(self.weighting_operator.n_qubits)
         self.term_region = [0,self.basis_weighting.n_terms]
         
-    def symmetry_basis_by_term_significance(self, n_preserved):
+    def symmetry_generators_by_term_significance(self, n_preserved):
         """ Set the number of terms to be preserved in order of coefficient magnitude
         Then generate the largest symmetry basis that preserves them
         """
         preserve = self.basis_weighting[:n_preserved]
-        stabilizers = StabilizerOp.symmetry_basis(preserve, commuting_override=True)
+        stabilizers = IndependentOp.symmetry_generators(preserve, commuting_override=True)
         mask_diag = np.where(~np.any(stabilizers.X_block, axis=1))[0]
-        return StabilizerOp(stabilizers.symp_matrix[mask_diag], stabilizers.coeff_vec[mask_diag])
+        return IndependentOp(stabilizers.symp_matrix[mask_diag], stabilizers.coeff_vec[mask_diag])
 
-    def symmetry_basis_by_subspace_dimension(self, n_sim_qubits, region=None):
+    def symmetry_generators_by_subspace_dimension(self, n_sim_qubits, region=None):
         """
         """
         if region is None:
@@ -94,7 +94,7 @@ class StabilizerIdentification:
         assert(region[1]-region[0]>1), 'Search region collapsed without identifying any stabilizers'
 
         n_terms = sum(region)//2
-        stabilizers = self.symmetry_basis_by_term_significance(n_terms)
+        stabilizers = self.symmetry_generators_by_term_significance(n_terms)
         current_n_qubits = self.basis_weighting.n_qubits - stabilizers.n_terms
         sign = np.sign(current_n_qubits - n_sim_qubits)
 
@@ -107,7 +107,7 @@ class StabilizerIdentification:
         else:
             region[0] = n_terms
             
-        return self.symmetry_basis_by_subspace_dimension(n_sim_qubits, region=region)
+        return self.symmetry_generators_by_subspace_dimension(n_sim_qubits, region=region)
 
 class ObservableBiasing:
     """ Class for re-weighting Hamiltonian terms based on some criteria, such as HOMO-LUMO bias
@@ -172,7 +172,7 @@ def stabilizer_walk(
         biasing_operator: ObservableBiasing,
         weighting_operator: PauliwordOp = None,
         print_info: bool = False,
-    ) -> StabilizerOp:
+    ) -> IndependentOp:
     """
     """
     if weighting_operator is None:
@@ -182,7 +182,7 @@ def stabilizer_walk(
         biasing_operator.HOMO_bias,biasing_operator.LUMO_bias = x
         biased_op = biasing_operator.HOMO_LUMO_biased_operator()
         stabilizers = StabilizerIdentification(biased_op)
-        S = stabilizers.symmetry_basis_by_subspace_dimension(n_sim_qubits)
+        S = stabilizers.symmetry_generators_by_subspace_dimension(n_sim_qubits)
         return(S)
     
     def objective(x):

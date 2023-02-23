@@ -1,5 +1,5 @@
 import numpy as np
-from symmer.symplectic import PauliwordOp, StabilizerOp, NoncontextualOp
+from symmer.symplectic import PauliwordOp, IndependentOp, NoncontextualOp
 from symmer.projection.utils import (
     update_eigenvalues, StabilizerIdentification, ObservableBiasing, stabilizer_walk
 )
@@ -28,6 +28,7 @@ class ContextualSubspace(S3_projection):
             noncontextual_strategy: str = 'diag',
             noncontextual_solver: str = 'brute_force',
             num_anneals:Optional[int] = 1000,
+            discrete_optimization_order = 'first',
             unitary_partitioning_method: str = 'LCU',
             reference_state: np.array = None,
             noncontextual_operator: NoncontextualOp = None,
@@ -41,6 +42,7 @@ class ContextualSubspace(S3_projection):
         self.nc_strategy = extract_noncon_strat[0]
         self.noncontextual_solver = noncontextual_solver
         self.num_anneals = num_anneals
+        self.discrete_optimization_order = discrete_optimization_order
         if self.nc_strategy=='StabilizeFirst':
             self.stabilize_first_method = extract_noncon_strat[1]
 
@@ -64,14 +66,19 @@ class ContextualSubspace(S3_projection):
             self.contextual_operator = self.operator - self.noncontextual_operator
             if self.contextual_operator.n_terms == 0:
                 raise ValueError('The Hamiltonian is noncontextual, the contextual subspace is empty.')
-            self.noncontextual_operator.solve(strategy=self.noncontextual_solver, ref_state=self.ref_state, num_anneals=self.num_anneals)
+            self.noncontextual_operator.solve(
+                strategy=self.noncontextual_solver, 
+                ref_state=self.ref_state, 
+                num_anneals=self.num_anneals,
+                discrete_optimization_order=self.discrete_optimization_order
+            )
             self.n_cliques = self.noncontextual_operator.n_cliques
 
-    def manual_stabilizers(self, S: Union[List[str], StabilizerOp]) -> None:
+    def manual_stabilizers(self, S: Union[List[str], IndependentOp]) -> None:
         """ Specify a set of operators to enforce manually
         """
         if isinstance(S, list):
-            S = StabilizerOp.from_list(S)
+            S = IndependentOp.from_list(S)
         self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
         self.stabilizers = S
 
@@ -141,7 +148,7 @@ class ContextualSubspace(S3_projection):
                 self.stabilizers += extra_stabilizer
 
             # find symmetry generators given a sum of anticommuting operators
-            symgen = StabilizerOp.symmetry_basis(sum_clique_reps+self.stabilizers)
+            symgen = IndependentOp.symmetry_generators(sum_clique_reps+self.stabilizers)
             # this forms a noncontextual generating set under the Jordan product
             noncon_basis = symgen*1 + sum_clique_reps
             self.noncontextual_operator = NoncontextualOp.from_hamiltonian(strategy='basis', H=self.operator, basis=noncon_basis)
@@ -151,7 +158,7 @@ class ContextualSubspace(S3_projection):
     def _greedy_stabilizer_search(self,
             n_qubits: int, 
             depth: int=2
-        ) -> StabilizerOp:
+        ) -> IndependentOp:
         """
         """
         raise NotImplementedError
@@ -159,7 +166,7 @@ class ContextualSubspace(S3_projection):
     def _aux_operator_preserving_stabilizer_search(self,
             n_qubits: int,
             aux_operator: PauliwordOp
-        ) -> StabilizerOp:
+        ) -> IndependentOp:
         """ Choose stabilizers that preserve some auxiliary operator.
         This could be an Ansatz operator such as UCCSD, for example.
         """
@@ -170,7 +177,7 @@ class ContextualSubspace(S3_projection):
                 aux_operator = self.contextual_operator
 
         SI = StabilizerIdentification(aux_operator)
-        S = SI.symmetry_basis_by_subspace_dimension(n_qubits)
+        S = SI.symmetry_generators_by_subspace_dimension(n_qubits)
 
         return S
 
@@ -178,7 +185,7 @@ class ContextualSubspace(S3_projection):
             n_qubits: int,
             HF_array: np.array,
             weighting_operator: PauliwordOp = None
-        ) -> StabilizerOp:
+        ) -> IndependentOp:
         """ Bias the Hamiltonian with respect to the HOMO-LUMO gap 
         and preserve terms in the resulting operator as above.
         """
@@ -197,7 +204,7 @@ class ContextualSubspace(S3_projection):
 
     def _random_stabilizers(self, 
             n_qubits: int
-        )  -> StabilizerOp:
+        )  -> IndependentOp:
         """ Generate a random set of stabilizers
         """
         # TODO better approach that does not rely on this *potentially infinite* while loop!
@@ -210,7 +217,7 @@ class ContextualSubspace(S3_projection):
                     diagonal=True
                 )
                 S.coeff_vec[:] = 1
-                S = StabilizerOp.from_PauliwordOp(S)
+                S = IndependentOp.from_PauliwordOp(S)
                 found_stabilizers = True
             except:
                 pass
@@ -218,7 +225,7 @@ class ContextualSubspace(S3_projection):
         return S
 
     def _get_clique_representatives(self, 
-            symmetry_terms: StabilizerOp = None, 
+            symmetry_terms: IndependentOp = None, 
             n_cliques: int = 2, 
             clique_reps: List[PauliwordOp] = []
         ) -> PauliwordOp:
@@ -282,7 +289,7 @@ class ContextualSubspace(S3_projection):
             # consistent with the noncontextual ground state configuration - this is 
             # G U {RARdag} in the original CS-VQE notation. 
             augmented_basis = (
-                StabilizerOp.from_PauliwordOp(self.mapped_clique_rep) + 
+                IndependentOp.from_PauliwordOp(self.mapped_clique_rep) + 
                 self.noncontextual_operator.symmetry_generators
             )
             # given this new basis, we reconstruct the given stabilizers to identify

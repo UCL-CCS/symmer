@@ -1,10 +1,10 @@
 import numpy as np
 from time import time
 from functools import reduce
-from typing import Optional
+from typing import Optional, Union, Tuple
 import multiprocessing as mp
 from scipy.optimize import differential_evolution, shgo
-from symmer.symplectic import PauliwordOp, StabilizerOp, AntiCommutingOp, QuantumState
+from symmer.symplectic import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
 from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
 import itertools
 import qubovert as qv
@@ -172,13 +172,13 @@ class NoncontextualOp(PauliwordOp):
         noncontextual_terms_mask = np.any(np.array(aug_basis_reconstruction_masks), axis=0)
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
 
-    def noncontextual_basis(self) -> StabilizerOp:
+    def noncontextual_basis(self) -> IndependentOp:
         """ Find an independent *generating set* for the noncontextual symmetry
         * technically not a basis!
         """
         self.decomposed = {}
         # identify a basis of universally commuting operators
-        symmetry_generators = StabilizerOp.symmetry_basis(self)
+        symmetry_generators = IndependentOp.symmetry_generators(self)
         # try to reconstruct the noncontextual operator in this basis
         # not all terms can be decomposed in this basis, so check which can
         reconstructed_indices, succesfully_reconstructed = self.basis_reconstruction(symmetry_generators)
@@ -216,7 +216,7 @@ class NoncontextualOp(PauliwordOp):
         """
         if self.n_cliques > 0:
             reconstruction_ind_matrix = np.zeros(
-                [self.n_terms, self.symmetry_generators.n_terms + self.n_cliques]
+                [self.n_terms, self.symmetry_generators.n_terms + self.n_cliques], dtype=int
             )
             # Cannot simultaneously know eigenvalues of cliques so zero rows with more than one clique
             # therefore, we decompose the noncontextual terms in the respective independent bases
@@ -226,7 +226,7 @@ class NoncontextualOp(PauliwordOp):
                     np.arange(self.symmetry_generators.n_terms), clique_column_index
                 )
                 GuCi_symp = np.vstack([self.symmetry_generators.symp_matrix, Ci.symp_matrix])
-                GuCi = StabilizerOp(GuCi_symp)
+                GuCi = IndependentOp(GuCi_symp)
                 reconstructed, row_mask_inds = self.basis_reconstruction(GuCi)
                 row_col_mask = np.ix_(row_mask_inds, col_mask_inds)
                 reconstruction_ind_matrix[row_col_mask] = reconstructed[row_mask_inds]
@@ -266,10 +266,10 @@ class NoncontextualOp(PauliwordOp):
         ) -> float:
         """ The classical objective function that encodes the noncontextual energies
         """
-        nu = np.asarray(nu) # must be an array!
+        nu = np.asarray(nu, dtype=int) # must be an array!
         G_prod = (-1)**np.count_nonzero(np.logical_and(self.G_indices==1, nu == -1), axis=1)
         r_part = np.sum(self.r_indices*r, axis=1)
-        r_part[np.where(r_part==0)]=1
+        r_part[~np.any(self.r_indices, axis=1)]=1
         return np.sum(self.coeff_vec*G_prod*r_part*self.pauli_mult_signs).real
 
     def _convex_problem(self, nu):
@@ -294,62 +294,114 @@ class NoncontextualOp(PauliwordOp):
 
         return optimized_energy, r_optimal
 
-    def _energy_via_ref_state(self, ref_state):
-        """ Given a reference state such as Hartree-Fock, fix the symmetry generator eigenvalues
-        Currently only implemented for single reference basis states in the Z basis
-        """
-        # update the symmetry generator G coefficients w.r.t. the reference state
-        self.symmetry_generators.update_sector(ref_state)
-        ev_assignment = self.symmetry_generators.coeff_vec
-        fixed_indices = np.where(ev_assignment!=0)[0]
-        fixed_eigvals = ev_assignment[fixed_indices]
-        # any remaining unfixed symmetry generators are solved via brute force:
-        return self._energy_via_brute_force(fixed_indices, fixed_eigvals)
+    def solve(self, 
+            strategy: str = 'brute_force', 
+            ref_state: np.array = None, 
+            num_anneals:int = 1_000,
+            discrete_optimization_order = 'first'
+        ) -> None:
+        """ Minimize the classical objective function, yielding the noncontextual ground state
 
-    def _energy_via_relaxation(self):
-        """ Relax the binary value assignment of symmetry generators to continuous variables
+        Note most QUSO functions/methods work faster than their PUSO counterparts.
         """
-        # optimize discrete value assignments nu by relaxation to continuous variables
-        nu_bounds = [(0, np.pi)]*self.symmetry_generators.n_terms
-        optimizer_output = shgo(func=lambda angles:self._convex_problem(np.cos(angles))[0], bounds=nu_bounds)
-        # if optimization was successful the optimal angles should consist of 0 and pi
-        fix_nu = np.sign(np.array(np.cos(optimizer_output['x']))).astype(int)
-        self.symmetry_generators.coeff_vec = fix_nu 
-        energy, r_optimal = self._convex_problem(fix_nu)
-        return energy, fix_nu, r_optimal
+        
+        if ref_state is not None:
+            # update the symmetry generator G coefficients w.r.t. the reference state
+            self.symmetry_generators.update_sector(ref_state)
+            ev_assignment = self.symmetry_generators.coeff_vec
+            fixed_ev_mask = ev_assignment!=0
+            fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
+            NC_solver = NoncontextualSolver(self, fixed_ev_mask, fixed_eigvals)
+            # any remaining unfixed symmetry generators are solved via other means:
+        else:
+            NC_solver = NoncontextualSolver(self)
 
-    def _energy_via_brute_force(self, fixed_indices=None, fixed_eigvals=None):
+        NC_solver.num_anneals = num_anneals
+        NC_solver.discrete_optimization_order = discrete_optimization_order
+
+        if strategy=='brute_force':
+            self.energy, nu, r = NC_solver.energy_via_brute_force()
+
+        elif strategy=='binary_relaxation':
+            self.energy, nu, r = NC_solver.energy_via_relaxation()
+        
+        else:
+            #### qubovert strategies below this point ####
+            # PUSO = Polynomial unconstrained spin Optimization
+            # QUSO: Quadratic Unconstrained Spin Optimization
+            if strategy == 'brute_force_PUSO':
+                NC_solver.method = 'brute_force'
+                NC_solver.x = 'P'   
+            elif strategy == 'brute_force_QUSO':  
+                NC_solver.method = 'brute_force'
+                NC_solver.x = 'Q'
+            elif strategy == 'annealing_PUSO':
+                NC_solver.method = 'annealing'
+                NC_solver.x = 'P'
+            elif strategy == 'annealing_QUSO':
+                NC_solver.method = 'annealing'
+                NC_solver.x = 'Q'
+            else:
+                raise ValueError(f'Unknown optimization strategy: {strategy}')
+        
+            self.energy, nu, r = NC_solver.energy_xUSO()
+
+        # optimize the clique operator coefficients
+        self.symmetry_generators.coeff_vec = nu.astype(int)
+        if r is not None:
+            self.clique_operator.coeff_vec = r
+
+###############################################################################
+################### NONCONTEXTUAL SOLVERS BELOW ###############################
+###############################################################################
+
+class NoncontextualSolver:
+
+    # xUSO settings
+    method:str = 'brute_force'
+    x:str = 'P'
+    num_anneals:int = 1_000,
+    discrete_optimization_order:str = 'first'
+    reoptimize_r_vec:bool = False
+    _nu = None
+
+    def __init__(
+        self,
+        NC_op: NoncontextualOp,
+        fixed_ev_mask: np.array = None,
+        fixed_eigvals: np.array = None
+        ) -> None:
+        self.NC_op = NC_op
+        
+        if fixed_ev_mask is not None:
+            assert fixed_eigvals is not None, 'Must specify the fixed eigenvalues'
+            assert np.sum(fixed_ev_mask) == len(fixed_eigvals), 'Number of non-zero elements in mask does not match the number of fixed eigenvalues'
+            self.fixed_ev_mask = fixed_ev_mask
+            self.fixed_eigvals = fixed_eigvals
+        else:
+            self.fixed_ev_mask = np.zeros(NC_op.symmetry_generators.n_terms, dtype=bool)
+            self.fixed_eigvals = np.array([], dtype=int)
+    
+    #################################################################
+    ########################## BRUTE FORCE ##########################
+    #################################################################
+
+    def energy_via_brute_force(self) -> Tuple[float, np.array, np.array]:
         """ Does what is says on the tin! Try every single eigenvalue assignment in parallel
         and return the minimizing noncontextual configuration. This scales exponentially in 
         the number of qubits.
         """
-
-        # allow certain indices to be fixed while performing a brute force search over those remaining
-        if fixed_indices is None:
-            fixed_indices = np.array([], dtype=int)
-            fixed_eigvals = np.array([], dtype=int)
+        if np.all(self.fixed_ev_mask):
+            nu_list = self.fixed_eigvals.reshape([1,-1])
         else:
-            assert fixed_eigvals is not None, 'Must specify the eigenvalues to fix.'
-            assert len(fixed_indices) == len(fixed_eigvals), 'Length of eigvals does not match the fixed index list.'
-            fixed_indices = np.asarray(fixed_indices, dtype=int)
-            fixed_eigvals = np.asarray(fixed_eigvals, dtype=int)
-
-        nu = np.ones(self.symmetry_generators.n_terms, dtype=int)
-        nu[fixed_indices] = fixed_eigvals
-        unfixed_indices = np.setdiff1d(np.arange(self.symmetry_generators.n_terms),fixed_indices)    
-
-        if len(unfixed_indices)==0:
-            nu_list = fixed_eigvals.reshape([1,-1])
-        else:
-            search_size = 2**len(unfixed_indices)
-            nu_list = np.ones([search_size, self.symmetry_generators.n_terms], dtype=int)
-            nu_list[:,fixed_indices] = np.tile(fixed_eigvals, [search_size,1])
-            nu_list[:,unfixed_indices] = np.array(list(itertools.product([-1,1],repeat=len(unfixed_indices))))
+            search_size = 2**np.sum(~self.fixed_ev_mask)
+            nu_list = np.ones([search_size, self.NC_op.symmetry_generators.n_terms], dtype=int)
+            nu_list[:,self.fixed_ev_mask] = np.tile(self.fixed_eigvals, [search_size,1])
+            nu_list[:,~self.fixed_ev_mask] = np.array(list(itertools.product([-1,1],repeat=np.sum(~self.fixed_ev_mask))))
         
         # optimize over all discrete value assignments of nu in parallel
-        pool = mp.Pool(mp.cpu_count())
-        tracker = pool.map(self._convex_problem, nu_list)
-        pool.terminate() # close the multiprocessing pool
+        with mp.Pool(mp.cpu_count()) as pool:    
+            tracker = pool.map(self.NC_op._convex_problem, nu_list)
         
         # find the lowest energy eigenvalue assignment from the full list
         full_search_results = zip(tracker, nu_list)
@@ -357,107 +409,76 @@ class NoncontextualOp(PauliwordOp):
 
         return energy, fixed_nu, r_optimal
 
-    def _energy_via_brute_force_xUSO(self, x='P'):
+    #################################################################
+    ###################### BINARY RELAXATION ########################
+    #################################################################
+
+    def energy_via_relaxation(self) -> Tuple[float, np.array, np.array]:
+        """ Relax the binary value assignment of symmetry generators to continuous variables
         """
-       Optimize noncontextual energy by either: Polynomial unconstrained spin Optimization (x=P)
-                                                    or
-                                                Quadratic Unconstrained Spin Optimization  (x=Q)
+        # optimize discrete value assignments nu by relaxation to continuous variables
+        nu_bounds = [(0, np.pi)]*(self.NC_op.symmetry_generators.n_terms-np.sum(self.fixed_ev_mask))
 
-        via brute force. This method optimizes over the r-vector and finds the q_vector by brute force
+        def get_nu(angles):
+            """ Build nu vector given fixed values
+            """
+            nu = np.ones(self.NC_op.symmetry_generators.n_terms)
+            nu[self.fixed_ev_mask] = self.fixed_eigvals
+            nu[~self.fixed_ev_mask] = np.cos(angles)
+            return nu
 
-
-        Args:
-            x (str): Whether method is Polynomial or Quadratic optimization
-
-        Returns:
-            optimized_energy (float): minimized noncontextual ground state energy
-            q_vec_opt (np.array): q vector
-            r_optimal (np.array): r vector
-
-        """
-        r_bounds = [(0, np.pi)]*(self.n_cliques-2)+[(0, 2*np.pi)]
-
-        optimizer_output = differential_evolution(
-            func=lambda angles:self.xUSO(
-                unit_n_sphere_cartesian_coords(angles), x=x, method='brute_force'
-                ),
-            bounds=r_bounds
-        )
-        optimized_energy = optimizer_output['fun']
-        optimized_angles = optimizer_output['x']
-        r_optimal = unit_n_sphere_cartesian_coords(optimized_angles)
-
-        q_vec_opt = self.xUSO_qvec_solution
-        return optimized_energy, q_vec_opt, r_optimal
-
-    def _energy_via_annealing_xUSO(self, x='P', num_anneals:Optional[int]=1_000):
-        """
-       Optimize noncontextual energy by either: Polynomial unconstrained spin Optimization (x=P)
-                                                    or
-                                                Quadratic Unconstrained Spin Optimization  (x=Q)
-
-        via simulated annealing. This method optimizes over the r-vector and finds the q_vector by simulated annealing
-
-
-        Args:
-            x (str): Whether method is Polynomial or Quadratic optimization
-            num_anneals (optional): number of simulated anneals to do
-
-        Returns:
-            optimized_energy (float): minimized noncontextual ground state energy
-            q_vec_opt (np.array): q vector
-            r_optimal (np.array): r vector
-
-        """
-        if not isinstance(num_anneals, int):
-            raise ValueError('Please give an integer number of anneals')
-
-        r_bounds = [(0, np.pi)]*(self.n_cliques-2)+[(0, 2*np.pi)]
-
-        optimizer_output = differential_evolution(
-            func=lambda angles:self.xUSO(
-                unit_n_sphere_cartesian_coords(angles), x=x,
-                method='annealing',
-                num_anneals=num_anneals
-                ),
-            bounds=r_bounds
-        )
-        optimized_energy = optimizer_output['fun']
-        optimized_angles = optimizer_output['x']
-        r_optimal = unit_n_sphere_cartesian_coords(optimized_angles)
-
-        q_vec_opt = self.xUSO_qvec_solution
-        return optimized_energy, q_vec_opt, r_optimal
-
-    def xUSO(self, r_vec: np.array, x:str='P', method:str='brute_force', num_anneals:Optional[int]=1_000):
+        optimizer_output = shgo(func=lambda angles:self.NC_op._convex_problem(get_nu(angles))[0], bounds=nu_bounds)
+        # if optimization was successful the optimal angles should consist of 0 and pi
+        fix_nu = np.sign(np.array(get_nu(np.cos(optimizer_output['x'])))).astype(int)
+        self.NC_op.symmetry_generators.coeff_vec = fix_nu 
+        energy, r_optimal = self.NC_op._convex_problem(fix_nu)
+        return energy, fix_nu, r_optimal
+    
+    #################################################################
+    ################ UNCONSTRAINED SPIN OPTIMIZATION ################
+    #################################################################    
+    
+    def _energy_xUSO(self, r_vec: np.array) -> Tuple[float, np.array, np.array]:
         """
         Get energy via either: Polynomial unconstrained spin Optimization (x=P)
                                     or
-                               Quadratic Unconstrained Spin Optimization  (x=Q)
+                                Quadratic Unconstrained Spin Optimization  (x=Q)
 
         via a brute force search over q_vector or via simulated annealing
 
         Note in this method the r_vector is fixed upon input! (aka just does binary optimization)
 
         Args:
+            NC_op (NoncontextualOp): noncontextual operator
             r_vec (np.array): array of clique expectation values <r_i>
-            x (str): Whether method is Polynomial or Quadratic optimization
+            fixed_ev_mask (np.array): bool list of where eigenvalues in nu vector are fixed
+            fixed_eigvals (np.array): list of nu eigenvalues that are fixed
             method (str): brute force or annealing optimization
+            x (str): Whether method is Polynomial or Quadratic optimization
             num_anneals (optional): number of simulated anneals to do
 
         Returns:
             energy (float): noncontextual energy
 
         """
-        assert x in ['P', 'Q']
-        assert method in ['brute_force', 'annealing']
-
-        r_part = np.sum(self.r_indices * r_vec, axis=1)
-        r_part[np.where(r_part == 0)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
-        q_vec_SPIN = [qv.spin_var('x%d' % i) for i in range(self.symmetry_generators.n_terms)]
+        assert self.x in ['P', 'Q']
+        assert self.method in ['brute_force', 'annealing']
+        
+        r_part = np.sum(self.NC_op.r_indices * r_vec, axis=1)
+        r_part[~np.any(self.NC_op.r_indices, axis=1)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
+        
+        # setup spin variables
+        fixed_indices = np.where(self.fixed_ev_mask)[0] # bool to indices
+        fixed_assignments = dict(zip(fixed_indices, self.fixed_eigvals))
+        q_vec_SPIN={}
+        for ind in range(self.NC_op.symmetry_generators.n_terms):
+            if ind in fixed_assignments.keys():
+                q_vec_SPIN[ind] = fixed_assignments[ind]
+            else:
+                q_vec_SPIN[ind] = qv.spin_var('x%d' % ind)
 
         COST = 0
-        for P_index, term in enumerate(self.G_indices):
+        for P_index, term in enumerate(self.NC_op.G_indices):
             non_zero_inds = term.nonzero()[0]
             # collect all the spin terms
             G_term = 1
@@ -465,53 +486,81 @@ class NoncontextualOp(PauliwordOp):
                 G_term *= q_vec_SPIN[i]
 
             # cost function
-            COST += G_term * self.coeff_vec[P_index].real * self.pauli_mult_signs[P_index] * r_part[P_index].real
+            COST += G_term * self.NC_op.coeff_vec[P_index].real * self.NC_op.pauli_mult_signs[P_index] * r_part[P_index].real
 
-        if x =='P':
+        if np.all(self.fixed_ev_mask):
+            # if no degrees of freedom over nu vector, COST is a number
+            self._nu = self.fixed_eigvals
+            return COST, self.fixed_eigvals, r_vec
+
+        if self.x =='P':
             spin_problem = COST.to_puso()
         else:
             spin_problem = COST.to_quso()
 
-        if method=='brute_force':
+        if self.method=='brute_force':
             sol = spin_problem.solve_bruteforce()
-        elif method == 'annealing':
-            if x == 'P':
-                puso_res = qv.sim.anneal_puso(spin_problem, num_anneals=num_anneals)
-            elif x == 'Q':
-                puso_res= qv.sim.anneal_quso(spin_problem, num_anneals=num_anneals)
+        elif self.method == 'annealing':
+            if self.x == 'P':
+                puso_res = qv.sim.anneal_puso(spin_problem, num_anneals=self.num_anneals)
+            elif self.x == 'Q':
+                puso_res= qv.sim.anneal_quso(spin_problem, num_anneals=self.num_anneals)
                 assert COST.is_solution_valid(puso_res.best.state) is True
             sol = puso_res.best.state
 
         solution = COST.convert_solution(sol)
         energy = COST.value(solution)
-        self.xUSO_qvec_solution = np.array(list(solution.values()))
-        return energy
+        nu_vec = np.ones(self.NC_op.symmetry_generators.n_terms, dtype=int)
+        nu_vec[self.fixed_ev_mask] = self.fixed_eigvals
+        nu_vec[~self.fixed_ev_mask] = np.array(list(solution.values()))
+        self._nu = nu_vec # so nu accessible during the _convex_then_xUSO optimization 
 
-    def solve(self, strategy='brute_force', ref_state: np.array = None, num_anneals=1_000) -> None:
-        """ Minimize the classical objective function, yielding the noncontextual ground state
-
-        Note most QUSO functions/methods work faster than their PUSO counterparts.
-        """
-        if ref_state is not None:
-            self.energy, nu, r = self._energy_via_ref_state(ref_state)
-        elif strategy=='binary_relaxation':
-            self.energy, nu, r = self._energy_via_relaxation()
-        elif strategy=='brute_force':
-            self.energy, nu, r = self._energy_via_brute_force()
-        elif strategy == 'brute_force_PUSO':
-            # PUSO = Polynomial unconstrained spin Optimization
-            self.energy, nu, r = self._energy_via_brute_force_xUSO(x='P')
-        elif strategy == 'brute_force_QUSO':
-            # QUSO: Quadratic Unconstrained Spin Optimization
-            self.energy, nu, r = self._energy_via_brute_force_xUSO(x='Q')
-        elif strategy == 'annealing_PUSO':
-            self.energy, nu, r = self._energy_via_annealing_xUSO(x='P', num_anneals=num_anneals)
-        elif strategy == 'annealing_QUSO':
-            self.energy, nu, r = self._energy_via_annealing_xUSO(x='Q', num_anneals=num_anneals)
+        if self.reoptimize_r_vec:
+            opt_energy, opt_r_vec = self.NC_op._convex_problem(nu_vec)
+            return opt_energy, nu_vec, opt_r_vec
         else:
-            raise ValueError(f'unknown optimization strategy: {strategy}')
+            return energy, nu_vec, r_vec
+    
+    def _xUSO_then_convex(self) -> Tuple[float, np.array, np.array]:
+        """
+        """
+        self.reoptimize_r_vec = True
         
-        # optimize the clique operator coefficients
-        self.symmetry_generators.coeff_vec = nu
-        if r is not None:
-            self.clique_operator.coeff_vec = r
+        extreme_r_vecs = np.eye(self.NC_op.n_cliques, dtype=int)
+        extreme_r_vecs = np.vstack([extreme_r_vecs, -extreme_r_vecs])
+        
+        with mp.Pool(mp.cpu_count()) as pool:    
+            tracker = pool.map(self._energy_xUSO, extreme_r_vecs)
+
+        return sorted(tracker, key=lambda x:x[0])[0]
+    
+    def _convex_then_xUSO(self) -> Tuple[float, np.array, np.array]:
+        """
+        """
+        self.reoptimize_r_vec = False
+
+        r_bounds = [(0, np.pi)]*(self.NC_op.n_cliques-2)+[(0, 2*np.pi)]
+    
+        optimizer_output = differential_evolution(
+            func=lambda angles:self._energy_xUSO(
+                unit_n_sphere_cartesian_coords(angles)
+            )[0],
+            bounds=r_bounds
+        )
+        optimized_energy = optimizer_output['fun']
+        optimized_angles = optimizer_output['x']
+        r_optimal = unit_n_sphere_cartesian_coords(optimized_angles)
+        
+        return optimized_energy, self._nu, r_optimal
+    
+    def energy_xUSO(self) -> Tuple[float, np.array, np.array]:
+        """
+        """
+        if self.NC_op.n_cliques == 0:
+            return self._energy_xUSO(None)
+        elif self.discrete_optimization_order == 'first':
+            return self._xUSO_then_convex()
+        elif self.discrete_optimization_order == 'last':
+            return self._convex_then_xUSO()
+        else:
+            raise ValueError('Unrecognised discrete optimization order, must be first or last')
