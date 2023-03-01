@@ -1,39 +1,189 @@
 import pytest
 import numpy as np
 from symmer.symplectic import PauliwordOp
+from functools import reduce
+
+P_matrices ={
+    'X': np.array([[0, 1],
+                   [1, 0]], dtype=complex),
+    'Y': np.array([[0, -1j],
+                   [+1j, 0]], dtype=complex),
+    'Z': np.array([[1, 0],
+                   [0, -1]], dtype=complex),
+    'I': np.array([[1, 0],
+                   [0, 1]], dtype=complex),
+
+}
 
 ####################################################################
 # Assertion errors arising from poorly defined symplectic matrices #
 ####################################################################
 
-def test_bad_symplectic_matrix_entry_type():
+def test_init_symplectic_float_type():
+    """
+    if input symplectic matrix is not a boolean or (0,1) ints  need error to be raised
+    This checks for floats
+    """
+    coeff = [1]
     symp_matrix = [
         [0.,1.,0.,1.,0.,1.]
     ]
     with pytest.raises(AssertionError):
-        PauliwordOp(symp_matrix, [0])
+        PauliwordOp(symp_matrix, coeff)
 
-def test_symplectic_matrix_non_binary_entries():
+def test_init_symplectic_nonbinary_ints_type():
+    """
+    if input symplectic matrix is ints but not 0,1 check code raises error
+    """
+    coeff = [1]
     symp_matrix = [
-        [0,1,0,1,0,'1']
+        [0,1,2,3,4,5]
     ]
     with pytest.raises(AssertionError):
-        PauliwordOp(symp_matrix, [0])
+        PauliwordOp(symp_matrix, coeff)
+
+def test_init_symplectic_str_type():
+    """
+    if input symplectic matrix is string check error raised
+    """
+    coeff = [1]
+    symp_matrix = [
+        ['0','1','1','0','1','1']
+    ]
+    with pytest.raises(AssertionError):
+        PauliwordOp(symp_matrix, coeff)
 
 def test_incompatible_length_of_symp_matrix_and_coeff_vec():
+    """
+    For a symplectic matrix of 2 rows check that if only 1 coeff defined an error will be thrown.
+    """
     symp_matrix = [
         [0,1,0,1,0,1],
         [1,0,1,0,1,0],
     ]
+    coeff = [1]
     with pytest.raises(AssertionError):
-        PauliwordOp(symp_matrix, [0])
+        PauliwordOp(symp_matrix, coeff)
+
+def test_init_symplectic_incorrect_dimension():
+    """
+    if input symplectic matrix is not correct dimension throw an error
+    """
+    coeff = [1]
+
+    # error here symplectic matrix wrong dimensions
+    symp_matrix = [
+        [[[0,1,1,0,1,1]]]
+    ]
+    with pytest.raises(AssertionError):
+        PauliwordOp(symp_matrix, coeff)
+
+def test_init_symplectic_2D_but_odd_columns():
+    """
+    if input symplectic matrix is 2D, but has odd number of columns throw an error (columns must alway be even)
+    """
+    coeff = [1,1]
+
+    # error here... number of columns must be even (not odd... in this case 3)
+    symp_matrix = [
+        [0,0,1],
+        [1, 0, 1]
+    ]
+    with pytest.raises(AssertionError):
+        PauliwordOp(symp_matrix, coeff)
+
+def test_init_symplectic_int_coeff():
+    """
+    if input symplectic matrix is 2D, but has odd number of columns throw an error (columns must alway be even)
+    """
+    # error here, should be list or array
+    coeff = 1
+
+    symp_matrix = [
+        [0,0,1,1]
+    ]
+    with pytest.raises(TypeError):
+        PauliwordOp(symp_matrix, coeff)
+
+############################################
+# Testing empty PauliwordOp                #
+############################################
+
+def test_empty():
+    n_qubits = 3
+    P_empty = PauliwordOp.empty(n_qubits)
+    assert P_empty == PauliwordOp([[0]*6], [0])
+    assert P_empty.n_terms==1
+    assert np.array_equal(P_empty.coeff_vec, np.array([0]))
+    assert P_empty.n_qubits == n_qubits
+
+def test_empty_cleanup():
+    n_qubits = 3
+
+    P_empty = PauliwordOp.empty(n_qubits)
+    P_empty = P_empty.cleanup()
+    assert P_empty.n_qubits == n_qubits
+    assert P_empty.symp_matrix.shape == (0, 2*n_qubits)
+
+############################################
+# Testing random PauliwordOp               #
+############################################
+
+def test_PauliwordOp_random_diag():
+
+    diagonal = True
+
+    complex_coeffs = True
+    n_qubits=3
+    n_terms=4
+    P_random = PauliwordOp.random(n_qubits=n_qubits,
+                                  n_terms=n_terms,
+                                  diagonal=diagonal,
+                                  complex_coeffs=complex_coeffs)
+    assert np.array_equal(P_random.X_block,
+                          np.zeros_like(P_random.X_block).astype(bool))
+
+def test_PauliwordOp_random_complex():
+
+    ## fixed
+    diagonal = False
+    n_qubits = 4
+    n_terms = 30
+    ##
+
+    complex_coeffs = True
+    P_random_complex = PauliwordOp.random(n_qubits=n_qubits,
+                                  n_terms=n_terms,
+                                  diagonal=diagonal,
+                                  complex_coeffs=complex_coeffs)
+
+    assert P_random_complex.coeff_vec.dtype == np.complex128
+    assert np.sum(np.abs(P_random_complex.coeff_vec.imag))>0
+
+    complex_coeffs = False
+    P_random_real = PauliwordOp.random(n_qubits=n_qubits,
+                                  n_terms=n_terms,
+                                  diagonal=diagonal,
+                                  complex_coeffs=complex_coeffs)
+
+    assert np.array_equal(P_random_real.coeff_vec.imag,
+                          np.zeros((P_random_real.n_terms)))
+
+def test_PauliwordOp_haar():
+
+    ## fixed
+    n_qubits = 3
+    ##
+    P_haar_random = PauliwordOp.haar_random(n_qubits)
+    assert P_haar_random.n_qubits == n_qubits
+
+    # check unitary
+    mat = P_haar_random.to_sparse_matrix.toarray()
+    assert np.allclose(np.eye(mat.shape[0]), mat.dot(mat.T.conj())), 'haar random operator not unitary'
 
 ############################################
 # Testing different initialization methods #
 ############################################
-
-def test_empty():
-    assert PauliwordOp.empty(3) == PauliwordOp([[0]*6], [0])
 
 @pytest.fixture
 def symp_matrix_1():
@@ -43,6 +193,7 @@ def symp_matrix_1():
         [1,1,1,1,1,1],
         [0,0,0,1,1,1]
     ])
+
 @pytest.fixture
 def symp_matrix_2():
     return np.array([
@@ -51,18 +202,24 @@ def symp_matrix_2():
         [1,1,0,0,1,1],
         [0,0,1,1,0,0]
     ])
+
 @pytest.fixture  
 def pauli_list_1():
     return ['III', 'XXX', 'YYY', 'ZZZ']
+
 @pytest.fixture  
 def pauli_list_2():
     return ['ZXZ', 'XZX', 'XYZ', 'ZIX']
+
 @pytest.fixture
 def coeff_vec_1():
+    # real coeffs
     return np.random.random(4)
+
 @pytest.fixture
 def coeff_vec_2():
-    return np.random.random(4)
+    # complex coeffs
+    return np.random.random(4) + 1j*np.random.random(4)
     
 def test_from_list(
         pauli_list_1, 
@@ -73,6 +230,13 @@ def test_from_list(
         PauliwordOp.from_list(pauli_list_1, coeff_vec_1) ==
         PauliwordOp(symp_matrix_1, coeff_vec_1)
     )
+
+def test_from_list_incorrect_str():
+    """
+    raise error if lower case pauli operators used
+    """
+    with pytest.raises(AssertionError):
+        PauliwordOp.from_list(['ixi', 'zzi'], [0,1])
 
 def test_from_dictionary(
         pauli_list_1, 
@@ -85,7 +249,7 @@ def test_from_dictionary(
         PauliwordOp(symp_matrix_1, coeff_vec_1)
     )
 
-def test_to_ditionary(
+def test_to_dictionary(
     pauli_list_1, 
     symp_matrix_1, 
     coeff_vec_1
@@ -94,6 +258,35 @@ def test_to_ditionary(
     assert PauliwordOp.from_dictionary(
         pauli_dict
     ).to_dictionary == pauli_dict
+
+
+def test_from_matrix(
+        pauli_list_1,
+        symp_matrix_1,
+        coeff_vec_1
+    ):
+    n_qubits = len(pauli_list_1[0])
+
+    # build matrix
+    mat = np.zeros((2**n_qubits, 2**n_qubits), dtype=complex)
+    for index, p_op in enumerate(pauli_list_1):
+        coeff = coeff_vec_1[index]
+        p_op_mat = reduce(np.kron, [P_matrices[sig] for sig in p_op])
+        mat+= coeff*p_op_mat
+    # generate Pop from matrix
+    PauliOp_from_matrix = PauliwordOp.from_matrix(mat)
+
+    pauli_dict = dict(zip(pauli_list_1, coeff_vec_1))
+    PauliOp_from_dict = PauliwordOp.from_dictionary(pauli_dict)
+    assert PauliOp_from_matrix == PauliOp_from_dict
+
+def test_from_matrix_to_matrix():
+    n_qubits = 3
+
+    mat = np.random.random((2**n_qubits,2**n_qubits)) + 1j*np.random.random((2**n_qubits,2**n_qubits))
+    PauliOp_from_matrix = PauliwordOp.from_matrix(mat)
+    PauliOp_to_matrix = PauliOp_from_matrix.to_sparse_matrix.toarray()
+    assert np.allclose(PauliOp_to_matrix, mat)
 
 ##################################################
 # Testing algebraic manipulation of PauliwordOps #

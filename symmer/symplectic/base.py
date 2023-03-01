@@ -5,7 +5,7 @@ from tqdm.auto import tqdm
 from copy import deepcopy
 from itertools import product
 from functools import reduce
-from typing import Dict, List, Tuple, Union
+from typing import List, Union
 from numbers import Number
 import multiprocessing as mp
 from cached_property import cached_property
@@ -41,10 +41,12 @@ class PauliwordOp:
             # initialization is slow if not boolean array
             assert(set(np.unique(symp_matrix)).issubset({0,1})), 'symplectic matrix not defined with 0 and 1 only'
             symp_matrix = symp_matrix.astype(bool)
-        assert(symp_matrix.dtype == bool), 'Symplectic matrix must be defined over integers'
+        assert(symp_matrix.dtype == bool), 'Symplectic matrix must be defined over bools'
         if len(symp_matrix.shape)==1:
             symp_matrix = symp_matrix.reshape([1, len(symp_matrix)])
         self.symp_matrix = symp_matrix
+        assert self.symp_matrix.shape[-1]%2 == 0, 'symplectic matrix must have even number of columns'
+        assert len(self.symp_matrix.shape) == 2, 'symplectic matrix must be 2 dimensional only'
         self.n_qubits = self.symp_matrix.shape[1]//2
         self.coeff_vec = np.asarray(coeff_vec, dtype=complex)
         self.n_terms = self.symp_matrix.shape[0]
@@ -107,7 +109,6 @@ class PauliwordOp:
             for row_ind, pauli_str in enumerate(pauli_terms):
                 symp_matrix[row_ind] = string_to_symplectic(pauli_str, n_qubits)
         else:
-            n_qubits = 0
             symp_matrix = np.array([[]], dtype=bool)
         return cls(symp_matrix, coeff_vec)
 
@@ -913,8 +914,6 @@ class PauliwordOp:
             DF_out['Coefficients (imaginary)'] = self.coeff_vec.imag
         return DF_out
 
-
-
     @cached_property
     def to_sparse_matrix(self) -> csr_matrix:
         """
@@ -1614,6 +1613,7 @@ def get_ij_operator(i,j,n_qubits,binary_vec=None):
         ij_operator= PauliwordOp(ij_symp_matrix, XZX_sign_flips/2**n_qubits)
     
     return ij_operator
+
 
 def single_term_expval(P_op: PauliwordOp, psi: QuantumState) -> float:
     """ Expectation value calculation for a single Pauli operator given a QuantumState psi
