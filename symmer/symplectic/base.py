@@ -666,23 +666,8 @@ class PauliwordOp:
         """ Returns True if the operator is noncontextual, False if contextual
         Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
         Constructing the adjacency matrix is by far the most expensive part - very fast once that has been built.
-
-        Note, the legacy utils.contextualQ function CAN be faster than this method when the input operator
-        contains MANY triples that violate transitivity of commutation. However, if this is not the case - for
-        example when the diagonal contribution dominates the operator - this method is significantly faster.
         """
-        # mask the terms that do not commute universally amongst the operator
-        mask_non_universal = np.where(~np.all(self.adjacency_matrix, axis=1))[0]
-        # look only at the unique rows in the masked adjacency matrix -
-        # identical rows correspond with operators of the same clique
-        unique_commutation_character = np.unique(
-            self.adjacency_matrix[mask_non_universal,:][:,mask_non_universal],
-            axis=0
-        )
-        # if the unique commutation characteristics are disjoint, i.e. no overlapping ones 
-        # between rows, the operator is noncontextual - hence we sum over rows and check
-        # the resulting vector consists of all ones.
-        return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
+        return check_adjmat_noncontextual(self.adjacency_matrix)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 

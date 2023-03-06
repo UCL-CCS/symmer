@@ -286,3 +286,20 @@ def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
     cartesians = [np.prod(np.sin(angles[:i]))*np.cos(angles[i]) for i in range(len(angles))]
     cartesians.append(np.prod(np.sin(angles)))
     return np.array(cartesians)
+
+def check_adjmat_noncontextual(adjmat) -> bool:
+    """ Check whether the input boolean square matrix has a noncontextual structure...
+    ... see https://doi.org/10.1103/PhysRevLett.123.200501 for details.
+    """
+    # mask the terms that do not commute universally amongst the operator
+    mask_non_universal = np.where(~np.all(adjmat, axis=1))[0]
+    # look only at the unique rows in the masked adjacency matrix -
+    # identical rows correspond with operators of the same clique
+    unique_commutation_character = np.unique(
+        adjmat[mask_non_universal,:][:,mask_non_universal],
+        axis=0
+    )
+    # if the unique commutation characteristics are disjoint, i.e. no overlapping ones 
+    # between rows, the operator is noncontextual - hence we sum over rows and check
+    # the resulting vector consists of all ones.
+    return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)

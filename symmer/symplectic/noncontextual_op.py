@@ -5,7 +5,7 @@ from typing import Optional, Union, Tuple
 import multiprocessing as mp
 from scipy.optimize import differential_evolution, shgo
 from symmer.symplectic import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
-from symmer.symplectic.utils import unit_n_sphere_cartesian_coords
+from symmer.symplectic.utils import unit_n_sphere_cartesian_coords, check_adjmat_noncontextual
 import itertools
 import qubovert as qv
 
@@ -134,8 +134,6 @@ class NoncontextualOp(PauliwordOp):
         and then sweep accross the terms, appending to a growing noncontextual operator
         whenever possible.
         """
-        noncontextual_operator = PauliwordOp.empty(H.n_qubits)
-        
         if strategy=='magnitude':
             operator = H.sort(by='magnitude')
         elif strategy=='random':
@@ -150,12 +148,20 @@ class NoncontextualOp(PauliwordOp):
         else:
             raise ValueError('Unrecognised strategy, must be one of magnitude, random or CurrentOrder')            
 
-        for op in operator:
-            test = noncontextual_operator + op
-            if test.is_noncontextual:
-                noncontextual_operator += op
-        
-        return cls.from_PauliwordOp(noncontextual_operator)
+        # initialize noncontextual operator with first element of input operator
+        noncon_indices = np.array([0])
+        adjmat = np.array([[True]], dtype=bool)
+        for index, term in enumerate(operator[1:]):
+            # pad the adjacency matrix term-by-term - avoids full construction each time
+            adjmat_vector = np.append(term.commutes_termwise(operator[noncon_indices]), True)
+            adjmat_padded = np.pad(adjmat, pad_width=((0, 1), (0, 1)), mode='constant')
+            adjmat_padded[-1,:] = adjmat_vector; adjmat_padded[:,-1] = adjmat_vector
+            # check whether the adjacency matrix has a noncontextual structure
+            if check_adjmat_noncontextual(adjmat_padded):
+                noncon_indices = np.append(noncon_indices, index+1)
+                adjmat = adjmat_padded
+
+        return cls.from_PauliwordOp(operator[noncon_indices])
 
     @classmethod
     def _from_basis_noncontextual_op(cls, H: PauliwordOp, basis: PauliwordOp):
