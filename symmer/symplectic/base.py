@@ -319,6 +319,28 @@ class PauliwordOp:
             raise ValueError('Only permitted sort by values are increasing or decreasing')
         return PauliwordOp(self.symp_matrix[sort_order], self.coeff_vec[sort_order])
 
+    def reindex(self, qubit_map: Union[List[int], Dict[int, int]]):
+        """ Re-index qubit labels
+        For example, can specify a dictionary {0:2, 2:3, 3:0} mapping qubits 
+        to their new positions or a list [2,3,0] will achieve the same result.
+        """
+        if isinstance(qubit_map, list):
+            old_indices, new_indices = sorted(qubit_map), qubit_map
+        elif isinstance(qubit_map, dict):
+            old_indices, new_indices = zip(*qubit_map.items())
+        old_set, new_set = set(old_indices), set(new_indices)
+        setdiff = old_set.difference(new_set)
+        assert len(new_indices) == len(new_set), 'Duplicated index'
+        assert len(setdiff) == 0, f'Assignment conflict: indices {setdiff} cannot be mapped.'
+        
+        # map corresponding columns in the symplectic matrix to their new positions
+        new_X_block = self.X_block.copy()
+        new_Z_block = self.Z_block.copy()
+        new_X_block[:,old_indices] = new_X_block[:,new_indices]
+        new_Z_block[:,old_indices] = new_Z_block[:,new_indices]
+        
+        return PauliwordOp(np.hstack([new_X_block, new_Z_block]), self.coeff_vec)
+
     def basis_reconstruction(self, 
             operator_basis: "PauliwordOp"
         ) -> np.array:
@@ -717,7 +739,6 @@ class PauliwordOp:
                                 (anticom_self*Pword_copy).multiply_by_constant(-1j*np.sin(angle)))
                 return commute_self + anticom_part
                 
-
     def perform_rotations(self, 
             rotations: List[Tuple["PauliwordOp", float]]
         ) -> "PauliwordOp":
@@ -1253,12 +1274,32 @@ class QuantumState:
             raise ValueError('Only permitted sort by values are increasing or decreasing')
         return QuantumState(self.state_matrix[sort_order], self.state_op.coeff_vec[sort_order])
 
+    def reindex(self, qubit_map: Union[List[int], Dict[int, int]]):
+        """ Re-index qubit labels
+        For example, can specify a dictionary {0:2, 2:3, 3:0} mapping qubits 
+        to their new positions or a list [2,3,0] will achieve the same result.
+        """
+        if isinstance(qubit_map, list):
+            old_indices, new_indices = sorted(qubit_map), qubit_map
+        elif isinstance(qubit_map, dict):
+            old_indices, new_indices = zip(*qubit_map.items())
+        old_set, new_set = set(old_indices), set(new_indices)
+        setdiff = old_set.difference(new_set)
+        assert len(new_indices) == len(new_set), 'Duplicated index'
+        assert len(setdiff) == 0, f'Assignment conflict: indices {setdiff} cannot be mapped.'
+        
+        # map corresponding columns in the state matrix to their new positions
+        new_state_matrix = self.state_matrix.copy()
+        new_state_matrix[:,old_indices] = new_state_matrix[:,new_indices]
+        
+        return QuantumState(new_state_matrix, self.state_op.coeff_vec, vec_type=self.vec_type)
+
     def sectors_present(self, symmetry):
         """ return the sectors present within the QuantumState w.r.t. a IndependentOp
         """
         symmetry_copy = symmetry.copy()
         symmetry_copy.coeff_vec = np.ones(symmetry.n_terms)
-        sector = np.array([self.dagger*S*self for S in symmetry_copy])
+        sector = np.array([S.expval(self) for S in symmetry_copy])
         return sector
 
     @cached_property
