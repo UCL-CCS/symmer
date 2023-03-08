@@ -11,10 +11,12 @@ from openfermion.ops.representations import get_active_space_integrals
 from pyscf import ao2mo, gto, scf, mp, ci, cc, fci
 from pyscf.lib import StreamObject
 from symmer.chemistry.utils import get_excitations
-from symmer.symplectic import QuantumState
+from symmer.symplectic import QuantumState, PauliwordOp
 from symmer.utils import exact_gs_energy
 from pyscf.cc.addons import spatial2spin
 import warnings
+from openfermion.transforms.opconversions.jordan_wigner import _jordan_wigner_interaction_op
+from openfermion.transforms.opconversions.bravyi_kitaev import _bravyi_kitaev_interaction_operator
 
 class FermionicHamiltonian:
     """Class to build Fermionic molecular hamiltonians.
@@ -27,46 +29,97 @@ class FermionicHamiltonian:
       H =\sum_{p,q} h[p,q] a_p^\dagger a_q
         + 0.5 * \sum_{p,q,r,s} h[p,q,r,s] a_p^\dagger a_q^\dagger a_r a_s
 
-    """
-
-    def __init__(
-        self,
-        scf_method: StreamObject,
-    ) -> None:
-        self.scf_method = scf_method
+    """   
+    def __init__(self, scf_obj, index_ordering='physicist') -> None:
+        self.scf_obj = scf_obj
+        self.c_matrix = scf_obj.mo_coeff
+        self.n_spatial_orbs = scf_obj.mol.nao
+        self.index_ordering = index_ordering
+        self.n_spin_orbs = self.n_qubits = 2 * self.n_spatial_orbs
+        self.n_electrons = scf_obj.mol.nelectron
+        self.interaction_operator = InteractionOperator(
+                constant = self.scf_obj.energy_nuc(), 
+                one_body_tensor = self.core_h_spin_basis, 
+                two_body_tensor = self.eri_spin_basis*.5
+            )
         self.fermionic_molecular_hamiltonian=None
-
-        self.n_electrons = self.scf_method.mol.nelectron
-        self.n_qubits = 2*self.scf_method.mol.nao
-
+        self.qubit_molecular_hamiltonian=None
+        
     @cached_property
-    def _one_body_integrals(self) -> np.ndarray:
-        """Get the one electron integrals: An N by N array storing h_{pq}
-        Note N is number of orbitals"""
-
-        c_matrix = self.scf_method.mo_coeff
-
-        # one body terms
+    def _one_body_integrals(self):
         one_body_integrals = (
-            c_matrix.T @ self.scf_method.get_hcore() @ c_matrix
+            self.c_matrix.T @ self.scf_obj.get_hcore() @ self.c_matrix
         )
         return one_body_integrals
-
+    
     @cached_property
-    def _two_body_integrals(self) -> np.ndarray:
-        """Get the two electron integrals: An N by N by N by N array storing h_{pqrs}
-        Note N is number of orbitals. Note indexing in physist notation!"""
-        c_matrix = self.scf_method.mo_coeff
-        n_orbs = c_matrix.shape[1]
-
-        two_body_compressed = ao2mo.kernel(self.scf_method.mol, c_matrix)
-
-        # get electron repulsion integrals
-        eri = ao2mo.restore(1, two_body_compressed, n_orbs)  # no permutation symmetry
-
-        # Openfermion uses physicist notation whereas pyscf uses chemists
-        two_body_integrals = np.asarray(eri.transpose(0, 2, 3, 1), order="C")
+    def _two_body_integrals(self):
+        two_body_integrals = ao2mo.restore(1, 
+            ao2mo.kernel(self.scf_obj.mol,self.scf_obj.mo_coeff),
+            self.scf_obj.mo_coeff.shape[1]
+        )
+        if self.index_ordering == 'physicist':
+            # mapping to physicists' notations from PySCF chemists'
+            # p, q, r, s -> p^ r^ s q, e.g. ⟨01|23⟩ ==> ⟨02|31⟩
+            two_body_integrals = two_body_integrals.transpose(0,2,3,1)
         return two_body_integrals
+    
+    @cached_property
+    def core_h_spin_basis(self):
+        h_core_mo_basis_spin = np.zeros([self.n_spin_orbs]*2)
+        h_core_mo_basis_spin[ ::2, ::2] = self._one_body_integrals
+        h_core_mo_basis_spin[1::2,1::2] = self._one_body_integrals
+        return h_core_mo_basis_spin
+    
+    @cached_property
+    def eri_spin_basis(self):
+        # alpha/beta electron indexing for chemists' and physicists' notation
+        if self.index_ordering == 'chemist':
+            a,b,c,d=(0,0,1,1)
+            e,f,g,h=(1,1,0,0)
+        elif self.index_ordering == 'physicist':
+            a,b,c,d=(0,1,1,0)
+            e,f,g,h=(1,0,0,1)
+            
+        eri_mo_basis_spin = np.zeros([self.n_spin_orbs]*4)
+        # same spin (even *or* odd indices)
+        eri_mo_basis_spin[ ::2, ::2, ::2, ::2] = self._two_body_integrals
+        eri_mo_basis_spin[1::2,1::2,1::2,1::2] = self._two_body_integrals
+        # different spin (even *and* odd indices)
+        eri_mo_basis_spin[a::2,b::2,c::2,d::2] = self._two_body_integrals
+        eri_mo_basis_spin[e::2,f::2,g::2,h::2] = self._two_body_integrals
+        return eri_mo_basis_spin
+    
+    @cached_property
+    def one_body_coefficients(self):
+        # one body fermionic terms
+        where_nonzero_one_body = np.where(~np.isclose(self.core_h_spin_basis, 0, atol=1e-10))
+        nonzero_one_body_indices = list(zip(*where_nonzero_one_body))
+        one_body_terms = dict(zip(nonzero_one_body_indices, self.core_h_spin_basis[where_nonzero_one_body]))
+        return one_body_terms
+    
+    @cached_property
+    def two_body_coefficients(self):
+        # two body fermionic terms
+        where_nonzero_two_body = np.where(~np.isclose(self.eri_spin_basis, 0, atol=1e-10))
+        nonzero_two_body_indices = list(zip(*where_nonzero_two_body))
+        two_body_terms = dict(zip(nonzero_two_body_indices, self.eri_spin_basis[where_nonzero_two_body]))
+        return two_body_terms
+    
+    def build_fermionic_hamiltonian(self):
+        self.fermionic_molecular_hamiltonian = FermionOperator('', self.scf_obj.energy_nuc())
+        for (p,q), coeff in self.one_body_coefficients.items():
+            self.fermionic_molecular_hamiltonian += FermionOperator(f'{p}^ {q}', coeff)
+        for (p,q,r,s), coeff in self.two_body_coefficients.items():
+            self.fermionic_molecular_hamiltonian += FermionOperator(f'{p}^ {q}^ {r} {s}', coeff*.5)
+    
+    def build_qubit_hamiltonian(self, qubit_transformaion='JW'): # Fast qubit mapping
+        assert self.index_ordering == 'physicist', 'Uses OpenFermion functions that assume physicist notation.'
+        if qubit_transformaion == 'JW':
+            qubit_op = _jordan_wigner_interaction_op(self.interaction_operator, n_qubits=self.n_qubits)
+        elif qubit_transformaion == 'BK':
+            qubit_op = _bravyi_kitaev_interaction_operator(self.interaction_operator, n_qubits=self.n_qubits)
+        self.qubit_molecular_hamiltonian = PauliwordOp.from_openfermion(qubit_op) 
 
     @cached_property
     def fermionic_fock_operator(self):
@@ -92,55 +145,7 @@ class FermionicHamiltonian:
                     FOCK += FermionOperator(f'{p}^ {q}', coeff)
 
         return FOCK
-
-    @property
-    def core_h_spin_basis(self):
-        """
-        Convert spatial-MO basis integrals into spin-MO basis!
-        Returns:
-
-        """
-        n_spatial_orbs = self.scf_method.mol.nao
-        n_spin_orbs = 2 * n_spatial_orbs
-        h_core_mo_basis_spin = np.zeros((n_spin_orbs, n_spin_orbs))
-        for p in range(n_spatial_orbs):
-            for q in range(n_spatial_orbs):
-                # populate 1-body terms (must have same spin, otherwise orthogonal)
-                ## pg 82 Szabo
-                h_core_mo_basis_spin[2 * p, 2 * q] = self._one_body_integrals[p, q]  # spin UP
-                h_core_mo_basis_spin[(2 * p + 1), (2 * q + 1)] = self._one_body_integrals[p, q]  # spin DOWN
-        return h_core_mo_basis_spin
-
-    @cached_property
-    def eri_spin_basis(self):
-        n_spatial_orbs = self.scf_method.mol.nao
-        n_spin_orbs = 2 * n_spatial_orbs
-        ERI_mo_basis_spin = np.zeros((n_spin_orbs, n_spin_orbs, n_spin_orbs, n_spin_orbs))
-
-        two_body_integrals = np.einsum('ijkl -> ikjl', ao2mo.restore(1,  ao2mo.kernel(self.scf_method.mol,
-                                                                                      self.scf_method.mo_coeff),
-                                                                     self.scf_method.mo_coeff.shape[1]))
-
-        for p in range(n_spatial_orbs):
-            for q in range(n_spatial_orbs):
-                for r in range(n_spatial_orbs):
-                    for s in range(n_spatial_orbs):
-                        AO_term = two_body_integrals[p, q, r, s]
-                        # up,up,up,up
-                        ERI_mo_basis_spin[2 * p, 2 * q, 2 * r, 2 * s] = AO_term
-                        # down,down, down, down
-                        ERI_mo_basis_spin[2 * p + 1, 2 * q + 1, 2 * r + 1, 2 * s + 1] = AO_term
-
-                        ## pg 82 Szabo
-                        #  up down up down (physics notation)
-                        ERI_mo_basis_spin[2 * p, 2 * q + 1,
-                                          2 * r, 2 * s + 1] = AO_term
-                        # down up down up  (physics notation)
-                        ERI_mo_basis_spin[2 * p + 1, 2 * q,
-                                          2 * r + 1, 2 * s] = AO_term
-
-        return ERI_mo_basis_spin
-
+    
     def get_perturbation_correlation_potential(self):
         """
         V = H_full - H_Hartree-Fock
@@ -161,52 +166,7 @@ class FermionicHamiltonian:
         V_fermionic_mat = (get_sparse_operator(self.fermionic_molecular_hamiltonian, n_qubits=n_qu) -
                            get_sparse_operator(self.fermionic_fock_operator, n_qubits=n_qu))
         return V_fermionic_mat
-
-    def build_fermionic_hamiltonian_operator(self, occupied_indices=None, active_indices=None) -> None:
-        """Build fermionic Hamiltonian"""
-
-        # nuclear energy
-        core_constant = self.scf_method.energy_nuc()
-
-        if active_indices is not None:
-            # ACTIVE space reduction!
-            (core_constant,
-             one_body_integrals,
-             two_body_integrals) = get_active_space_integrals(self._one_body_integrals,
-                                           self._two_body_integrals,
-                                           occupied_indices=occupied_indices,
-                                           active_indices=active_indices)
-        else:
-            one_body_integrals = self._one_body_integrals
-            two_body_integrals = self._two_body_integrals
-
-        one_body_coefficients, two_body_coefficients = spinorb_from_spatial(
-            one_body_integrals, two_body_integrals
-        )
-
-        self.fermionic_molecular_hamiltonian = InteractionOperator(core_constant,
-                                                              one_body_coefficients,
-                                                              0.5 * two_body_coefficients)
-
-    def manual_fermionic_hamiltonian_operator(self) -> None:
-        """Build fermionic Hamiltonian"""
-
-        # nuclear energy
-        fermionic_molecular_hamiltonian = FermionOperator((), self.scf_method.energy_nuc())
-
-        for p in range(self.n_qubits):
-            for q in range(self.n_qubits):
-
-                h_pq = self.core_h_spin_basis[p, q]
-                fermionic_molecular_hamiltonian += FermionOperator(f'{p}^ {q}', h_pq)
-                for r in range(self.n_qubits):
-                    for s in range(self.n_qubits):
-                        ## note pyscf:  ⟨01|23⟩ ==> ⟨02|31⟩
-                        g_pqrs = self.eri_spin_basis[p, q, r, s]
-                        fermionic_molecular_hamiltonian += 0.5 * FermionOperator(f'{p}^ {r}^ {s} {q}', g_pqrs)
-
-        return fermionic_molecular_hamiltonian
-
+    
     @cached_property
     def fock_spin_mo_basis(self):
 
@@ -270,10 +230,10 @@ class FermionicHamiltonian:
     @cached_property
     def hf_fermionic_basis_state(self):
 
-        if self.scf_method.__class__.__name__.find('RHF') != -1:
-            n_alpha = n_beta = self.scf_method.mol.nelectron//2
+        if self.scf_obj.__class__.__name__.find('RHF') != -1:
+            n_alpha = n_beta = self.scf_obj.mol.nelectron//2
         else:
-            n_alpha, n_beta = self.scf_method.nelec
+            n_alpha, n_beta = self.scf_obj.nelec
             
         hf_array = np.zeros(self.n_qubits)
         hf_array[::2] = np.hstack([np.ones(n_alpha), np.zeros(self.n_qubits//2-n_alpha)])
@@ -397,7 +357,7 @@ class FermionicHamiltonian:
         """
         H_CI_matrix = self.get_ci_fermionic(S=S, method=method)
         e_ci, psi = exact_gs_energy(H_CI_matrix)
-        total_CI_energy = e_ci + self.scf_method.energy_nuc()
+        total_CI_energy = e_ci + self.scf_obj.energy_nuc()
 
         CI_ferm=FermionOperator()
 

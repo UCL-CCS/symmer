@@ -28,7 +28,7 @@ class MoleculeBuilder:
         basis='STO-3G', 
         spin=0,
         run_mp2  = True,
-        run_cisd = True,
+        run_cisd = False,
         run_ccsd = True,
         run_fci  = True,
         qubit_mapping_str = 'jordan_wigner',
@@ -70,7 +70,7 @@ class MoleculeBuilder:
         # build the fermionic hamiltonian/CC operator
         self.H_fermion = FermionicHamiltonian(self.pyscf_obj.pyscf_hf)
         self.T_fermion = FermioniCC(self.pyscf_obj.pyscf_ccsd)
-        self.H_fermion.build_fermionic_hamiltonian_operator()
+        self.H_fermion.build_fermionic_hamiltonian()
         self.T_fermion.build_operator(orbspin)
 
         self.n_qubits = self.H_fermion.n_qubits
@@ -82,13 +82,14 @@ class MoleculeBuilder:
             print()
             print('Number of qubits:', self.n_qubits)
 
-        self.H = get_fermion_operator(self.H_fermion.fermionic_molecular_hamiltonian)
+        self.H = self.H_fermion.fermionic_molecular_hamiltonian
         self.T = self.T_fermion.fermionic_cc_operator
         self.CI, self.total_CI_energy, self.psi_CI = self.H_fermion.get_fermionic_CI_ansatz(
             S=spin/2, method=CI_ansatz
         )
         if run_cisd and self.CI_ansatz == 'CISD':
-                assert(np.isclose(self.total_CI_energy,self.cisd_energy)), 'Manual CISD calculation does not match PySCF'
+            raise NotImplementedError    
+            assert(np.isclose(self.total_CI_energy,self.cisd_energy)), 'Manual CISD calculation does not match PySCF'
         # map to QubitOperator via fermion -> qubit mapping and convert to PauliwordOp
         self.H_q = fermion_to_qubit_operator(self.H, self.qubit_mapping_str, N_qubits=self.n_qubits)
         if len(self.T.terms)==0:
