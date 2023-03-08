@@ -59,11 +59,12 @@ class PauliwordOp:
             n_qubits: int, 
             n_terms:  int, 
             diagonal: bool = False, 
-            complex_coeffs: bool = True
+            complex_coeffs: bool = True,
+            density: float = 0.3
         ) -> "PauliwordOp":
         """ Generate a random PauliwordOp with normally distributed coefficients
         """
-        symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal)
+        symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal, density=density)
         coeff_vec = np.random.randn(n_terms).astype(complex)
         if complex_coeffs:
             coeff_vec += 1j * np.random.randn(n_terms)

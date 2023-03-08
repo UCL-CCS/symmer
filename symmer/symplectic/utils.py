@@ -145,15 +145,15 @@ def symplectic_cleanup(
 
     return reduced_symp_matrix, reduced_coeff_vec
 
-def random_symplectic_matrix(n_qubits,n_terms, diagonal=False):
+def random_symplectic_matrix(n_qubits,n_terms, diagonal=False, density=0.3):
     """ Generates a random binary matrix of dimension (n_terms) x (2*n_qubits)
     Specifying diagonal=True will set the left hand side (X_block) to all zeros
     """
     if diagonal:
-        Z_block = np.random.randint(0,2,(n_terms, n_qubits))
+        Z_block = np.random.choice([True, False], size=[n_terms,n_qubits], p=[density/2, 1-density/2])
         return np.hstack([np.zeros_like(Z_block), Z_block])
     else:
-        return np.random.randint(0,2,(n_terms, 2*n_qubits)) 
+        return np.random.choice([True, False], size=[n_terms,2*n_qubits], p=[density, 1-density])
 
 def _rref_binary(matrix: np.array) -> np.array:
     """ Row-reduced echelon form over the binary field (GF2) - rows are not reordered 
