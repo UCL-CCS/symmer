@@ -18,7 +18,8 @@ from symmer.chemistry.utils import (
     get_fermionic_up_down_parity_operators,
     get_parity_operators_BK, get_parity_operators_JW,
     array_to_dict_nonzero_indices, 
-    fermion_to_qubit_operator
+    fermion_to_qubit_operator,
+    build_bk_matrix
 )
 
 class PySCFDriver:
@@ -291,7 +292,7 @@ def get_hamiltonian(scf_obj=None,
             fermionic_molecular_hamiltonian += FermionOperator(f'{p}^ {q}^ {r} {s}', coeff*.5)
         return fermionic_molecular_hamiltonian
 
-def get_hf_state(scf_obj, state_type = 'QuantumState'):
+def get_hf_state(scf_obj, state_type = 'QuantumState', qubit_transformation='JW'):
     """
     """
     n_spinorbs = scf_obj.mol.nao*2
@@ -304,6 +305,11 @@ def get_hf_state(scf_obj, state_type = 'QuantumState'):
     hf_array = np.zeros(n_spinorbs, dtype=int)
     hf_array[::2] = np.hstack([np.ones(n_alpha), np.zeros(n_spinorbs//2-n_alpha)])
     hf_array[1::2] = np.hstack([np.ones(n_beta), np.zeros(n_spinorbs//2-n_beta)])
+    
+    if qubit_transformation in ['bravyi_kitaev', 'BK']:
+        hf_array = (build_bk_matrix(n_spinorbs) @ hf_array.reshape(-1,1)).reshape(-1) % 2
+    else:
+        assert qubit_transformation in ['jordan_wigner', 'JW',], 'Invaild qubit transformation'
     
     if state_type == 'array':
         return hf_array
