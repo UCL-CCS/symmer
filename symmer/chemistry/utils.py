@@ -5,9 +5,8 @@ from pyscf import gto
 from openfermion.chem.pubchem import geometry_from_pubchem
 import py3Dmol
 from pyscf.tools import cubegen
-from openfermion import FermionOperator, count_qubits, hermitian_conjugated
+from openfermion import FermionOperator, hermitian_conjugated
 from openfermion.transforms import jordan_wigner, bravyi_kitaev#, parity_code
-from symmer.symplectic.utils import QubitOperator_to_dict
 from symmer.symplectic import PauliwordOp
 
 def Draw_molecule(
@@ -102,6 +101,17 @@ def Draw_cube_orbital(
         os.remove(File_name)  # delete file once orbital is drawn
 
     return plotted_orbitals
+
+def list_to_xyz(geometry: List[Tuple[str, Tuple[float, float, float]]]) -> str:
+    """ Convert the geometry stored as a list to xyz string
+    """
+    xyz_file = str(len(geometry))+'\n '
+
+    for atom, coords in geometry:
+        xyz_file += '\n'+atom+'\t'
+        xyz_file += '\t'.join(list(map(str, coords)))
+    
+    return xyz_file
 
 def xyz_from_pubchem(molecule_name):
     geometry_pubchem = geometry_from_pubchem(molecule_name, structure="3d")
