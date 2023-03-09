@@ -236,6 +236,20 @@ def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:
     dict_out = dict(zip(terms, coeffs))
     return dict_out
 
+def safe_QuantumState_to_dict(psi) -> Dict[str, Tuple[float, float]]:
+    """ Stores the real and imaginary parts of the coefficient separately in a tuple
+
+    Args:
+        op (QuantumState): Weighted linear combination of N-fold Pauli operators
+    Returns:
+        dict_out (dict): Dictionary of the form {pstring:(real, imag)}
+
+    """
+    terms, coeffs = zip(*psi.to_dictionary.items())
+    coeffs = [(n.real, n.imag) for n in coeffs]
+    dict_out = dict(zip(terms, coeffs))
+    return dict_out
+
 def mul_symplectic(
         symp_vec1: np.array,
         coeff1: complex,
