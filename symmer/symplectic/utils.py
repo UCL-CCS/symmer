@@ -145,15 +145,15 @@ def symplectic_cleanup(
 
     return reduced_symp_matrix, reduced_coeff_vec
 
-def random_symplectic_matrix(n_qubits,n_terms, diagonal=False):
+def random_symplectic_matrix(n_qubits,n_terms, diagonal=False, density=0.3):
     """ Generates a random binary matrix of dimension (n_terms) x (2*n_qubits)
     Specifying diagonal=True will set the left hand side (X_block) to all zeros
     """
     if diagonal:
-        Z_block = np.random.randint(0,2,(n_terms, n_qubits))
+        Z_block = np.random.choice([True, False], size=[n_terms,n_qubits], p=[density/2, 1-density/2])
         return np.hstack([np.zeros_like(Z_block), Z_block])
     else:
-        return np.random.randint(0,2,(n_terms, 2*n_qubits)) 
+        return np.random.choice([True, False], size=[n_terms,2*n_qubits], p=[density, 1-density])
 
 def _rref_binary(matrix: np.array) -> np.array:
     """ Row-reduced echelon form over the binary field (GF2) - rows are not reordered 
@@ -286,3 +286,20 @@ def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
     cartesians = [np.prod(np.sin(angles[:i]))*np.cos(angles[i]) for i in range(len(angles))]
     cartesians.append(np.prod(np.sin(angles)))
     return np.array(cartesians)
+
+def check_adjmat_noncontextual(adjmat) -> bool:
+    """ Check whether the input boolean square matrix has a noncontextual structure...
+    ... see https://doi.org/10.1103/PhysRevLett.123.200501 for details.
+    """
+    # mask the terms that do not commute universally amongst the operator
+    mask_non_universal = np.where(~np.all(adjmat, axis=1))[0]
+    # look only at the unique rows in the masked adjacency matrix -
+    # identical rows correspond with operators of the same clique
+    unique_commutation_character = np.unique(
+        adjmat[mask_non_universal,:][:,mask_non_universal],
+        axis=0
+    )
+    # if the unique commutation characteristics are disjoint, i.e. no overlapping ones 
+    # between rows, the operator is noncontextual - hence we sum over rows and check
+    # the resulting vector consists of all ones.
+    return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)

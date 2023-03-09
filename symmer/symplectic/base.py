@@ -59,11 +59,12 @@ class PauliwordOp:
             n_qubits: int, 
             n_terms:  int, 
             diagonal: bool = False, 
-            complex_coeffs: bool = True
+            complex_coeffs: bool = True,
+            density: float = 0.3
         ) -> "PauliwordOp":
         """ Generate a random PauliwordOp with normally distributed coefficients
         """
-        symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal)
+        symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal, density=density)
         coeff_vec = np.random.randn(n_terms).astype(complex)
         if complex_coeffs:
             coeff_vec += 1j * np.random.randn(n_terms)
@@ -318,6 +319,28 @@ class PauliwordOp:
         elif key!='decreasing':
             raise ValueError('Only permitted sort by values are increasing or decreasing')
         return PauliwordOp(self.symp_matrix[sort_order], self.coeff_vec[sort_order])
+
+    def reindex(self, qubit_map: Union[List[int], Dict[int, int]]):
+        """ Re-index qubit labels
+        For example, can specify a dictionary {0:2, 2:3, 3:0} mapping qubits 
+        to their new positions or a list [2,3,0] will achieve the same result.
+        """
+        if isinstance(qubit_map, list):
+            old_indices, new_indices = sorted(qubit_map), qubit_map
+        elif isinstance(qubit_map, dict):
+            old_indices, new_indices = zip(*qubit_map.items())
+        old_set, new_set = set(old_indices), set(new_indices)
+        setdiff = old_set.difference(new_set)
+        assert len(new_indices) == len(new_set), 'Duplicated index'
+        assert len(setdiff) == 0, f'Assignment conflict: indices {setdiff} cannot be mapped.'
+        
+        # map corresponding columns in the symplectic matrix to their new positions
+        new_X_block = self.X_block.copy()
+        new_Z_block = self.Z_block.copy()
+        new_X_block[:,old_indices] = new_X_block[:,new_indices]
+        new_Z_block[:,old_indices] = new_Z_block[:,new_indices]
+        
+        return PauliwordOp(np.hstack([new_X_block, new_Z_block]), self.coeff_vec)
 
     def basis_reconstruction(self, 
             operator_basis: "PauliwordOp"
@@ -666,23 +689,8 @@ class PauliwordOp:
         """ Returns True if the operator is noncontextual, False if contextual
         Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
         Constructing the adjacency matrix is by far the most expensive part - very fast once that has been built.
-
-        Note, the legacy utils.contextualQ function CAN be faster than this method when the input operator
-        contains MANY triples that violate transitivity of commutation. However, if this is not the case - for
-        example when the diagonal contribution dominates the operator - this method is significantly faster.
         """
-        # mask the terms that do not commute universally amongst the operator
-        mask_non_universal = np.where(~np.all(self.adjacency_matrix, axis=1))[0]
-        # look only at the unique rows in the masked adjacency matrix -
-        # identical rows correspond with operators of the same clique
-        unique_commutation_character = np.unique(
-            self.adjacency_matrix[mask_non_universal,:][:,mask_non_universal],
-            axis=0
-        )
-        # if the unique commutation characteristics are disjoint, i.e. no overlapping ones 
-        # between rows, the operator is noncontextual - hence we sum over rows and check
-        # the resulting vector consists of all ones.
-        return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
+        return check_adjmat_noncontextual(self.adjacency_matrix)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 
@@ -732,7 +740,6 @@ class PauliwordOp:
                                 (anticom_self*Pword_copy).multiply_by_constant(-1j*np.sin(angle)))
                 return commute_self + anticom_part
                 
-
     def perform_rotations(self, 
             rotations: List[Tuple["PauliwordOp", float]]
         ) -> "PauliwordOp":
@@ -1268,12 +1275,32 @@ class QuantumState:
             raise ValueError('Only permitted sort by values are increasing or decreasing')
         return QuantumState(self.state_matrix[sort_order], self.state_op.coeff_vec[sort_order])
 
+    def reindex(self, qubit_map: Union[List[int], Dict[int, int]]):
+        """ Re-index qubit labels
+        For example, can specify a dictionary {0:2, 2:3, 3:0} mapping qubits 
+        to their new positions or a list [2,3,0] will achieve the same result.
+        """
+        if isinstance(qubit_map, list):
+            old_indices, new_indices = sorted(qubit_map), qubit_map
+        elif isinstance(qubit_map, dict):
+            old_indices, new_indices = zip(*qubit_map.items())
+        old_set, new_set = set(old_indices), set(new_indices)
+        setdiff = old_set.difference(new_set)
+        assert len(new_indices) == len(new_set), 'Duplicated index'
+        assert len(setdiff) == 0, f'Assignment conflict: indices {setdiff} cannot be mapped.'
+        
+        # map corresponding columns in the state matrix to their new positions
+        new_state_matrix = self.state_matrix.copy()
+        new_state_matrix[:,old_indices] = new_state_matrix[:,new_indices]
+        
+        return QuantumState(new_state_matrix, self.state_op.coeff_vec, vec_type=self.vec_type)
+
     def sectors_present(self, symmetry):
         """ return the sectors present within the QuantumState w.r.t. a IndependentOp
         """
         symmetry_copy = symmetry.copy()
         symmetry_copy.coeff_vec = np.ones(symmetry.n_terms)
-        sector = np.array([self.dagger*S*self for S in symmetry_copy])
+        sector = np.array([S.expval(self) for S in symmetry_copy])
         return sector
 
     @cached_property
