@@ -1,4 +1,4 @@
-name: Testing and Coverage
+name: CodeCov
 
 on: [push]
 
@@ -7,9 +7,6 @@ jobs:
     name: Testing and Coverage
     
     runs-on: ubuntu-latest
-    #strategy:
-    #  matrix:
-    #    python-version: ["3.8", "3.9"]
       
     steps:
     - uses: actions/checkout@v2
@@ -21,17 +18,10 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install .
-    - name: Run tests and collect coverage
-      run: | 
-        pip install codecov
-        pip install pytest-cov
-        pytest --cov=./ --cov-report=xml
-        pytest tests --cov=./symmer --cov-report=xml
-        codecov
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3.1.0
-      with:
-        directory: ./coverage/reports/
-        env_vars: OS,PYTHON
-        files: /home/runner/work/symmer/symmer/coverage.xml
-        flags: tests
+    - name: Generate Report
+      run: |
+        pip install coverage
+        pip install pytest
+        coverage run -m pytest
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v2
