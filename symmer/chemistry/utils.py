@@ -11,8 +11,8 @@ from symmer.symplectic.utils import QubitOperator_to_dict
 from symmer.symplectic import PauliwordOp
 
 def Draw_molecule(
-    xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
-) -> py3Dmol.view:
+        xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
+    ) -> py3Dmol.view:
     """Draw molecule from xyz string.
 
     Note if molecule has unrealistic bonds, then style should be sphere. Otherwise stick style can be used
@@ -41,16 +41,15 @@ def Draw_molecule(
     view.zoomTo()
     return view
 
-
 def Draw_cube_orbital(
-    PySCF_mol_obj: gto.Mole,
-    xyz_string: str,
-    C_matrix: np.ndarray,
-    index_list: List[int],
-    width: int = 400,
-    height: int = 400,
-    style: str = "sphere",
-) -> List:
+        PySCF_mol_obj: gto.Mole,
+        xyz_string: str,
+        C_matrix: np.ndarray,
+        index_list: List[int],
+        width: int = 400,
+        height: int = 400,
+        style: str = "sphere",
+    ) -> List:
     """Draw orbials given a C_matrix and xyz string of molecule.
 
     This function writes orbitals to temporary cube files then deletes them.
@@ -104,7 +103,6 @@ def Draw_cube_orbital(
 
     return plotted_orbitals
 
-
 def xyz_from_pubchem(molecule_name):
     geometry_pubchem = geometry_from_pubchem(molecule_name, structure="3d")
 
@@ -124,6 +122,42 @@ def xyz_from_pubchem(molecule_name):
 
     return xyz_file
 
+def array_to_dict_nonzero_indices(arr, tol=1e-10):
+    """
+    """
+    where_nonzero = np.where(~np.isclose(arr, 0, atol=tol))
+    nonzero_indices = list(zip(*where_nonzero))
+    return dict(zip(nonzero_indices, arr[where_nonzero]))
+
+def fermion_to_qubit_operator(fermionic_operator: FermionOperator,
+                              qubit_transformation: str = 'JW',
+                              n_qubits: int = None):
+    """
+    Function to convert from fermion operators to qubit operators.
+    Note see openfermion.transforms for different fermion to qubit mappings
+
+    Args:
+        Fermionic_operator(FermionOperator): any fermionic operator (openfermion)
+        qubit_mapping_str (str): fermion to qubit mapping
+        N_qubits (int): number of qubits (or spin orbitals)
+
+    Returns:
+        qubit_operator (PauliwordOp): qubit operator of fermonic operator (under certain mapping)
+    """
+    fermonic_to_qubit_map = {
+        'JW':jordan_wigner,'jordan_wigner': jordan_wigner,
+        'BK':bravyi_kitaev,'bravyi_kitaev': bravyi_kitaev,
+        #'parity_code': parity_code
+    }
+
+    if qubit_transformation not in fermonic_to_qubit_map.keys():
+        print(f'valid qubit mappings : {list(fermonic_to_qubit_map.keys())}')
+        raise ValueError(f'unknown qubit mapping: {qubit_transformation}')
+
+    mapping = fermonic_to_qubit_map[qubit_transformation]
+    qubit_operator = mapping(fermionic_operator)
+
+    return PauliwordOp.from_openfermion(qubit_operator, n_qubits)
 
 def get_fermionic_number_operator(N_qubits: int) -> FermionOperator:
     """
@@ -140,7 +174,6 @@ def get_fermionic_number_operator(N_qubits: int) -> FermionOperator:
         N_op += FermionOperator(f'{spin_orb_ind}^ {spin_orb_ind}', 1)
 
     return N_op
-
 
 def get_fermionic_up_down_parity_operators(N_qubits: int) -> Tuple[FermionOperator, FermionOperator]:
     """
@@ -166,7 +199,6 @@ def get_fermionic_up_down_parity_operators(N_qubits: int) -> Tuple[FermionOperat
         parity_down *= FermionOperator('', 1) - 2 * FermionOperator(f'{spin_down_ind}^ {spin_down_ind}', 1)
 
     return parity_up, parity_down
-
 
 def get_fermionic_spin_operators(N_qubits: int) -> Tuple[FermionOperator, FermionOperator]:
     """ https://aip.scitation.org/doi/pdf/10.1063/1.5110682 eq 35-40
@@ -214,7 +246,6 @@ def get_fermionic_spin_operators(N_qubits: int) -> Tuple[FermionOperator, Fermio
     
     return S2, Sz
 
-
 def build_bk_matrix(n_qubits):
     """ Implemented from https://onlinelibrary.wiley.com/doi/full/10.1002/qua.24969
     """
@@ -234,45 +265,6 @@ def build_bk_matrix(n_qubits):
     
     return B[:n_qubits, :n_qubits]
 
-
-def fermion_to_qubit_operator(Fermionic_operator: FermionOperator,
-                              qubit_mapping_str: str,
-                              N_qubits: int = None):
-    """
-    Function to convert from fermion operators to qubit operators.
-    Note see openfermion.transforms for different fermion to qubit mappings
-
-    Args:
-        Fermionic_operator(FermionOperator): any fermionic operator (openfermion)
-        qubit_mapping_str (str): fermion to qubit mapping
-        N_qubits (int): number of qubits (or spin orbitals)
-
-    Returns:
-        qubit_operator (PauliwordOp): qubit operator of fermonic operator (under certain mapping)
-    """
-    fermonic_to_qubit_map = {
-        'jordan_wigner': jordan_wigner,
-        'bravyi_kitaev': bravyi_kitaev,
-        #'parity_code': parity_code
-    }
-
-    if qubit_mapping_str.lower() not in fermonic_to_qubit_map.keys():
-        print(f'valid qubit mappings : {list(fermonic_to_qubit_map.keys())}')
-        raise ValueError(f'unknown qubit mapping: {qubit_mapping_str}')
-
-    mapping = fermonic_to_qubit_map[qubit_mapping_str.lower()]
-    qubit_operator = mapping(Fermionic_operator)
-
-    if N_qubits is None:
-        N_qubits = count_qubits(qubit_operator)
-
-    q_op_dict = QubitOperator_to_dict(qubit_operator, N_qubits)
-
-    # want to return PauliWordOp (but results in circular import!)
-    ## aka PauliWordOp base class imports utils and so import here causes problems.
-    return PauliwordOp.from_dictionary(q_op_dict)
-
-
 def get_parity_operators_JW(n_qubits):
     """ Assumes alternating up/down spin orbitals
     """
@@ -285,7 +277,6 @@ def get_parity_operators_JW(n_qubits):
         [np.zeros_like(spin_down_parity_Z_block), spin_down_parity_Z_block]), [1])
 
     return spin_up_parity_op, spin_down_parity_op 
-
 
 def get_parity_operators_BK(n_qubits):
     """ Assumes alternating up/down spin orbitals
@@ -317,7 +308,6 @@ def get_parity_operators_BK(n_qubits):
     spin_down_parity_op = full_parity_op * spin_up_parity_op
 
     return spin_up_parity_op, spin_down_parity_op
-
 
 def get_excitations(hf_fermionic_arr: np.array, n_spin_orbs: int, excitations:str='sd', S:int=0) -> Tuple[np.array,list, list]:
     """

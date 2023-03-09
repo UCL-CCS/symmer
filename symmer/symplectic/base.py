@@ -124,13 +124,17 @@ class PauliwordOp:
 
     @classmethod
     def from_openfermion(cls, 
-            openfermion_op: QubitOperator
+            openfermion_op: QubitOperator,
+            n_qubits = None
         ) -> "PauliwordOp":
         """ Initialize a PauliwordOp from OpenFermion's QubitOperator representation
         """
         assert(isinstance(openfermion_op, QubitOperator)), 'Must supply a QubitOperator'
+        if n_qubits is None:
+            n_qubits = count_qubits(openfermion_op)
+        
         operator_dict = QubitOperator_to_dict(
-            openfermion_op, count_qubits(openfermion_op)
+            openfermion_op, n_qubits
         )
         return cls.from_dictionary(operator_dict)
 
