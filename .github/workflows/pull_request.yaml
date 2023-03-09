@@ -57,6 +57,10 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      # You can test your matrix by printing the current Python version
-      - name: Display Python version
-        run: python -c "import sys; print(sys.version)"
+      # print the current Python version
+      - name: Display Python version and system OS
+        run: python -c "import sys; import platform; print(sys.version, platform.system())"
+      - name: Pip install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
