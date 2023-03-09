@@ -2,7 +2,7 @@ import numpy as np
 from pyscf.scf.addons import get_ghf_orbspin
 from symmer import QuantumState
 from symmer.symplectic.utils import safe_PauliwordOp_to_dict
-from symmer.chemistry.utils import list_to_xyz, build_bk_matrix
+from symmer.chemistry.utils import list_to_xyz
 from symmer.chemistry import (
     PySCFDriver,
     get_hamiltonian, 
@@ -65,9 +65,7 @@ class MoleculeBuilder:
         self.H_q  = get_hamiltonian(self.pyscf_obj.pyscf_hf, qubit_transformation=qubit_transformation)
         self.CC_q = get_coupled_cluster_operator(self.pyscf_obj.pyscf_ccsd, qubit_transformation=qubit_transformation, orbspin=orbspin)
         self.MP_q = get_perturbation_operator(self.pyscf_obj.pyscf_mp2, qubit_transformation=qubit_transformation)
-        self.hf_array = get_hf_state(self.pyscf_obj.pyscf_hf, state_type='array')
-        if self.qubit_transformation in ['bravyi_kitaev', 'BK']:
-            self.hf_array = (build_bk_matrix(self.n_qubits) @ self.hf_array.reshape(-1,1)).reshape(-1) % 2
+        self.hf_array = get_hf_state(self.pyscf_obj.pyscf_hf, state_type='array', qubit_transformation=qubit_transformation)
         self.hf_state = QuantumState(self.hf_array) 
         # build various molecular symmetries
         self.symmetries = get_molecular_symmetries(self.n_qubits, qubit_transformation=qubit_transformation)
