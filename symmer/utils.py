@@ -3,6 +3,7 @@ import numpy as np
 import scipy as sp
 from typing import Union, List, Tuple
 from functools import reduce
+import py3Dmol
 
 def exact_gs_energy(
         sparse_matrix, 
@@ -128,4 +129,34 @@ def gram_schmidt_from_quantum_state(state) ->np.array:
         M[:, a] = M[:, a] / np.linalg.norm( M[:, a])
 
     return M
-    
+
+def Draw_molecule(
+        xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"
+    ) -> py3Dmol.view:
+    """Draw molecule from xyz string.
+
+    Note if molecule has unrealistic bonds, then style should be sphere. Otherwise stick style can be used
+    which shows bonds.
+
+    TODO: more styles at http://3dmol.csb.pitt.edu/doc/$3Dmol.GLViewer.html
+
+    Args:
+        xyz_string (str): xyz string of molecule
+        width (int): width of image
+        height (int): Height of image
+        style (str): py3Dmol style ('sphere' or 'stick')
+
+    Returns:
+        view (py3dmol.view object). Run view.show() method to print molecule.
+    """
+    view = py3Dmol.view(width=width, height=height)
+    view.addModel(xyz_string, "xyz")
+    if style == "sphere":
+        view.setStyle({'sphere': {"radius": 0.2}})
+    elif style == "stick":
+        view.setStyle({'stick': {}})
+    else:
+        raise ValueError(f"unknown py3dmol style: {style}")
+
+    view.zoomTo()
+    return view
