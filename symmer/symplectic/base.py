@@ -125,13 +125,17 @@ class PauliwordOp:
 
     @classmethod
     def from_openfermion(cls, 
-            openfermion_op: QubitOperator
+            openfermion_op: QubitOperator,
+            n_qubits = None
         ) -> "PauliwordOp":
         """ Initialize a PauliwordOp from OpenFermion's QubitOperator representation
         """
         assert(isinstance(openfermion_op, QubitOperator)), 'Must supply a QubitOperator'
+        if n_qubits is None:
+            n_qubits = count_qubits(openfermion_op)
+        
         operator_dict = QubitOperator_to_dict(
-            openfermion_op, count_qubits(openfermion_op)
+            openfermion_op, n_qubits
         )
         return cls.from_dictionary(operator_dict)
 
@@ -1410,22 +1414,30 @@ class QuantumState:
     def to_dictionary(self) -> Dict[str, complex]:
         """ Return the QuantumState as a dictionary
         """
+        state_to_convert = self.cleanup()
         state_dict = dict(
             zip(
-                [''.join([str(i) for i in row]) for row in self.state_matrix], 
-                self.state_op.coeff_vec
+                [''.join([str(i) for i in row]) for row in state_to_convert.state_matrix], 
+                state_to_convert.state_op.coeff_vec
             )
         )
         return state_dict
 
     @classmethod
     def from_dictionary(cls, 
-            state_dict: Dict[str, complex]
+            state_dict: Dict[str, Union[complex, Tuple[float, float]]]
         ) -> "QuantumState":
         """ Initialize a QuantumState from a dictionary of the form {'1101':a, '0110':b, '1010':c, ...}. This is useful for
         converting the measurement output of a quantum circuit to a QuantumState object for further manipulation/bootstrapping.
         """
         bin_strings, coeff_vector = zip(*state_dict.items())
+
+        coeff_vector = np.array(coeff_vector)
+        if len(coeff_vector.shape)==2:
+            # if coeff_vec supplied as list of tuples (real, imag) then converts to single complex vector
+            assert(coeff_vector.shape[1]==2), 'Only tuples of size two allowed (real and imaginary components)'
+            coeff_vector = coeff_vector[:,0] + 1j*coeff_vector[:,1]
+
         coeff_vector = np.array(coeff_vector)
         state_matrix = np.array([[int(i) for i in bstr] for bstr in bin_strings])
         return cls(state_matrix, coeff_vector)
