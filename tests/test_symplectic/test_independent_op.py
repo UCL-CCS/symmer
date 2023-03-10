@@ -2,25 +2,27 @@ import pytest
 from symmer.symplectic import IndependentOp, PauliwordOp
 import numpy as np
 
-H2_system = {
-    'H_dict':  {'IIII': (-0.09706626816762845+0j),
- 'IIIZ': (-0.22343153690813597+0j),
- 'IIZI': (-0.22343153690813597+0j),
- 'IIZZ': (0.17441287612261608+0j),
- 'IZII': (0.17141282644776884+0j),
- 'IZIZ': (0.12062523483390426+0j),
- 'IZZI': (0.16592785033770355+0j),
- 'ZIII': (0.17141282644776884+0j),
- 'ZIIZ': (0.16592785033770355+0j),
- 'ZIZI': (0.12062523483390426+0j),
- 'ZZII': (0.16868898170361213+0j),
- 'XXYY': (-0.0453026155037993+0j),
- 'XYYX': (0.0453026155037993+0j),
- 'YXXY': (0.0453026155037993+0j),
- 'YYXX': (-0.0453026155037993+0j)},
-    'E': -1.1372838344885023,
-    'reference_state': np.array([1, 1, 0, 0])
-}
+H2_op = PauliwordOp.from_dictionary(
+    {
+    'IIII': (-0.09706626816762845+0j),
+    'IIIZ': (-0.22343153690813597+0j),
+    'IIZI': (-0.22343153690813597+0j),
+    'IIZZ': (0.17441287612261608+0j),
+    'IZII': (0.17141282644776884+0j),
+    'IZIZ': (0.12062523483390426+0j),
+    'IZZI': (0.16592785033770355+0j),
+    'ZIII': (0.17141282644776884+0j),
+    'ZIIZ': (0.16592785033770355+0j),
+    'ZIZI': (0.12062523483390426+0j),
+    'ZZII': (0.16868898170361213+0j),
+    'XXYY': (-0.0453026155037993+0j),
+    'XYYX': (0.0453026155037993+0j),
+    'YXXY': (0.0453026155037993+0j),
+    'YYXX': (-0.0453026155037993+0j)
+    }
+)
+energy = -1.1372838344885023
+ref_state = np.array([1, 1, 0, 0])
 
 def test_target_sqp_invalid_value_error():
     with pytest.raises(ValueError):
@@ -87,7 +89,6 @@ def test_rotations_onto_sqp_X():
     )
 
 def test_symmetry_generators_H2():
-    H2_op = PauliwordOp.from_dictionary(H2_system['H_dict'])
     G1 = IndependentOp.symmetry_generators(H2_op)
     G2 = IndependentOp.from_list(['ZIZI', 'IZIZ', 'IIZZ'])
 
@@ -97,9 +98,7 @@ def test_symmetry_generators_H2():
     )
 
 def test_value_assignment():
-    H2_op = PauliwordOp.from_dictionary(H2_system['H_dict'])
     G = IndependentOp.symmetry_generators(H2_op)
-    ref_state = H2_system['reference_state']
     G.update_sector(ref_state=ref_state)
     assert np.all(G.coeff_vec == (-1) ** np.sum(np.bitwise_and(G.Z_block,ref_state), axis=1))
     
