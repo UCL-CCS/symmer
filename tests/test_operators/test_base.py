@@ -519,11 +519,9 @@ def test_to_sparse_matrix_1():
     """
     P1 = PauliwordOp.random(3, 10)
     P2 = PauliwordOp.random(3, 10)
-    assert np.all(
-        np.isclose(
-            (P1*P2).to_sparse_matrix.toarray(), 
-            P1.to_sparse_matrix.toarray() @ P2.to_sparse_matrix.toarray()
-            )
+    assert np.allclose(
+        (P1*P2).to_sparse_matrix.toarray(), 
+        P1.to_sparse_matrix.toarray() @ P2.to_sparse_matrix.toarray()
     )
 
 @pytest.mark.parametrize(
