@@ -1,5 +1,5 @@
 from functools import reduce
-from symmer.symplectic import PauliwordOp
+from symmer.operators import PauliwordOp
 from symmer.evolution.gate_library import *
 
 ##############################################

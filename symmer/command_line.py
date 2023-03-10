@@ -2,7 +2,7 @@ import argparse
 import os
 import yaml
 from symmer.projection import QubitTapering
-from symmer.symplectic import PauliwordOp
+from symmer.operators import PauliwordOp
 from symmer.projection import CS_VQE
 import datetime
 

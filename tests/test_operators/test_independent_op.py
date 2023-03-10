@@ -1,5 +1,5 @@
 import pytest
-from symmer.symplectic import IndependentOp, PauliwordOp
+from symmer.operators import IndependentOp, PauliwordOp
 import numpy as np
 
 H2_op = PauliwordOp.from_dictionary(

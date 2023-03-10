@@ -1,7 +1,7 @@
 import numpy as np
 from typing import List
 from functools import reduce
-from symmer.symplectic import PauliwordOp
+from symmer.operators import PauliwordOp
 
 def exponentiate_single_Pop(P: PauliwordOp) -> PauliwordOp:
     """ exponentiate a single Pauli term

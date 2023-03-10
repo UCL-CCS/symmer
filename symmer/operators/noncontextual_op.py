@@ -6,8 +6,8 @@ from functools import reduce
 from typing import Optional, Union, Tuple
 import multiprocessing as mp
 from scipy.optimize import differential_evolution, shgo
-from symmer.symplectic import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
-from symmer.symplectic.utils import unit_n_sphere_cartesian_coords, check_adjmat_noncontextual
+from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
+from symmer.operators.utils import unit_n_sphere_cartesian_coords, check_adjmat_noncontextual
 import itertools
 import qubovert as qv
 

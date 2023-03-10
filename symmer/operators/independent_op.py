@@ -2,8 +2,8 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 import warnings
 import multiprocessing as mp
-from symmer.symplectic.utils import _rref_binary, _cref_binary
-from symmer.symplectic import PauliwordOp, QuantumState, symplectic_to_string, single_term_expval
+from symmer.operators.utils import _rref_binary, _cref_binary
+from symmer.operators import PauliwordOp, QuantumState, symplectic_to_string, single_term_expval
 
 class IndependentOp(PauliwordOp):
     """ Special case of PauliwordOp, in which the operator terms must

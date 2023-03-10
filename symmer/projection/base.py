@@ -1,6 +1,6 @@
 import numpy as np
 from typing import List, Tuple, Union
-from symmer.symplectic import PauliwordOp, IndependentOp, QuantumState
+from symmer.operators import PauliwordOp, IndependentOp, QuantumState
 from symmer.evolution import trotter, Had
 from functools import reduce
 

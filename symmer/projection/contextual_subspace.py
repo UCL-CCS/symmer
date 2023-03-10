@@ -1,5 +1,5 @@
 import numpy as np
-from symmer.symplectic import PauliwordOp, IndependentOp, NoncontextualOp
+from symmer.operators import PauliwordOp, IndependentOp, NoncontextualOp
 from symmer.projection.utils import (
     update_eigenvalues, StabilizerIdentification, ObservableBiasing, stabilizer_walk
 )

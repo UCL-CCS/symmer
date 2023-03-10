@@ -2,7 +2,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 from functools import reduce
 from cached_property import cached_property
-from symmer.symplectic import PauliwordOp
+from symmer.operators import PauliwordOp
 from qiskit.circuit import QuantumCircuit, ParameterVector
 
 class AnsatzOp(PauliwordOp):
