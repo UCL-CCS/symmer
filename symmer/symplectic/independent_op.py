@@ -89,7 +89,7 @@ class IndependentOp(PauliwordOp):
         S = cls(S_symp, np.ones(S_symp.shape[0]))
         if S.n_terms==0:
             raise RuntimeError('The input PauliwordOp has no Z2 symmetries.')
-        if commuting_override:
+        if np.all(S.adjacency_matrix) or commuting_override:
             return S
         else:
             # if any of the stabilizers are not mutually commuting, take the largest commuting subset
@@ -106,8 +106,9 @@ class IndependentOp(PauliwordOp):
     def _check_stab(self) -> None:
         """ Checks the stabilizer coefficients are +/-1
         """
-        assert(set(self.coeff_vec).issubset({0, +1,-1})), f'Stabilizer coefficients not +/-1: {self.coeff_vec}'
-
+        if not set(self.coeff_vec).issubset({0, +1,-1}):
+            raise ValueError(f'Stabilizer coefficients not +/-1: {self.coeff_vec}')
+        
     def _check_independent(self) -> None:
         """ Check the supplied stabilizers are algebraically independent
         """
