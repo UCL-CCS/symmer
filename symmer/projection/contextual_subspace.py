@@ -193,7 +193,7 @@ class ContextualSubspace(S3_projection):
         
         OB = ObservableBiasing(
             base_operator=self.operator, 
-            HOMO_LUMO_gap=np.where(HF_array==0)[0][0]-.5 # currently assumes JW mapping!
+            HOMO_LUMO_gap=np.where(np.asarray(HF_array==0).reshape(-1))[0][0]-.5 # currently assumes JW mapping!
         )
         S = stabilizer_walk(
             n_sim_qubits=n_qubits, 
@@ -250,7 +250,7 @@ class ContextualSubspace(S3_projection):
         if len(clique_reps)==n_cliques:
             return sum(clique_reps)
         elif valid_terms.n_terms == 0:
-            raise ValueError(f'Cannot identify {n_cliques} cliques, try lowering n_cliques.')
+            raise RuntimeError(f'Cannot identify {n_cliques} cliques, try lowering n_cliques.')
         else:
             clique_reps.append(valid_terms.sort()[0])
             return self._get_clique_representatives(symmetry_terms, n_cliques, clique_reps)
