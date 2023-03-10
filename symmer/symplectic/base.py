@@ -168,15 +168,17 @@ class PauliwordOp:
         if operator_basis is None:
             # fast method to build all binary assignments
             int_list = np.arange(4 ** (n_qubits))
-            XZ_block = (((int_list[:, None] & (1 << np.arange(2 * n_qubits))[::-1])) > 0).astype(int)
-            op_basis = cls(XZ_block, np.ones(XZ_block.shape[0]))
+            XZ_block = (((int_list[:, None] & (1 << np.arange(2 * n_qubits))[::-1])) > 0).astype(bool)
+            op_basis = cls(XZ_block, np.ones(XZ_block.shape[0]).astype(bool))
         else:
             op_basis = operator_basis
+            op_basis.coeff_vec = np.ones(op_basis.coeff_vec.shape)
 
         denominator = 2 ** n_qubits
         decomposition = cls.empty(n_qubits)
         for op in tqdm(op_basis, desc='Building operator via full basis', total=op_basis.n_terms):
             if isinstance(matrix, np.ndarray):
+                # dense operation!
                 const = np.einsum(
                     'ij,ij->', 
                     op.to_sparse_matrix.toarray(), 
@@ -184,10 +186,17 @@ class PauliwordOp:
                     optimize=True
                 ) / denominator
             else:
+                # sparse operation!
                 const = (op.to_sparse_matrix.multiply(matrix)).sum() / denominator
+
             decomposition += op.multiply_by_constant(const)
 
         operator_out = decomposition.cleanup()
+
+        # fix ZX Y phases generated!
+        Y_sign = (operator_out.Y_count % 2 * -2) + 1
+        operator_out.coeff_vec = operator_out.coeff_vec * Y_sign
+
         if operator_basis is not None:
             if not np.all(operator_out.to_sparse_matrix.toarray() == matrix):
                 warnings.warn('Basis not sufficiently expressive, output operator projected onto basis supplied.')
