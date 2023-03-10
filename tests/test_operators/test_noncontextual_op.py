@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from symmer.symplectic import PauliwordOp, NoncontextualOp, QuantumState
+from symmer.operators import PauliwordOp, NoncontextualOp, QuantumState
 
 noncon_problem = {
     'H_dict':  {'IIII': (-0.09706626816762845+0j),

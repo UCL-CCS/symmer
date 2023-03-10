@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from symmer.approximate import MPOOp, find_groundstate_quimb
-from symmer.symplectic import PauliwordOp, QuantumState
+from symmer.operators import PauliwordOp, QuantumState
 from symmer.utils import exact_gs_energy
 
 @pytest.fixture

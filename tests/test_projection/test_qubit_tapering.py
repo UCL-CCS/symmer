@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from symmer import PauliwordOp, QubitTapering, QuantumState
-from symmer.symplectic import IndependentOp
+from symmer.operators import IndependentOp
 from symmer.utils import exact_gs_energy
 from symmer.evolution import trotter
 

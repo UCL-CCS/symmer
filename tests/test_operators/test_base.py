@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from symmer.symplectic import PauliwordOp
+from symmer.operators import PauliwordOp
 from functools import reduce
 
 P_matrices ={

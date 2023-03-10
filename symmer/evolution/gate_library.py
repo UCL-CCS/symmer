@@ -1,5 +1,5 @@
 import numpy as np
-from symmer.symplectic import PauliwordOp
+from symmer.operators import PauliwordOp
 from symmer.evolution import trotter
 
 #############################################

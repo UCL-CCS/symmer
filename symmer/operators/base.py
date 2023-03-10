@@ -10,7 +10,7 @@ from numbers import Number
 import multiprocessing as mp
 from cached_property import cached_property
 from scipy.sparse import csr_matrix, csc_matrix, coo_matrix
-from symmer.symplectic.utils import *
+from symmer.operators.utils import *
 from openfermion import QubitOperator, count_qubits
 import matplotlib.pyplot as plt
 from qiskit.opflow import PauliSumOp
@@ -1018,8 +1018,8 @@ class PauliwordOp:
 
         """
 
-        # see from symmer.symplectic.anticommuting_op import conjugate_Pop_with_R
-        raise NotImplementedError('not done yet. Full function at: from symmer.symplectic.anticommuting_op.conjugate_Pop_with_R')
+        # see from symmer.operators.anticommuting_op import conjugate_Pop_with_R
+        raise NotImplementedError('not done yet. Full function at: from symmer.operators.anticommuting_op.conjugate_Pop_with_R')
 
 
 class QuantumState:

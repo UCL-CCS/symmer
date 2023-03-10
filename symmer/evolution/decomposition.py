@@ -1,6 +1,8 @@
 from functools import reduce
-from symmer.symplectic import PauliwordOp
+from typing import Dict, List
+from symmer.operators import PauliwordOp
 from symmer.evolution.gate_library import *
+from qiskit.circuit import QuantumCircuit, ParameterVector
 
 ##############################################
 # Decompose any QASM file into a PauliwordOp #
@@ -63,3 +65,90 @@ def qasm_to_PauliwordOp(qasm: str, reverse=False, combine=True) -> PauliwordOp:
         return qc_decomposition.cleanup()
     else:
         return gateset
+
+####################################################
+# Trotterized circuit of exponentiated PauliwordOp #
+####################################################
+
+def PauliwordOp_to_instructions(PwordOp) -> Dict[int, Dict[str, List[int]]]:
+        """ Stores a dictionary of gate instructions at each step, where each value
+        is a dictionary indicating the indices on which to apply each H,S,CNOT and RZ gate
+        """
+        circuit_instructions = {}
+        for step, (X,Z) in enumerate(zip(PwordOp.X_block, PwordOp.Z_block)):
+            # locations for H and S gates to transform into Pauli Z basis
+            H_indices = np.where(X)[0][::-1]
+            S_indices = np.where(X & Z)[0][::-1]
+            # CNOT cascade indices
+            CNOT_indices = np.where(X | Z)[0][::-1]
+            circuit_instructions[step] = {'H_indices':H_indices, 
+                                        'S_indices':S_indices, 
+                                        'CNOT_indices':CNOT_indices,
+                                        'RZ_index':CNOT_indices[-1]}
+        return circuit_instructions
+
+def PauliwordOp_to_QuantumCircuit(
+    PwordOp: PauliwordOp, 
+    ref_state: np.array = None,
+    basis_change_indices: Dict[str, List[int]] = {'X_indices':[],'Y_indices':[]},
+    trotter_number: int = 1, 
+    bind_params: bool = True
+    ) -> QuantumCircuit:
+    """
+    Convert the operator to a QASM circuit string for input 
+    into quantum computing packages such as Qiskit and Cirq
+
+    basis_change_indices in form [X_indices, Y_indices]
+    """
+    def qiskit_ordering(indices):
+        """ we index from left to right - in Qiskit this ordering is reversed
+        """
+        return PwordOp.n_qubits - 1 - indices
+
+    qc = QuantumCircuit(PwordOp.n_qubits)
+    for i in qiskit_ordering(np.where(ref_state==1)[0]):
+        qc.x(i)
+
+    def CNOT_cascade(cascade_indices, reverse=False):
+        index_pairs = list(zip(cascade_indices[:-1], cascade_indices[1:]))
+        if reverse:
+            index_pairs = index_pairs[::-1]
+        for source, target in index_pairs:
+            qc.cx(source, target)
+
+    def circuit_from_step(angle, H_indices, S_indices, CNOT_indices, RZ_index):
+        # to Pauli X basis
+        for i in S_indices:
+            qc.sdg(i)
+        # to Pauli Z basis
+        for i in H_indices:
+            qc.h(i)
+        # compute parity
+        CNOT_cascade(CNOT_indices)
+        qc.rz(-2*angle, RZ_index)
+        CNOT_cascade(CNOT_indices, reverse=True)
+        for i in H_indices:
+            qc.h(i)
+        for i in S_indices:
+            qc.s(i)
+
+    if bind_params:
+        angles = PwordOp.coeff_vec.real/trotter_number
+    else:
+        angles = np.array(ParameterVector('P', PwordOp.n_terms))/trotter_number
+
+    instructions = PauliwordOp_to_instructions(PwordOp)
+    assert(len(angles)==len(instructions)), 'Number of parameters does not match the circuit instructions'
+    for trot_step in range(trotter_number):
+        for step, gate_indices in instructions.items():
+            qiskit_gate_indices = [qiskit_ordering(indices) for indices in gate_indices.values()]
+            qc.barrier()
+            circuit_from_step(angles[step], *qiskit_gate_indices)
+
+    qc.barrier()
+    for i in basis_change_indices['Y_indices']:
+        qc.s(qiskit_ordering(i))
+    for i in basis_change_indices['X_indices']:
+        qc.h(qiskit_ordering(i))
+        
+    return qc

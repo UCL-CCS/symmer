@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from symmer.evolution.gate_library import *
-from symmer.symplectic import QuantumState as qs
+from symmer.operators import QuantumState as qs
 
 @pytest.mark.parametrize(
     "gate, state_in, state_out", 

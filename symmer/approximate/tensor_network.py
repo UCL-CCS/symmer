@@ -1,7 +1,7 @@
 import numpy as np
 from ncon import ncon
 from typing import Union, List, Dict
-from symmer.symplectic import PauliwordOp, QuantumState
+from symmer.operators import PauliwordOp, QuantumState
 from copy import copy
 from cached_property import cached_property
 from quimb.tensor.tensor_1d import MatrixProductOperator, MatrixProductState

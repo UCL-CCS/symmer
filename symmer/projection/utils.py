@@ -1,7 +1,7 @@
 import numpy as np
 from copy import deepcopy
 from scipy.optimize import differential_evolution
-from symmer.symplectic import PauliwordOp, IndependentOp
+from symmer.operators import PauliwordOp, IndependentOp
 
 def norm(vector: np.array) -> float:
     """
