@@ -1,7 +1,8 @@
 import pytest
 import numpy as np
 from symmer.symplectic import PauliwordOp
-from functools import reduce
+from scipy.sparse import rand, csr_matrix
+
 
 P_matrices ={
     'X': np.array([[0, 1],
@@ -260,25 +261,132 @@ def test_to_dictionary(
     ).to_dictionary == pauli_dict
 
 
-def test_from_matrix(
-        pauli_list_1,
-        symp_matrix_1,
-        coeff_vec_1
-    ):
-    n_qubits = len(pauli_list_1[0])
+def test_from_matrix_projector_dense():
 
-    # build matrix
-    mat = np.zeros((2**n_qubits, 2**n_qubits), dtype=complex)
-    for index, p_op in enumerate(pauli_list_1):
-        coeff = coeff_vec_1[index]
-        p_op_mat = reduce(np.kron, [P_matrices[sig] for sig in p_op])
-        mat+= coeff*p_op_mat
-    # generate Pop from matrix
-    PauliOp_from_matrix = PauliwordOp.from_matrix(mat)
+    for n_qubits in range(1,5):
+        mat = np.random.random((2**n_qubits,2**n_qubits)) + 1j*np.random.random((2**n_qubits,2**n_qubits))
+        PauliOp_from_matrix = PauliwordOp.from_matrix(mat,
+                                                      strategy='projector')
+        assert np.allclose(PauliOp_from_matrix.to_sparse_matrix.toarray(),
+                           mat)
 
-    pauli_dict = dict(zip(pauli_list_1, coeff_vec_1))
-    PauliOp_from_dict = PauliwordOp.from_dictionary(pauli_dict)
-    assert PauliOp_from_matrix == PauliOp_from_dict
+
+def test_from_matrix_full_basis_dense():
+
+    for n_qubits in range(1,5):
+        mat = np.random.random((2**n_qubits,2**n_qubits)) + 1j*np.random.random((2**n_qubits,2**n_qubits))
+        PauliOp_from_matrix = PauliwordOp.from_matrix(mat,
+                                                      strategy='full_basis')
+
+        assert np.allclose(PauliOp_from_matrix.to_sparse_matrix.toarray(),
+                           mat)
+
+
+def test_from_matrix_defined_basis_dense():
+
+
+    for n_qubits in range(2,6):
+        n_terms = (4**n_qubits)//2
+        op_basis = PauliwordOp.random(n_qubits, n_terms)
+        PauliOp_from_matrix = PauliwordOp.from_matrix(op_basis.to_sparse_matrix.toarray(),
+                                                      strategy='full_basis',
+                                                      operator_basis=op_basis)
+        assert np.allclose(op_basis.to_sparse_matrix.toarray(),
+                           PauliOp_from_matrix.to_sparse_matrix.toarray())
+
+
+    op_basis = PauliwordOp.from_dictionary({'XX':1,
+                                         'ZZ':2,
+                                         'YY':2,
+                                         'YI':-1,
+                                         'YY':2,
+                                         'ZX':2})
+
+    mat = np.array([[ 2.+0.j,  0.+0.j,  0.+1.j, -1.+0.j],
+                   [ 0.+0.j, -2.+0.j,  3.+0.j,  0.+1.j],
+                   [ 0.-1.j,  3.+0.j, -2.+0.j,  0.+0.j],
+                   [-1.+0.j,  0.-1.j,  0.+0.j,  2.+0.j]])
+    PauliOp_from_matrix = PauliwordOp.from_matrix(mat, strategy='full_basis', operator_basis=op_basis)
+    assert np.allclose(PauliOp_from_matrix.to_sparse_matrix.toarray(), mat)
+
+
+def test_from_matrix_projector_sparse():
+    density = 0.8
+    for n_qubits in range(1,5):
+        dim = 2 ** n_qubits
+        mat = rand(dim, dim,
+                  density=density,
+                  format='csr',
+                   dtype=complex)
+        PauliOp_from_matrix = PauliwordOp.from_matrix(mat,
+                                                      strategy='projector')
+        assert np.allclose(PauliOp_from_matrix.to_sparse_matrix.toarray(),
+                           mat.toarray())
+
+
+def test_from_matrix_full_basis_sparse():
+
+    density = 0.8
+    for n_qubits in range(1,5):
+        dim = 2 ** n_qubits
+        mat = rand(dim, dim,
+                          density=density,
+                          format='csr',
+                   dtype=complex)
+        PauliOp_from_matrix = PauliwordOp.from_matrix(mat,
+                                                      strategy='full_basis')
+
+        assert np.allclose(PauliOp_from_matrix.to_sparse_matrix.toarray(),
+                           mat.toarray())
+
+
+def test_from_matrix_defined_basis_sparse():
+
+    op_basis = PauliwordOp.from_dictionary({
+         'II': 1,
+         'IZ': 1,
+         'ZI': 1,
+         'ZZ': 1,
+         'IX': 1,
+         'IY': 1,
+         'ZX': 1,
+         'ZY': 1,
+         'XI': 1,
+         'XZ': 1,
+         'YI': 1,
+         'YZ': 1,
+         'XX': 1,
+         'XY': 1,
+         'YX': 1,
+         'YY': 1 })
+
+    mat = np.array([[1, 0, 0, 0],
+                    [1, 0, 0, 0],
+                    [1, 0, -1j, 0],
+                    [1, 0, 0, 0]])
+    sparse_mat = csr_matrix(mat)
+    PauliOp_from_matrix = PauliwordOp.from_matrix(sparse_mat,
+                                                  strategy='full_basis',
+                                                  operator_basis=op_basis)
+    assert np.allclose(PauliOp_from_matrix.to_sparse_matrix.toarray(), mat)
+
+
+def test_from_matrix_incomplete_op_basis():
+    """
+    Test to see if warning thrown if supplied basis is not enough.
+    Returns:
+
+    """
+    op_basis = PauliwordOp.from_dictionary({'XX': 1})
+    mat = np.array([[2. + 0.j, 0. + 0.j, 0. + 1.j, -1. + 0.j],
+                    [0. + 0.j, -2. + 0.j, 3. + 0.j, 0. + 1.j],
+                    [0. - 1.j, 3. + 0.j, -2. + 0.j, 0. + 0.j],
+                    [-1. + 0.j, 0. - 1.j, 0. + 0.j, 2. + 0.j]])
+
+    with pytest.warns(UserWarning):
+        PauliOp_from_matrix = PauliwordOp.from_matrix(mat, operator_basis=op_basis)
+
+
 
 def test_from_matrix_to_matrix():
     n_qubits = 3
