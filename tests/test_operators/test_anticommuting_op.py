@@ -27,6 +27,7 @@ anti_commuting_complex = {
                         'XXXY': (0.7526481862263222-1.112929874028072j)
                         }
 
+
 def test_init_not_anticommuting():
     """
     check assert error thrown if input is not anticommuting
@@ -154,12 +155,39 @@ def test_unitary_partitioning_seq_rot_complex():
     AcOp_comp = AntiCommutingOp.from_dictionary(anti_commuting_complex)
     with pytest.raises(AssertionError):
         AcOp_comp.unitary_partitioning(s_index=None,
-                                           up_method='seq_rot')
+                                       up_method='seq_rot')
 
 
 def test_unitary_partitioning_LCU_complex():
     AcOp_comp = AntiCommutingOp.from_dictionary(anti_commuting_complex)
     with pytest.raises(AssertionError):
         AcOp_comp.unitary_partitioning(s_index=None,
-                                           up_method='LCU')
+                                       up_method='LCU')
 
+
+def test_generate_LCU_operator():
+    AcOp_real = AntiCommutingOp.from_dictionary(anti_commuting_real)
+    normalization = np.linalg.norm(list(anti_commuting_real.values()))
+
+    AcOp_normed = AcOp_real.multiply_by_constant(1/normalization)
+
+    Ps_LCU = AcOp_real.generate_LCU_operator(AcOp_normed)
+    R_LCU = AcOp_real.R_LCU
+
+    R_AC_op_Rdag = R_LCU * AcOp_normed * R_LCU.dagger
+    assert R_AC_op_Rdag.n_terms == 1
+    assert R_AC_op_Rdag == Ps_LCU
+
+
+def test_recursive_seq_rotations():
+    AcOp_real = AntiCommutingOp.from_dictionary(anti_commuting_real)
+    normalization = np.linalg.norm(list(anti_commuting_real.values()))
+
+    AcOp_normed = AcOp_real.multiply_by_constant(1/normalization)
+
+    Ps_LCU = AcOp_real._recursive_seq_rotations(AcOp_normed)
+    R_seq_rot = AcOp_real.X_sk_rotations
+
+    R_AC_op_Rdag = AcOp_normed.perform_rotations(R_seq_rot)
+    assert R_AC_op_Rdag.n_terms == 1
+    assert R_AC_op_Rdag == Ps_LCU
