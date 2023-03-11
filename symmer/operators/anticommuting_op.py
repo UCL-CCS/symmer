@@ -35,27 +35,12 @@ class AntiCommutingOp(PauliwordOp):
         """
         PwordOp = super().from_dictionary(operator_dict)
         return cls.from_PauliwordOp(PwordOp)
+
     @classmethod
     def from_PauliwordOp(cls,
             PwordOp: PauliwordOp
-        ) -> IndependentOp:
+        ) -> 'AntiCommutingOp':
         return cls(PwordOp.symp_matrix, PwordOp.coeff_vec)
-
-    def lexicographical_sort(self) -> None:
-        """
-        sort object into lexicographical order (changes symp_matrix and coeff_vec order of PauliWord)
-
-        Returns:
-            None
-        """
-        # convert sym form to list of ints
-        int_list = self.symp_matrix @ (1 << np.arange(self.symp_matrix.shape[1], dtype=object)[::-1])
-        lex_ordered_indices = np.argsort(int_list)
-
-        self.symp_matrix = self.symp_matrix[lex_ordered_indices]
-        self.coeff_vec = self.coeff_vec[lex_ordered_indices]
-
-        return None
 
 
     def get_least_dense_term_index(self):
@@ -68,11 +53,18 @@ class AntiCommutingOp(PauliwordOp):
         Returns:
             s_index (int): index of least dense term in objects symp_matrix and coeff_vec
         """
-        # np.logical_or(X_block, Z_block)
-        pos_terms_occur = np.logical_or(self.symp_matrix[:, :self.n_qubits], self.symp_matrix[:, self.n_qubits:])
+        ### np.logical_or(X_block, Z_block)
+        # pos_terms_occur = np.logical_or(self.symp_matrix[:, :self.n_qubits], self.symp_matrix[:, self.n_qubits:])
+        # int_list = pos_terms_occur @ (1 << np.arange(pos_terms_occur.shape[1], dtype=object)[::-1])
+        # s_index = np.argmin(int_list)
 
-        int_list = pos_terms_occur @ (1 << np.arange(pos_terms_occur.shape[1], dtype=object)[::-1])
-        s_index = np.argmin(int_list)
+        pos_terms_occur = np.logical_or(self.symp_matrix[:, :self.n_qubits], self.symp_matrix[:, self.n_qubits:])
+        symp_matrix_view = np.ascontiguousarray(pos_terms_occur).view(
+            np.dtype((np.void, pos_terms_occur.dtype.itemsize * pos_terms_occur.shape[1]))
+        )
+        sort_order = np.argsort(symp_matrix_view.ravel())
+        s_index = sort_order[0]
+
         return s_index
 
 
@@ -80,14 +72,13 @@ class AntiCommutingOp(PauliwordOp):
         if AC_op.n_terms == 1:
             return AC_op
         else:
-            # s_index fixed to zero
+            # s_index fixed to zero (re-order done in unitary_partitioning method!)
             s_index = 0
             k_index = 1
-            # k_index = np.setdiff1d(range(AC_op.n_terms), s_index)[0]
 
             op_for_rotation = AC_op.copy()
+
             # take β_s P_s
-            ### s_index=0
             P_s = PauliwordOp(op_for_rotation.symp_matrix[s_index], [1])
             β_s = op_for_rotation.coeff_vec[s_index]
             β_k = op_for_rotation.coeff_vec[k_index]
@@ -156,6 +147,7 @@ class AntiCommutingOp(PauliwordOp):
 
             if s_index!=0:
                 # re-order so s term is ALWAYS at top of symplectic matrix and thus is index as 0!
+                ### assert s_index <= AC_op.n_terms-1, 's_index out of range'
                 AC_op.coeff_vec[[0, s_index]] = AC_op.coeff_vec[[s_index, 0]]
                 AC_op.symp_matrix[[0, s_index]] = AC_op.symp_matrix[[s_index, 0]]
                 AC_op = AntiCommutingOp(AC_op.symp_matrix, AC_op.coeff_vec) # need to reinit otherwise Z and X blocks wrong
@@ -331,72 +323,4 @@ def conjugate_Pop_with_R(Pop:PauliwordOp,
         rot_H = PauliwordOp(np.array(sym_vec_list),
                             coeff_list).cleanup()
     return rot_H
-
-
-# def apply_LCU_operator_to_general_operator(R_LCU: PauliwordOp,
-#                                            op_to_rotate: PauliwordOp) -> PauliwordOp:
-#     """
-#     see equation B85 of https://arxiv.org/pdf/2207.03451.pdf for details
-#     only apply necessary rotations when performing LCU rotation.
-#
-#     ## turns out this is slower than just doing symplectic multiplication
-#
-#     Args:
-#         R_LCU (PauliwordOp): unitary partitioning linear combination of PauliwordOp operators
-#         op_to_rotate (PauliwordOp): operator to rotate by unitary partitioning linear combination of U rotation
-#     Returns:
-#         rot_H (PauliwordOp): rotated operator
-#     """
-#
-#     ## note
-#     warnings.warn('seems faster to just do implicit multipliciation... aka do NOT use this function')
-#     ##
-#
-#     I_term_index = int(np.where(np.sum(R_LCU.symp_matrix,
-#                                        axis=1)==0)[0])
-#     # make I term be zero indexed
-#     if I_term_index!=0:
-#         R_LCU.coeff_vec[[0, I_term_index]] = R_LCU.coeff_vec[[I_term_index, 0]]
-#         R_LCU.symp_matrix[[0, I_term_index]] = R_LCU.symp_matrix[[I_term_index, 0]]
-#         R_LCU = PauliwordOp(R_LCU.symp_matrix, R_LCU.coeff_vec)
-#
-#     ## run fast LCU implementation!
-#
-#     dI = R_LCU.coeff_vec[0]
-#     two_dI = 2 * dI
-#     dI2 = dI ** 2
-#
-#     non_I_terms = R_LCU[1:]
-#     commutation_check = op_to_rotate.commutes_termwise(non_I_terms)
-#
-#     rot_H = op_to_rotate.multiply_by_constant(dI2)  # first terms generated
-#     for j, P_jk in enumerate(non_I_terms):
-#         for i, ci_Pi in enumerate(op_to_rotate):
-#
-#             # equation B56 vi_Pi term
-#             signed_bjk_blk_2 = (-1) ** (not commutation_check[i, j]) * P_jk.coeff_vec[0] * P_jk.coeff_vec[0].conjugate()
-#             vi_Pi = ci_Pi.multiply_by_constant(signed_bjk_blk_2)
-#             rot_H += vi_Pi
-#
-#             # equation B57
-#             if not commutation_check[i, j]:  # ci_Pi.commutes(P_rot)
-#                 # eq B57
-#                 ci_dj_PjkPi = P_jk * ci_Pi
-#                 rot_H += ci_dj_PjkPi.multiply_by_constant(two_dI)
-#
-#             for l, P_lk in enumerate(non_I_terms[(j + 1):]):
-#                 # eq B56!
-#
-#                 # note need to shift l index by j (so as to get correct index!)
-#                 l_ind = l + (j + 1)
-#                 if (commutation_check[i, j] and (not commutation_check[i, l_ind])):
-#                     Pi_Pjk_Pkl = ci_Pi * P_jk * P_lk.conjugate
-#                     rot_H += Pi_Pjk_Pkl.multiply_by_constant(2)
-#
-#                 elif ((not commutation_check[i, j]) and (commutation_check[i, l_ind])):
-#                     Pi_Pkl_Pjk = ci_Pi * P_lk.conjugate * P_jk
-#                     rot_H += Pi_Pkl_Pjk.multiply_by_constant(2)
-#                 else:
-#                     continue
-#     return rot_H
 
