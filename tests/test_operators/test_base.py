@@ -2,6 +2,8 @@ import pytest
 import numpy as np
 from symmer.operators import PauliwordOp
 from functools import reduce
+from qiskit.opflow import PauliSumOp
+from openfermion import QubitOperator
 from scipy.sparse import rand, csr_matrix
 
 P_matrices ={
@@ -395,6 +397,90 @@ def test_from_matrix_to_matrix():
     PauliOp_to_matrix = PauliOp_from_matrix.to_sparse_matrix.toarray()
     assert np.allclose(PauliOp_to_matrix, mat)
 
+
+def test_from_matrix_projector_incorrect_input():
+    n_q = 1
+    mat = [[1, 0],
+           [0, -1]]
+    
+    with pytest.raises(ValueError):
+        PauliwordOp._from_matrix_projector(mat,
+                                           n_qubits=n_q)
+
+
+
+def test_from_openfermion():
+    expected = {'XX': 0.5,
+                'YY': 0.5+2j,
+                'IZ': -0.5,
+                'XZ': -0.5-3j}
+    of_operator = QubitOperator()
+    for p, coeff in expected.items():
+        p_str = ' '.join([f'{sig}{ind}' for ind, sig in enumerate(p) if sig!= 'I'])
+        of_operator += QubitOperator(p_str, coeff)
+
+    Pop = PauliwordOp.from_openfermion(of_operator)
+    assert PauliwordOp.from_dictionary(expected) == Pop
+    assert Pop.n_qubits == 2
+    assert expected == Pop.to_dictionary
+
+
+def test_from_openfermion_qubit_specified():
+    expected = {'XX': 0.5,
+                'YY': 0.5+2j,
+                'IZ': -0.5,
+                'XZ': -0.5-3j}
+    of_operator = QubitOperator()
+    for p, coeff in expected.items():
+        p_str = ' '.join([f'{sig}{ind}' for ind, sig in enumerate(p) if sig!= 'I'])
+        of_operator += QubitOperator(p_str, coeff)
+
+    three_q  = {'XXI': 0.5,
+                'YYI': 0.5+2j,
+                'IZI': -0.5,
+                'XZI': -0.5-3j}
+    Pop = PauliwordOp.from_openfermion(of_operator, n_qubits=3)
+    assert Pop.n_qubits == 3
+    assert Pop == PauliwordOp.from_dictionary(three_q)
+
+
+def test_to_openfermion():
+    expected = {'XX': 0.5,
+                'YY': 0.5+2j,
+                'IZ': -0.5,
+                'XZ': -0.5-3j}
+    of_operator = QubitOperator()
+    for p, coeff in expected.items():
+        p_str = ' '.join([f'{sig}{ind}' for ind, sig in enumerate(p) if sig!= 'I'])
+        of_operator += QubitOperator(p_str, coeff)
+
+    Pop = PauliwordOp.from_dictionary(expected)
+    assert Pop.to_openfermion == of_operator
+
+
+def test_from_qiskit():
+    expected = {'XX': 0.5,
+                'YY': 0.5+2j,
+                'IZ': -0.5,
+                'XZ': -0.5-3j}
+    qiskit_op = PauliSumOp.from_list(expected.items())
+    Pop = PauliwordOp.from_qiskit(qiskit_op)
+    assert Pop.to_dictionary == expected
+    assert Pop.n_qubits == 2
+    assert PauliwordOp.from_dictionary(expected) == Pop
+
+
+def test_to_qiskit():
+    expected = {'XX': 0.5,
+                'YY': 0.5+2j,
+                'IZ': -0.5,
+                'XZ': -0.5-3j}
+    qiskit_op = PauliSumOp.from_list(expected.items())
+    Pop = PauliwordOp.from_dictionary(expected)
+    assert Pop.to_qiskit == qiskit_op
+    assert Pop.n_qubits == 2
+
+
 ##################################################
 # Testing algebraic manipulation of PauliwordOps #
 ##################################################
@@ -519,11 +605,9 @@ def test_to_sparse_matrix_1():
     """
     P1 = PauliwordOp.random(3, 10)
     P2 = PauliwordOp.random(3, 10)
-    assert np.all(
-        np.isclose(
-            (P1*P2).to_sparse_matrix.toarray(), 
-            P1.to_sparse_matrix.toarray() @ P2.to_sparse_matrix.toarray()
-            )
+    assert np.allclose(
+        (P1*P2).to_sparse_matrix.toarray(), 
+        P1.to_sparse_matrix.toarray() @ P2.to_sparse_matrix.toarray()
     )
 
 @pytest.mark.parametrize(

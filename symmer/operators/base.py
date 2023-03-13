@@ -340,10 +340,16 @@ class PauliwordOp:
         """
         Sort the terms either by magnitude, weight X, Y or Z
         """
-        if by=='magnitude':
+        if by == 'magnitude':
             sort_order = np.argsort(-abs(self.coeff_vec))
-        elif by=='weight':
+        elif by == 'weight':
             sort_order = np.argsort(-np.sum(self.symp_matrix.astype(int), axis=1))
+        elif by == 'support':
+            pos_terms_occur = np.logical_or(self.symp_matrix[:, :self.n_qubits], self.symp_matrix[:, self.n_qubits:])
+            symp_matrix_view = np.ascontiguousarray(pos_terms_occur).view(
+                np.dtype((np.void, pos_terms_occur.dtype.itemsize * pos_terms_occur.shape[1]))
+            )
+            sort_order = np.argsort(symp_matrix_view.ravel())[::-1]
         elif by=='Z':
             sort_order = np.argsort(np.sum((self.n_qubits+1)*self.X_block.astype(int) + self.Z_block.astype(int), axis=1))
         elif by=='X':
@@ -789,7 +795,7 @@ class PauliwordOp:
         If no angles are given then rotations are assumed to be pi/2 (Clifford)
         """
         op_copy = self.copy()
-        for pauli_rotation,angle in rotations:
+        for pauli_rotation, angle in rotations:
             op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle).cleanup()
         return op_copy
 
