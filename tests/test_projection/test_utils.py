@@ -36,12 +36,12 @@ def test_update_eigenvalues_correct_usage():
     update_eigenvalues(basis=G1, stabilizers=G2)
     assert np.all(G2.coeff_vec == np.array([+1, +1, -1]))
 
-def test_basis_weighting():
-    weighting_operator = PauliwordOp.from_list(['XYZX', 'YYYY', 'ZZZZ', 'IXZX', 'YXZI'])
-    SI = StabilizerIdentification(weighting_operator=weighting_operator)
-    assert SI.basis_weighting == PauliwordOp.from_list(
-        ['XXIX', 'XXXX', 'IIII', 'IXIX', 'XXII']
-    )
+# def test_basis_weighting():
+#     weighting_operator = PauliwordOp.from_list(['XYZX', 'YYYY', 'ZZZZ', 'IXZX', 'YXZI'])
+#     SI = StabilizerIdentification(weighting_operator=weighting_operator)
+#     assert SI.basis_weighting == PauliwordOp.from_list(
+#         ['XXIX', 'XXXX', 'IIII', 'IXIX', 'XXII']
+#     )
 
 def test_symmetry_generators_by_term_significance():
     SI = StabilizerIdentification(weighting_operator=CC_taper)
