@@ -58,19 +58,22 @@ def update_eigenvalues(
 
 class StabilizerIdentification:
     def __init__(self,
-        weighting_operator: PauliwordOp
+        weighting_operator: PauliwordOp,
+        use_X_only = False
         ) -> None:
         """
         """
         self.weighting_operator = weighting_operator
+        self.use_X_only = use_X_only
         self.build_basis_weighting_operator()
 
     def build_basis_weighting_operator(self):
-        # X_block = self.weighting_operator.X_block
-        # X_op = PauliwordOp(
-        #     np.hstack([X_block, np.zeros_like(X_block)]), 
-        #     np.abs(self.weighting_operator.coeff_vec)
-        # ).cleanup()
+        if self.use_X_only:
+            X_block = self.weighting_operator.X_block
+            self.weighting_operator = PauliwordOp(
+                np.hstack([X_block, np.zeros_like(X_block)]), 
+                np.abs(self.weighting_operator.coeff_vec)
+            ).cleanup()
         self.basis_weighting = self.weighting_operator.sort(by='magnitude')
         self.qubit_positions = np.arange(self.weighting_operator.n_qubits)
         self.term_region = [0,self.basis_weighting.n_terms]

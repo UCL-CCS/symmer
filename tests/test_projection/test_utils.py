@@ -38,18 +38,18 @@ def test_update_eigenvalues_correct_usage():
 
 def test_basis_weighting():
     weighting_operator = PauliwordOp.from_list(['XYZX', 'YYYY', 'ZZZZ', 'IXZX', 'YXZI'])
-    SI = StabilizerIdentification(weighting_operator=weighting_operator)
+    SI = StabilizerIdentification(weighting_operator=weighting_operator, use_X_only=True)
     assert SI.basis_weighting == PauliwordOp.from_list(
         ['XXIX', 'XXXX', 'IIII', 'IXIX', 'XXII']
     )
 
 def test_symmetry_generators_by_term_significance():
-    SI = StabilizerIdentification(weighting_operator=CC_taper)
+    SI = StabilizerIdentification(weighting_operator=CC_taper, use_X_only=True)
     G = SI.symmetry_generators_by_term_significance(n_preserved=4)
     assert G == IndependentOp.from_list(['IZZZZ'])
 
 def symmetry_generators_by_subspace_dimension():
-    SI = StabilizerIdentification(weighting_operator=CC_taper)
+    SI = StabilizerIdentification(weighting_operator=CC_taper, use_X_only=True)
     G = SI.symmetry_generators_by_subspace_dimension(n_sim_qubits=3)
     assert G == IndependentOp.from_list(['ZIZZZ', 'IZZZZ'])
 
