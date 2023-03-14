@@ -92,7 +92,8 @@ def PauliwordOp_to_QuantumCircuit(
     ref_state: np.array = None,
     basis_change_indices: Dict[str, List[int]] = {'X_indices':[],'Y_indices':[]},
     trotter_number: int = 1, 
-    bind_params: bool = True
+    bind_params: bool = True,
+    include_barriers:bool = True,
     ) -> QuantumCircuit:
     """
     Convert the operator to a QASM circuit string for input 
@@ -142,10 +143,15 @@ def PauliwordOp_to_QuantumCircuit(
     for trot_step in range(trotter_number):
         for step, gate_indices in instructions.items():
             qiskit_gate_indices = [qiskit_ordering(indices) for indices in gate_indices.values()]
-            qc.barrier()
+
+            if include_barriers:
+                qc.barrier()
+
             circuit_from_step(angles[step], *qiskit_gate_indices)
 
-    qc.barrier()
+    if include_barriers:
+        qc.barrier()
+
     for i in basis_change_indices['Y_indices']:
         qc.s(qiskit_ordering(i))
     for i in basis_change_indices['X_indices']:
