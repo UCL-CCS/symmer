@@ -2,7 +2,6 @@ from symmer.operators import PauliwordOp, IndependentOp
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
 import warnings
-from symmer.operators.utils import mul_symplectic
 
 warnings.simplefilter('always', UserWarning)
 class AntiCommutingOp(PauliwordOp):
@@ -222,105 +221,105 @@ class AntiCommutingOp(PauliwordOp):
 
         return Ps_LCU
 
-
-def conjugate_Pop_with_R(Pop:PauliwordOp,
-                        R: PauliwordOp) -> PauliwordOp:
-    """
-    For a defined linear combination of pauli operators : R = ∑_{𝑖} ci Pi ... (note each P self-adjoint!)
-
-    perform the adjoint rotation R op R† =  R [∑_{a} ca Pa] R†
-
-    Args:
-        R (PauliwordOp): operator to rotate Pop by
-    Returns:
-        rot_H (PauliwordOp): rotated operator
-
-    ### Notes
-    R = ∑_{𝑖} ci Pi
-    R^{†} = ∑_{j}  cj^{*} Pj
-    note i and j here run over the same indices!
-    apply R H R^{†} where H is Pop (current Pauli defined in class object)
-
-    ### derivation:
-
-    = (∑_{𝑖} ci Pi ) * (∑_{a} ca Pa ) * ∑_{j} cj^{*} Pj
-
-    = ∑_{a}∑_{i}∑_{j} (ci ca cj^{*}) Pi  Pa Pj
-
-    # can write as case for when i==j and i!=j
-
-    = ∑_{a}∑_{i=j} (ci ca ci^{*}) Pi  Pa Pi + ∑_{a}∑_{i}∑_{j!=i} (ci ca cj^{*}) Pi  Pa Pj
-
-    # let C by the termwise commutator matrix between H and R
-    = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa  + ∑_{a}∑_{i}∑_{j!=i} (ci ca cj^{*}) Pi  Pa Pj
-
-    # next write final term over upper triange (as i and j run over same indices)
-    ## so add common terms for i and j and make j>i
-
-    = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
-      + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*}) Pi  Pa Pj + (cj ca ci^{*}) Pj  Pa Pi
-
-    # then need to know commutation relation betwen terms in R
-    ## given by adjaceny matrix of R... here A
-
-
-    = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
-     + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*}) Pi  Pa Pj + (-1)^{C_{ia}+A_{ij}+C_{ja}}(cj ca ci^{*}) Pi  Pa Pj
-
-
-    = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
-     + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*} + (-1)^{C_{ia}+A_{ij}+C_{ja}}(cj ca ci^{*})) Pi  Pa Pj
-
-
-    """
-    if Pop.n_terms == 1:
-        rot_H = (R * Pop * R.dagger).cleanup()
-    else:
-        # anticommutes == 1 and commutes == 0
-        commutation_check = (~Pop.commutes_termwise(R)).astype(int)
-        adj_matrix = (~R.adjacency_matrix).astype(int)
-
-        c_list = R.coeff_vec
-        ca_list = Pop.coeff_vec
-
-        # rot_H = PauliwordOp.empty(Pop.n_qubits)
-        coeff_list = []
-        sym_vec_list = []
-        for ind_a, Pa_vec in enumerate(Pop.symp_matrix):
-            for ind_i, Pi_vec in enumerate(R.symp_matrix):
-                sign = (-1) ** (commutation_check[ind_a, ind_i])
-
-                coeff = c_list[ind_i] * c_list[ind_i].conj() * ca_list[ind_a]
-                # rot_H += PauliwordOp(Pa_vec, [coeff * sign])
-                sym_vec_list.append(Pa_vec)
-                coeff_list.append(coeff * sign)
-
-                # PiPa = PauliwordOp(Pi_vec, [1]) * PauliwordOp(Pa_vec, [1])
-                phaseless_prod_PiPa, PiPa_coeff_vec = mul_symplectic(Pi_vec, 1,
-                                                                     Pa_vec, 1)
-
-                for ind_j, Pj_vec in enumerate(R.symp_matrix[ind_i + 1:]):
-                    ind_j += ind_i + 1
-
-                    sign2 = (-1) ** (commutation_check[ind_a, ind_i] +
-                                     commutation_check[ind_a, ind_j] +
-                                     adj_matrix[ind_i, ind_j])
-
-                    coeff1 = c_list[ind_i] * ca_list[ind_a] * c_list[ind_j].conj()
-                    coeff2 = c_list[ind_j] * ca_list[ind_a] * c_list[ind_i].conj()
-
-                    overall_coeff = (coeff1 + sign2 * coeff2)
-                    if overall_coeff:
-                        # calculate PiPa term outside of j loop
-                        # overall_coeff_PiPaPj = PiPa * PauliwordOp(Pj_vec, [overall_coeff])
-                        # rot_H += overall_coeff_PiPaPj
-
-                        phaseless_prod, coeff_vec = mul_symplectic(phaseless_prod_PiPa, PiPa_coeff_vec,
-                                                                   Pj_vec, overall_coeff)
-                        sym_vec_list.append(phaseless_prod)
-                        coeff_list.append(coeff_vec)
-
-        rot_H = PauliwordOp(np.array(sym_vec_list),
-                            coeff_list).cleanup()
-    return rot_H
-
+# from symmer.operators.utils import mul_symplectic
+# def conjugate_Pop_with_R(Pop:PauliwordOp,
+#                         R: PauliwordOp) -> PauliwordOp:
+#     """
+#     For a defined linear combination of pauli operators : R = ∑_{𝑖} ci Pi ... (note each P self-adjoint!)
+#
+#     perform the adjoint rotation R op R† =  R [∑_{a} ca Pa] R†
+#
+#     Args:
+#         R (PauliwordOp): operator to rotate Pop by
+#     Returns:
+#         rot_H (PauliwordOp): rotated operator
+#
+#     ### Notes
+#     R = ∑_{𝑖} ci Pi
+#     R^{†} = ∑_{j}  cj^{*} Pj
+#     note i and j here run over the same indices!
+#     apply R H R^{†} where H is Pop (current Pauli defined in class object)
+#
+#     ### derivation:
+#
+#     = (∑_{𝑖} ci Pi ) * (∑_{a} ca Pa ) * ∑_{j} cj^{*} Pj
+#
+#     = ∑_{a}∑_{i}∑_{j} (ci ca cj^{*}) Pi  Pa Pj
+#
+#     # can write as case for when i==j and i!=j
+#
+#     = ∑_{a}∑_{i=j} (ci ca ci^{*}) Pi  Pa Pi + ∑_{a}∑_{i}∑_{j!=i} (ci ca cj^{*}) Pi  Pa Pj
+#
+#     # let C by the termwise commutator matrix between H and R
+#     = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa  + ∑_{a}∑_{i}∑_{j!=i} (ci ca cj^{*}) Pi  Pa Pj
+#
+#     # next write final term over upper triange (as i and j run over same indices)
+#     ## so add common terms for i and j and make j>i
+#
+#     = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
+#       + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*}) Pi  Pa Pj + (cj ca ci^{*}) Pj  Pa Pi
+#
+#     # then need to know commutation relation betwen terms in R
+#     ## given by adjaceny matrix of R... here A
+#
+#
+#     = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
+#      + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*}) Pi  Pa Pj + (-1)^{C_{ia}+A_{ij}+C_{ja}}(cj ca ci^{*}) Pi  Pa Pj
+#
+#
+#     = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
+#      + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*} + (-1)^{C_{ia}+A_{ij}+C_{ja}}(cj ca ci^{*})) Pi  Pa Pj
+#
+#
+#     """
+#     if Pop.n_terms == 1:
+#         rot_H = (R * Pop * R.dagger).cleanup()
+#     else:
+#         # anticommutes == 1 and commutes == 0
+#         commutation_check = (~Pop.commutes_termwise(R)).astype(int)
+#         adj_matrix = (~R.adjacency_matrix).astype(int)
+#
+#         c_list = R.coeff_vec
+#         ca_list = Pop.coeff_vec
+#
+#         # rot_H = PauliwordOp.empty(Pop.n_qubits)
+#         coeff_list = []
+#         sym_vec_list = []
+#         for ind_a, Pa_vec in enumerate(Pop.symp_matrix):
+#             for ind_i, Pi_vec in enumerate(R.symp_matrix):
+#                 sign = (-1) ** (commutation_check[ind_a, ind_i])
+#
+#                 coeff = c_list[ind_i] * c_list[ind_i].conj() * ca_list[ind_a]
+#                 # rot_H += PauliwordOp(Pa_vec, [coeff * sign])
+#                 sym_vec_list.append(Pa_vec)
+#                 coeff_list.append(coeff * sign)
+#
+#                 # PiPa = PauliwordOp(Pi_vec, [1]) * PauliwordOp(Pa_vec, [1])
+#                 phaseless_prod_PiPa, PiPa_coeff_vec = mul_symplectic(Pi_vec, 1,
+#                                                                      Pa_vec, 1)
+#
+#                 for ind_j, Pj_vec in enumerate(R.symp_matrix[ind_i + 1:]):
+#                     ind_j += ind_i + 1
+#
+#                     sign2 = (-1) ** (commutation_check[ind_a, ind_i] +
+#                                      commutation_check[ind_a, ind_j] +
+#                                      adj_matrix[ind_i, ind_j])
+#
+#                     coeff1 = c_list[ind_i] * ca_list[ind_a] * c_list[ind_j].conj()
+#                     coeff2 = c_list[ind_j] * ca_list[ind_a] * c_list[ind_i].conj()
+#
+#                     overall_coeff = (coeff1 + sign2 * coeff2)
+#                     if overall_coeff:
+#                         # calculate PiPa term outside of j loop
+#                         # overall_coeff_PiPaPj = PiPa * PauliwordOp(Pj_vec, [overall_coeff])
+#                         # rot_H += overall_coeff_PiPaPj
+#
+#                         phaseless_prod, coeff_vec = mul_symplectic(phaseless_prod_PiPa, PiPa_coeff_vec,
+#                                                                    Pj_vec, overall_coeff)
+#                         sym_vec_list.append(phaseless_prod)
+#                         coeff_list.append(coeff_vec)
+#
+#         rot_H = PauliwordOp(np.array(sym_vec_list),
+#                             coeff_list).cleanup()
+#     return rot_H
+#

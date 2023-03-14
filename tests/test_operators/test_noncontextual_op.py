@@ -1,6 +1,8 @@
 import pytest
 import numpy as np
 from symmer.operators import PauliwordOp, NoncontextualOp, QuantumState
+from symmer.operators.noncontextual_op import NoncontextualSolver
+from symmer.utils import exact_gs_energy
 
 noncon_problem = {
     'H_dict':  {'IIII': (-0.09706626816762845+0j),
@@ -276,3 +278,85 @@ def test_solve_annealing_QUSO_discrete_partial_ref():
                    num_anneals=1_000)
     assert np.isclose(H_noncon_op.energy, noncon_problem['E'])
 
+
+def test_get_qaoa_no_reference():
+
+    H_noncon = PauliwordOp.from_dictionary(noncon_problem['H_dict'])
+    H_noncon_op = NoncontextualOp.from_PauliwordOp(H_noncon)
+
+    QAOA_dict = H_noncon_op.get_qaoa(ref_state=None)
+
+    for key in QAOA_dict.keys():
+        exp = QAOA_dict[key]
+        qaoa_H = exp['H']
+
+        e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
+
+        # brute force check ground state for a fixed r_vec!!!
+        NC_solver = NoncontextualSolver(H_noncon_op)
+        NC_solver.metheod = 'brute_force'
+        NC_solver.x = 'Q'
+
+        energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
+
+        assert np.isclose(e_qaoq, energy)
+
+
+def test_get_qaoa_with_full_reference():
+
+    H_noncon = PauliwordOp.from_dictionary(noncon_problem['H_dict'])
+    H_noncon_op = NoncontextualOp.from_PauliwordOp(H_noncon)
+    reference = noncon_problem['reference_state']
+
+    H_noncon_op.symmetry_generators.update_sector(reference)
+    ev_assignment = H_noncon_op.symmetry_generators.coeff_vec
+    fixed_ev_mask = ev_assignment != 0
+    fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
+
+    QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference)
+
+    for key in QAOA_dict.keys():
+        exp = QAOA_dict[key]
+        qaoa_H = exp['H']
+
+        e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
+
+        # brute force check ground state for a fixed r_vec!!!
+        NC_solver = NoncontextualSolver(H_noncon_op,
+                                        fixed_ev_mask,
+                                        fixed_eigvals)
+        NC_solver.metheod = 'brute_force'
+        NC_solver.x = 'Q'
+
+        energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
+
+        assert np.isclose(e_qaoq, energy)
+
+
+def test_get_qaoa_with_partial_reference():
+
+    H_noncon = PauliwordOp.from_dictionary(noncon_problem['H_dict'])
+    H_noncon_op = NoncontextualOp.from_PauliwordOp(H_noncon)
+    reference = noncon_problem['partial_reference_state']
+
+    H_noncon_op.symmetry_generators.update_sector(reference)
+    ev_assignment = H_noncon_op.symmetry_generators.coeff_vec
+    fixed_ev_mask = ev_assignment != 0
+    fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
+
+    QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference)
+
+    for key in QAOA_dict.keys():
+        exp = QAOA_dict[key]
+        qaoa_H = exp['H']
+
+        e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
+
+        # brute force check ground state for a fixed r_vec!!!
+        NC_solver = NoncontextualSolver(H_noncon_op, fixed_ev_mask, fixed_eigvals)
+        NC_solver.metheod = 'brute_force'
+        NC_solver.x = 'Q'
+
+        energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
+
+        assert np.isclose(e_qaoq, energy)
