@@ -178,11 +178,21 @@ class NoncontextualOp(PauliwordOp):
         
         symmetry_mask = np.all(basis.adjacency_matrix, axis=1)
         S = basis[symmetry_mask]
-        aug_basis_reconstruction_masks = [
-            H.basis_reconstruction(S+c)[1]  for c in basis[~symmetry_mask]
-        ]
-        noncontextual_terms_mask = np.any(np.array(aug_basis_reconstruction_masks), axis=0)
-        return cls.from_PauliwordOp(H[noncontextual_terms_mask])
+
+        _, noncontextual_terms_from_S_mask = H.basis_reconstruction(S)
+        if np.sum(symmetry_mask) == basis.n_terms:
+            # basis is commuting
+            return cls.from_PauliwordOp(H[noncontextual_terms_from_S_mask])
+        else:
+            # when basis doesn't all commute
+
+            # add clique term to S!
+            aug_basis_reconstruction_masks = [
+                H.basis_reconstruction(S+c)[1] for c in basis[~symmetry_mask]
+            ]
+            noncontextual_terms_mask = np.any(np.array(aug_basis_reconstruction_masks), axis=0)
+
+            return cls.from_PauliwordOp(H[noncontextual_terms_mask])
 
     def noncontextual_basis(self) -> IndependentOp:
         """ Find an independent *generating set* for the noncontextual symmetry
@@ -363,9 +373,9 @@ class NoncontextualOp(PauliwordOp):
         if r is not None:
             self.clique_operator.coeff_vec = r
 
-    def get_qaoa(self, ref_state:QuantumState=None) -> dict:
+    def get_qaoa(self, ref_state:QuantumState=None, type='qubo') -> dict:
         """
-        For a given QUBO problem make the following replacement:
+        For a given PUBO / QUBO problem make the following replacement:
 
          𝑥_𝑖 <--> (𝐼−𝑍_𝑖) / 2
 
@@ -376,6 +386,7 @@ class NoncontextualOp(PauliwordOp):
             QAOA_dict (dict): Dictionary of different QAOA Hamiltonians from discrete r_vectors
 
         """
+        assert type in ['qubo', 'pubo']
 
         # fix symm generators if reference state given
         if ref_state is not None:
@@ -431,8 +442,14 @@ class NoncontextualOp(PauliwordOp):
                     'qubo': None
                 }
             else:
-                # make a QUBO problem
-                QUBO_problem = COST.to_qubo()
+
+                # make a spin/binary problem
+                if type == 'qubo':
+                    QUBO_problem = COST.to_qubo()
+                elif type == 'pubo':
+                    QUBO_problem = COST.to_pubo()
+                else:
+                    raise ValueError(f'unknown tspin problem: {type}')
 
                 # note mapping often requires more qubits!
                 QAOA_n_qubits = QUBO_problem.max_index+1

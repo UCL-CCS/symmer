@@ -17,12 +17,12 @@ CC_taper = QT.taper_it(aux_operator=CC_op)
 
 def test_norm():
     arr = np.random.random(100)
-    assert(np.linalg.norm(arr) == norm(arr))
+    assert np.isclose(np.linalg.norm(arr), norm(arr))
 
 def test_lp_norm():
     arr = np.random.random(100)
     p = np.random.randint(1, 10)
-    assert(np.linalg.norm(arr, ord=p) == lp_norm(arr, p=p))
+    assert np.isclose(np.linalg.norm(arr, ord=p),  lp_norm(arr, p=p))
 
 def test_update_eigenvalues_insufficient_basis():
     G1 = IndependentOp.from_list(['IZ', 'ZI'])
