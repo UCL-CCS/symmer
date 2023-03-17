@@ -2,7 +2,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Union
 import warnings
 import multiprocessing as mp
-from symmer.operators.utils import _rref_binary, _cref_binary
+from symmer.operators.utils import _rref_binary, _cref_binary, check_independent
 from symmer.operators import PauliwordOp, QuantumState, symplectic_to_string, single_term_expval
 
 class IndependentOp(PauliwordOp):
@@ -112,8 +112,7 @@ class IndependentOp(PauliwordOp):
     def _check_independent(self) -> None:
         """ Check the supplied stabilizers are algebraically independent
         """
-        check_independent = _rref_binary(self.symp_matrix)
-        if np.any(np.all(~check_independent, axis=1)):
+        if not check_independent(self):
             # there is a dependent row
             raise ValueError('The supplied stabilizers are not independent')
 

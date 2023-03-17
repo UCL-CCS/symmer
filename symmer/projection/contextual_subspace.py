@@ -89,7 +89,8 @@ class ContextualSubspace(S3_projection):
             depth: int = 2,
             n_cliques: int = 2,
             n_stabilizers_in_clique: int = 1,
-            HF_array: np.array = None
+            HF_array: np.array = None,
+            use_X_only: bool = True
         ) -> None:
         """ Update the stabilizers that will be used for the subspace projection
         """
@@ -104,7 +105,7 @@ class ContextualSubspace(S3_projection):
 
         if strategy == 'aux_preserving':
             S = self._aux_operator_preserving_stabilizer_search(
-                n_qubits=n_qubits, aux_operator=aux_operator
+                n_qubits=n_qubits, aux_operator=aux_operator, use_X_only=use_X_only
             )
         elif strategy == 'greedy_search':
             S = self._greedy_stabilizer_search(
@@ -116,7 +117,8 @@ class ContextualSubspace(S3_projection):
             )
         elif strategy == 'HOMO_LUMO_biasing':
             S = self._HOMO_LUMO_biasing(
-                n_qubits=n_qubits, HF_array=HF_array, weighting_operator=aux_operator
+                n_qubits=n_qubits, HF_array=HF_array, 
+                weighting_operator=aux_operator, use_X_only=use_X_only
             )
         else:
             raise ValueError('Unrecognised stabilizer search strategy.')
@@ -165,7 +167,8 @@ class ContextualSubspace(S3_projection):
 
     def _aux_operator_preserving_stabilizer_search(self,
             n_qubits: int,
-            aux_operator: PauliwordOp
+            aux_operator: PauliwordOp,
+            use_X_only: bool = True
         ) -> IndependentOp:
         """ Choose stabilizers that preserve some auxiliary operator.
         This could be an Ansatz operator such as UCCSD, for example.
@@ -176,7 +179,7 @@ class ContextualSubspace(S3_projection):
             else:
                 aux_operator = self.contextual_operator
 
-        SI = StabilizerIdentification(aux_operator)
+        SI = StabilizerIdentification(aux_operator, use_X_only=use_X_only)
         S = SI.symmetry_generators_by_subspace_dimension(n_qubits)
 
         return S
@@ -184,7 +187,8 @@ class ContextualSubspace(S3_projection):
     def _HOMO_LUMO_biasing(self,
             n_qubits: int,
             HF_array: np.array,
-            weighting_operator: PauliwordOp = None
+            weighting_operator: PauliwordOp = None,
+            use_X_only:bool = True
         ) -> IndependentOp:
         """ Bias the Hamiltonian with respect to the HOMO-LUMO gap 
         and preserve terms in the resulting operator as above.
@@ -199,6 +203,7 @@ class ContextualSubspace(S3_projection):
             n_sim_qubits=n_qubits, 
             biasing_operator=OB, 
             weighting_operator=weighting_operator,
+            use_X_only=use_X_only
         )
         return S
 
@@ -238,7 +243,7 @@ class ContextualSubspace(S3_projection):
             symmetry_terms = self.stabilizers
         non_identity = self.operator[np.any(self.operator.symp_matrix, axis=1)]
         commutes_with_stabilizers_mask = np.all(symmetry_terms.commutes_termwise(non_identity), axis=0)
-        non_symmetry_mask = ~non_identity.basis_reconstruction(symmetry_terms)[1]
+        non_symmetry_mask = ~non_identity.generator_reconstruction(symmetry_terms)[1]
         valid_terms = non_identity[non_symmetry_mask & commutes_with_stabilizers_mask]
         if clique_reps != []:
             clique_elements = sum(clique_reps, PauliwordOp.empty(self.operator.n_qubits))
