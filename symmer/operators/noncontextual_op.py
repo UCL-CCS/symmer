@@ -49,26 +49,28 @@ class NoncontextualOp(PauliwordOp):
             H: PauliwordOp, 
             strategy: str = 'diag', 
             basis: PauliwordOp = None, 
-            DFS_runtime: int = 10
+            DFS_runtime: int = 10,
+            override_noncontextuality_check: bool = True
         ) -> "NoncontextualOp":
         """ Given a PauliwordOp, extract from it a noncontextual sub-Hamiltonian by the specified strategy
         """
-        if H.is_noncontextual:
-            warnings.warn('input H is already noncontextual ignoring strategy')
-            return cls.from_PauliwordOp(H)
+        if not override_noncontextuality_check:
+            if H.is_noncontextual:
+                warnings.warn('input H is already noncontextual ignoring strategy')
+                return cls.from_PauliwordOp(H)
+        
+        if strategy == 'diag':
+            return cls._diag_noncontextual_op(H)
+        elif strategy == 'basis':
+            return cls._from_basis_noncontextual_op(H, basis)
+        elif strategy.find('DFS') != -1:
+            _, strategy = strategy.split('_')
+            return cls._dfs_noncontextual_op(H, strategy=strategy, runtime=DFS_runtime)
+        elif strategy.find('SingleSweep') != -1:
+            _, strategy = strategy.split('_')
+            return cls._single_sweep_noncontextual_operator(H, strategy=strategy)
         else:
-            if strategy == 'diag':
-                return cls._diag_noncontextual_op(H)
-            elif strategy == 'basis':
-                return cls._from_basis_noncontextual_op(H, basis)
-            elif strategy.find('DFS') != -1:
-                _, strategy = strategy.split('_')
-                return cls._dfs_noncontextual_op(H, strategy=strategy, runtime=DFS_runtime)
-            elif strategy.find('SingleSweep') != -1:
-                _, strategy = strategy.split('_')
-                return cls._single_sweep_noncontextual_operator(H, strategy=strategy)
-            else:
-                raise ValueError(f'Unrecognised noncontextual operator strategy {strategy}')
+            raise ValueError(f'Unrecognised noncontextual operator strategy {strategy}')
 
     @classmethod
     def _diag_noncontextual_op(cls, H: PauliwordOp):

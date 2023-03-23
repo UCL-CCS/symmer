@@ -45,7 +45,6 @@ class ContextualSubspace(S3_projection):
         self.discrete_optimization_order = discrete_optimization_order
         if self.nc_strategy=='StabilizeFirst':
             self.stabilize_first_method = extract_noncon_strat[1]
-
         # With the exception of the StabilizeFirst noncontextual strategy, here we build
         # the noncontextual Hamiltonian in line with the specified strategy
         self.operator = operator
@@ -56,7 +55,6 @@ class ContextualSubspace(S3_projection):
         else:
             self.noncontextual_operator = noncontextual_operator
         self._noncontextual_update()
-            
         self.unitary_partitioning_method = unitary_partitioning_method
     
     def _noncontextual_update(self):

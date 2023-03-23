@@ -387,7 +387,8 @@ class PauliwordOp:
         return PauliwordOp(np.hstack([new_X_block, new_Z_block]), self.coeff_vec)
 
     def generator_reconstruction(self, 
-            generators: "PauliwordOp"
+            generators: "PauliwordOp",
+            override_independence_check: bool = False
         ) -> np.array:
         """ Simultaneously reconstruct every operator term in the supplied basis.
         With B and M the symplectic form of the supplied basis and the internal 
@@ -407,7 +408,8 @@ class PauliwordOp:
         Since we only need to reduce columns, the algorithm scales with the number of
         qubits N, not the number of terms M, and is therefore at worst O(N^2).
         """
-        assert check_independent(generators), 'Supplied generators are algebraically dependent'
+        if not override_independence_check:
+            assert check_independent(generators), 'Supplied generators are algebraically dependent'
         dim = generators.n_terms
         basis_op_stack = np.vstack([generators.symp_matrix, self.symp_matrix])
         reduced = cref_binary(basis_op_stack)
