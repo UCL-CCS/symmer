@@ -32,7 +32,7 @@ jobs:
       - name: Poetry install package
         run: |
           # poetry 1.4.1 has problems with debugpy for some reason.
-          pip install poetry == 1.4.0
+          pip install poetry==1.4.0
           poetry install
       - name: Linting
         run: |
