@@ -373,20 +373,31 @@ class NoncontextualOp(PauliwordOp):
         if r is not None:
             self.clique_operator.coeff_vec = r
 
-    def get_qaoa(self, ref_state:QuantumState=None, type='qubo') -> dict:
+    def get_qaoa(self, r_vec:Union[np.array, list], ref_state:QuantumState=None, type='pubo') -> dict:
         """
         For a given PUBO / QUBO problem make the following replacement:
 
          𝑥_𝑖 <--> (𝐼−𝑍_𝑖) / 2
 
-         This defined the QAOA Hamiltonian
+         This defines a QAOA Hamiltonian
+
         Args:
+            r_vec (np.array): unit vector values (needed to make problem a binary optimization problem!)
             ref_state (optional): optional QuantumState to fix symmetry generators with
+            type (str): whether to build a PUBO / QUBO problem
         Returns:
             QAOA_dict (dict): Dictionary of different QAOA Hamiltonians from discrete r_vectors
 
         """
-        assert type in ['qubo', 'pubo']
+        assert type in ['qubo', 'pubo'], 'unknown method'
+
+        if not isinstance(r_vec, np.ndarray):
+            r_vec = np.asarray(r_vec)
+
+        assert r_vec.shape[0] == self.clique_operator.n_terms, 'r_vec dimension wrong'
+
+        if self.clique_operator.n_terms>0:
+            assert np.isclose(np.linalg.norm(r_vec),  1), 'r_vec is not a unit vector'
 
         # fix symm generators if reference state given
         if ref_state is not None:
@@ -403,80 +414,73 @@ class NoncontextualOp(PauliwordOp):
         fixed_indices = np.where(fixed_ev_mask)[0]  # bool to indices
         fixed_assignments = dict(zip(fixed_indices, fixed_eigvals))
 
-        r_vec_size = self.clique_operator.n_terms
-        QAOA_dict = {}
-        for j in range(r_vec_size):
+        r_part = np.sum(self.r_indices * r_vec, axis=1)
+        r_part[~np.any(self.r_indices, axis=1)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
 
-            ## set extreme values of r_vec
-            r_vec = np.zeros(r_vec_size)
-            r_vec[j]=1
-
-            r_part = np.sum(self.r_indices * r_vec, axis=1)
-            r_part[~np.any(self.r_indices, axis=1)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
-
-            # setup spin
-            q_vec_SPIN = {}
-            for ind in range(self.symmetry_generators.n_terms):
-                if ind in fixed_assignments.keys():
-                    q_vec_SPIN[ind] = fixed_assignments[ind]
-                else:
-                    q_vec_SPIN[ind] = qv.spin_var('x%d' % ind)
-
-
-            ## setup cost function
-            COST = 0
-            for P_index, term in enumerate(self.G_indices):
-                non_zero_inds = term.nonzero()[0]
-                # collect all the spin terms
-                G_term = 1
-                for i in non_zero_inds:
-                    G_term *= q_vec_SPIN[i]
-
-                COST += G_term * self.coeff_vec[P_index].real * self.pauli_mult_signs[P_index] * r_part[P_index].real
-
-            if not isinstance(COST, qv._pcso.PCSO):
-                # no degrees of freedom... Cost function is just Identity term
-                QAOA_dict[j] = {
-                    'r_vec': r_vec,
-                    'H':PauliwordOp.from_dictionary({'I'*self.n_qubits: COST}),
-                    'qubo': None
-                }
+        # setup spin
+        q_vec_SPIN = {}
+        for ind in range(self.symmetry_generators.n_terms):
+            if ind in fixed_assignments.keys():
+                q_vec_SPIN[ind] = fixed_assignments[ind]
             else:
+                q_vec_SPIN[ind] = qv.spin_var('x%d' % ind)
 
-                # make a spin/binary problem
-                if type == 'qubo':
-                    QUBO_problem = COST.to_qubo()
-                elif type == 'pubo':
-                    QUBO_problem = COST.to_pubo()
+
+        ## setup cost function
+        COST = 0
+        for P_index, term in enumerate(self.G_indices):
+            non_zero_inds = term.nonzero()[0]
+            # collect all the spin terms
+            G_term = 1
+            for i in non_zero_inds:
+                G_term *= q_vec_SPIN[i]
+
+            COST += G_term * self.coeff_vec[P_index].real * self.pauli_mult_signs[P_index] * r_part[P_index].real
+
+        if not isinstance(COST, qv._pcso.PCSO):
+            # no degrees of freedom... Cost function is just Identity term
+            QAOA_dict = {
+                'r_vec': r_vec,
+                'H':PauliwordOp.from_dictionary({'I'*self.n_qubits: COST}),
+                'qubo': None
+            }
+        else:
+
+            # make a spin/binary problem
+            if type == 'qubo':
+                xUBO_problem = COST.to_qubo()
+            elif type == 'pubo':
+                xUBO_problem = COST.to_pubo()
+            else:
+                raise ValueError(f'unknown tspin problem: {type}')
+
+            # note mapping often requires more qubits!
+            QAOA_n_qubits = xUBO_problem.max_index+1
+
+            I_string = 'I' * QAOA_n_qubits
+            QAOA_H = PauliwordOp.empty(QAOA_n_qubits)
+            for spin_inds, coeff in xUBO_problem.items():
+
+                if len(spin_inds) == 0:
+                    # identity coeff (no spin vars)
+                    QAOA_H += PauliwordOp.from_dictionary({I_string: coeff})
                 else:
-                    raise ValueError(f'unknown tspin problem: {type}')
+                    temp = PauliwordOp.from_dictionary({I_string: coeff})
+                    for q_ind in spin_inds:
+                        op = list(I_string)
+                        op[q_ind] = 'Z'
+                        op_str = ''.join(op)
+                        Qop = PauliwordOp.from_dictionary({I_string: 0.5,
+                                                           op_str: -0.5})
+                        temp *= Qop
 
-                # note mapping often requires more qubits!
-                QAOA_n_qubits = QUBO_problem.max_index+1
+                    QAOA_H += temp
 
-                I_string = 'I' * QAOA_n_qubits
-                QAOA_H = PauliwordOp.empty(QAOA_n_qubits)
-                for spin_inds, coeff in QUBO_problem.items():
-
-                    if len(spin_inds) == 0:
-                        QAOA_H += PauliwordOp.from_dictionary({I_string: coeff})
-                    else:
-                        temp = PauliwordOp.from_dictionary({I_string: coeff})
-                        for q_ind in spin_inds:
-                            op = list(I_string)
-                            op[q_ind] = 'Z'
-                            op_str = ''.join(op)
-                            Qop = PauliwordOp.from_dictionary({I_string: 0.5,
-                                                               op_str: -0.5})
-                            temp *= Qop
-
-                        QAOA_H += temp
-
-                QAOA_dict[j] = {
-                    'r_vec': r_vec,
-                    'H': QAOA_H.copy(),
-                    'qubo': dict(QUBO_problem.items())
-                }
+            QAOA_dict = {
+                'r_vec': r_vec,
+                'H': QAOA_H.copy(),
+                type: dict(xUBO_problem.items())
+            }
 
         return QAOA_dict
 

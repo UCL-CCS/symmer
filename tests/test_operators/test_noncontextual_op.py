@@ -448,22 +448,23 @@ def test_get_qaoa_qubo_no_reference():
     H_noncon = PauliwordOp.from_dictionary(noncon_problem['H_dict'])
     H_noncon_op = NoncontextualOp.from_PauliwordOp(H_noncon)
 
-    QAOA_dict = H_noncon_op.get_qaoa(ref_state=None, type='qubo')
+    random_r_vec = np.random.rand(H_noncon_op.clique_operator.n_terms)
+    random_r_vec = random_r_vec/np.linalg.norm(random_r_vec)
+    QAOA_dict = H_noncon_op.get_qaoa(r_vec=random_r_vec,
+                                     ref_state=None,
+                                     type='qubo')
 
-    for key in QAOA_dict.keys():
-        exp = QAOA_dict[key]
-        qaoa_H = exp['H']
+    qaoa_H = QAOA_dict['H']
 
-        e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
+    e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
 
-        # brute force check ground state for a fixed r_vec!!!
-        NC_solver = NoncontextualSolver(H_noncon_op)
-        NC_solver.metheod = 'brute_force'
-        NC_solver.x = 'Q'
+    # brute force check ground state for a fixed r_vec!!!
+    NC_solver = NoncontextualSolver(H_noncon_op)
+    NC_solver.metheod = 'brute_force'
+    NC_solver.x = 'Q'
+    energy, nu_vec, _ = NC_solver._energy_xUSO(QAOA_dict['r_vec'])
 
-        energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
-
-        assert np.isclose(e_qaoq, energy)
+    assert np.isclose(e_qaoq, energy)
 
 
 def test_get_qaoa_qubo_with_full_reference():
@@ -479,24 +480,26 @@ def test_get_qaoa_qubo_with_full_reference():
     fixed_ev_mask = ev_assignment != 0
     fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
 
-    QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference, type='qubo')
+    random_r_vec = np.random.rand(H_noncon_op.clique_operator.n_terms)
+    random_r_vec = random_r_vec/np.linalg.norm(random_r_vec)
+    QAOA_dict = H_noncon_op.get_qaoa(r_vec=random_r_vec,
+                                     ref_state=reference,
+                                     type='qubo')
 
-    for key in QAOA_dict.keys():
-        exp = QAOA_dict[key]
-        qaoa_H = exp['H']
+    qaoa_H = QAOA_dict['H']
 
-        e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
+    e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
 
-        # brute force check ground state for a fixed r_vec!!!
-        NC_solver = NoncontextualSolver(H_noncon_op,
-                                        fixed_ev_mask,
-                                        fixed_eigvals)
-        NC_solver.metheod = 'brute_force'
-        NC_solver.x = 'Q'
+    # brute force check ground state for a fixed r_vec!!!
+    NC_solver = NoncontextualSolver(H_noncon_op,
+                                    fixed_ev_mask,
+                                    fixed_eigvals)
+    NC_solver.metheod = 'brute_force'
+    NC_solver.x = 'Q'
 
-        energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
+    energy, nu_vec, _ = NC_solver._energy_xUSO(QAOA_dict['r_vec'])
 
-        assert np.isclose(e_qaoq, energy)
+    assert np.isclose(e_qaoq, energy)
 
 
 def test_get_qaoa_qubo_with_partial_reference():
@@ -517,22 +520,25 @@ def test_get_qaoa_qubo_with_partial_reference():
 
     with pytest.warns():
         # capture warning when Z stabilizers measured give zero expec value
-        QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference, type='qubo')
 
-    for key in QAOA_dict.keys():
-        exp = QAOA_dict[key]
-        qaoa_H = exp['H']
+        random_r_vec = np.random.rand(H_noncon_op.clique_operator.n_terms)
+        random_r_vec = random_r_vec / np.linalg.norm(random_r_vec)
+        QAOA_dict = H_noncon_op.get_qaoa(r_vec=random_r_vec,
+                                         ref_state=reference,
+                                         type='qubo')
 
-        e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
+    qaoa_H = QAOA_dict['H']
 
-        # brute force check ground state for a fixed r_vec!!!
-        NC_solver = NoncontextualSolver(H_noncon_op, fixed_ev_mask, fixed_eigvals)
-        NC_solver.metheod = 'brute_force'
-        NC_solver.x = 'Q'
+    e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
 
-        energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
+    # brute force check ground state for a fixed r_vec!!!
+    NC_solver = NoncontextualSolver(H_noncon_op, fixed_ev_mask, fixed_eigvals)
+    NC_solver.metheod = 'brute_force'
+    NC_solver.x = 'Q'
 
-        assert np.isclose(e_qaoq, energy)
+    energy, nu_vec, _ = NC_solver._energy_xUSO(QAOA_dict['r_vec'])
+
+    assert np.isclose(e_qaoq, energy)
 
 
 def test_get_qaoa_pubo_no_reference():
@@ -542,22 +548,24 @@ def test_get_qaoa_pubo_no_reference():
     H_noncon = PauliwordOp.from_dictionary(noncon_problem['H_dict'])
     H_noncon_op = NoncontextualOp.from_PauliwordOp(H_noncon)
 
-    QAOA_dict = H_noncon_op.get_qaoa(ref_state=None, type='pubo')
+    random_r_vec = np.random.rand(H_noncon_op.clique_operator.n_terms)
+    random_r_vec = random_r_vec/np.linalg.norm(random_r_vec)
+    QAOA_dict = H_noncon_op.get_qaoa(r_vec=random_r_vec,
+                                     ref_state=None,
+                                     type='pubo')
 
-    for key in QAOA_dict.keys():
-        exp = QAOA_dict[key]
-        qaoa_H = exp['H']
+    qaoa_H = QAOA_dict['H']
 
-        e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
+    e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
 
-        # brute force check ground state for a fixed r_vec!!!
-        NC_solver = NoncontextualSolver(H_noncon_op)
-        NC_solver.metheod = 'brute_force'
-        NC_solver.x = 'Q'
+    # brute force check ground state for a fixed r_vec!!!
+    NC_solver = NoncontextualSolver(H_noncon_op)
+    NC_solver.metheod = 'brute_force'
+    NC_solver.x = 'Q'
 
-        energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
+    energy, nu_vec, _ = NC_solver._energy_xUSO(QAOA_dict['r_vec'])
 
-        assert np.isclose(e_qaoq, energy)
+    assert np.isclose(e_qaoq, energy)
 
 
 def test_get_qaoa_pubo_with_full_reference():
@@ -573,24 +581,27 @@ def test_get_qaoa_pubo_with_full_reference():
     fixed_ev_mask = ev_assignment != 0
     fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
 
-    QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference, type='pubo')
 
-    for key in QAOA_dict.keys():
-        exp = QAOA_dict[key]
-        qaoa_H = exp['H']
+    random_r_vec = np.random.rand(H_noncon_op.clique_operator.n_terms)
+    random_r_vec = random_r_vec/np.linalg.norm(random_r_vec)
+    QAOA_dict = H_noncon_op.get_qaoa(r_vec=random_r_vec,
+                                     ref_state=reference,
+                                     type='pubo')
 
-        e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
+    qaoa_H = QAOA_dict['H']
 
-        # brute force check ground state for a fixed r_vec!!!
-        NC_solver = NoncontextualSolver(H_noncon_op,
-                                        fixed_ev_mask,
-                                        fixed_eigvals)
-        NC_solver.metheod = 'brute_force'
-        NC_solver.x = 'Q'
+    e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
 
-        energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
+    # brute force check ground state for a fixed r_vec!!!
+    NC_solver = NoncontextualSolver(H_noncon_op,
+                                    fixed_ev_mask,
+                                    fixed_eigvals)
+    NC_solver.metheod = 'brute_force'
+    NC_solver.x = 'Q'
 
-        assert np.isclose(e_qaoq, energy)
+    energy, nu_vec, _ = NC_solver._energy_xUSO(QAOA_dict['r_vec'])
+
+    assert np.isclose(e_qaoq, energy)
 
 
 def test_get_qaoa_pubo_with_partial_reference():
@@ -610,30 +621,44 @@ def test_get_qaoa_pubo_with_partial_reference():
     fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
 
     with pytest.warns():
-        # capture warning when Z stabilizers measured give zero expec value
-        QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference, type='pubo')
+        # capture warning when Z stabilizers measured give zero expec valu
+        random_r_vec = np.random.rand(H_noncon_op.clique_operator.n_terms)
+        random_r_vec = random_r_vec / np.linalg.norm(random_r_vec)
+        QAOA_dict = H_noncon_op.get_qaoa(r_vec=random_r_vec,
+                                         ref_state=reference,
+                                         type='pubo')
 
-    for key in QAOA_dict.keys():
-        exp = QAOA_dict[key]
-        qaoa_H = exp['H']
+    qaoa_H = QAOA_dict['H']
 
-        e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
+    e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
 
-        # brute force check ground state for a fixed r_vec!!!
-        NC_solver = NoncontextualSolver(H_noncon_op, fixed_ev_mask, fixed_eigvals)
-        NC_solver.metheod = 'brute_force'
-        NC_solver.x = 'Q'
+    # brute force check ground state for a fixed r_vec!!!
+    NC_solver = NoncontextualSolver(H_noncon_op, fixed_ev_mask, fixed_eigvals)
+    NC_solver.metheod = 'brute_force'
+    NC_solver.x = 'Q'
 
-        energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
+    energy, nu_vec, _ = NC_solver._energy_xUSO(QAOA_dict['r_vec'])
 
-        assert np.isclose(e_qaoq, energy)
+    assert np.isclose(e_qaoq, energy)
 
 
-def test_get_qaoa_error():
+def test_get_qaoa_string_error():
     """
     checks for type if type is not pubo or qubo
     """
     H_noncon = PauliwordOp.from_dictionary(noncon_problem['H_dict'])
     H_noncon_op = NoncontextualOp.from_PauliwordOp(H_noncon)
+    random_r_vec = np.random.rand(H_noncon_op.clique_operator.n_terms)
+    random_r_vec = random_r_vec / np.linalg.norm(random_r_vec)
     with pytest.raises(AssertionError):
-        H_noncon_op.get_qaoa(type='INCORRECT_STRING')
+        H_noncon_op.get_qaoa(r_vec= random_r_vec, type='INCORRECT_STRING')
+
+def test_get_qaoa_r_norm_error():
+    """
+    checks for type if type is not pubo or qubo
+    """
+    H_noncon = PauliwordOp.from_dictionary(noncon_problem['H_dict'])
+    H_noncon_op = NoncontextualOp.from_PauliwordOp(H_noncon)
+    random_r_vec = np.ones(H_noncon_op.clique_operator.n_terms)
+    with pytest.raises(AssertionError):
+        H_noncon_op.get_qaoa(r_vec= random_r_vec)
