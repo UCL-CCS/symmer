@@ -1,7 +1,7 @@
 from symmer.operators import PauliwordOp, QuantumState
 import numpy as np
 import scipy as sp
-from typing import Union, List, Tuple
+from typing import List, Tuple, Union
 from functools import reduce
 import py3Dmol
 
@@ -48,43 +48,66 @@ def exact_gs_energy(
                     )
                 )
                 expval_n_particle += Z_coeff * np.sum(sign * np.square(abs(psi.state_op.coeff_vec)))
-            if round(expval_n_particle) == n_particles:
+            if np.round(expval_n_particle) == n_particles:
                 return evl, QuantumState.from_array(evc.reshape([-1,1]))
         # if a solution is not found within the first n_eig eigenvalues then error
         raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
 
 
-def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=True, apply_unitary=True):
+def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=False, apply_clifford=True):
     """ Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
         with normally distributed coefficients. Generates in structured way then uses Clifford rotation (default)
         to try and make more random (can stop this to allow FAST build, but inherenet structure
          will be present as operator is formed in specific way!)
     """
-    base = 'X' * n_qubits
-    I_term = 'I' * n_qubits
+    # base = 'X' * n_qubits
+    # I_term = 'I' * n_qubits
+    # P_list = [base]
+    # for i in range(n_qubits):
+    #     # Z_term
+    #     P_list.append(base[:i] + 'Z' + I_term[i + 1:])
+    #     # Y_term
+    #     P_list.append(base[:i] + 'Y' + I_term[i + 1:])
+    # coeff_vec = np.random.randn(len(P_list)).astype(complex)
+    # if complex_coeff:
+    #     coeff_vec += 1j * np.random.randn((len(P_list)))
+    # P_anticomm = PauliwordOp.from_dictionary((dict(zip(P_list, coeff_vec))))
 
-    P_list = [base]
-    for i in range(n_qubits):
-        # Z_term
-        P_list.append(base[:i] + 'Z' + I_term[i + 1:])
-        # Y_term
-        P_list.append(base[:i] + 'Y' + I_term[i + 1:])
+    Y_base = np.hstack((np.eye(n_qubits), np.tril(np.ones(n_qubits))))
+    X_base = Y_base.copy()
+    X_base[:, n_qubits:] = np.tril(np.ones(n_qubits), -1)
 
-    coeff_vec = np.random.randn(len(P_list)).astype(complex)
+    ac_symp = np.vstack((Y_base, X_base))
+
+    Z_symp = np.zeros(2 * n_qubits)
+    Z_symp[n_qubits:] = np.ones(n_qubits)
+
+    ac_symp = np.vstack((ac_symp, Z_symp)).astype(bool)
+
+    coeff_vec = np.random.randn(ac_symp.shape[0]).astype(complex)
     if complex_coeff:
-        coeff_vec += 1j * np.random.randn((len(P_list)))
+        coeff_vec += 1j * np.random.randn(2 * n_qubits + 1).astype(complex)
 
-    P_anticomm = PauliwordOp.from_dictionary((dict(zip(P_list, coeff_vec))))
+    P_anticomm = PauliwordOp(ac_symp, coeff_vec)
 
-    # random rotations to get rid of structure
-    if apply_unitary:
-        U = PauliwordOp.haar_random(n_qubits=n_qubits)
-        P_anticomm = U * P_anticomm * U.dagger
+    if apply_clifford:
+        # apply clifford rotations to get rid of structure
+        U_cliff_rotations = []
+        for _ in range(n_qubits + 5):
+            P_rand = PauliwordOp.random(n_qubits, n_terms=1)
+            P_rand.coeff_vec = [1]
+            U_cliff_rotations.append((P_rand, None))
 
-    anti_comm_check = P_anticomm.adjacency_matrix.astype(int) - np.eye(P_anticomm.adjacency_matrix.shape[0])
-    assert(np.sum(anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
+        P_anticomm = P_anticomm.perform_rotations(U_cliff_rotations)
+
+    assert P_anticomm.n_terms == 2 * n_qubits + 1
+
+    ## expensive check
+    # anti_comm_check = P_anticomm.adjacency_matrix.astype(int) - np.eye(P_anticomm.adjacency_matrix.shape[0])
+    # assert(np.sum(anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
 
     return P_anticomm
+
 
 def tensor_list(factor_list:List[PauliwordOp]) -> PauliwordOp:
     """ Given a list of PauliwordOps, recursively tensor from the right
@@ -92,7 +115,13 @@ def tensor_list(factor_list:List[PauliwordOp]) -> PauliwordOp:
     return reduce(lambda x,y:x.tensor(y), factor_list)
 
 
-def gram_schmidt_from_quantum_state(state) ->np.array:
+def product_list(product_list:List[PauliwordOp]) -> PauliwordOp:
+    """ Given a list of PauliwordOps, recursively take product from the right
+    """
+    return reduce(lambda x,y:x*y, product_list)
+
+
+def gram_schmidt_from_quantum_state(state:Union[np.array, list, QuantumState]) ->np.array:
     """
     build a unitary to build a quantum state from the zero state (aka state defines first column of unitary)
     uses gram schmidt to find other (orthogonal) columns of matrix
@@ -102,14 +131,17 @@ def gram_schmidt_from_quantum_state(state) ->np.array:
     Returns:
         M (np.array): unitary matrix preparing input state from zero state
     """
-    state = np.asarray(state).reshape([-1])
 
-    N_qubits = round(np.log2(state.shape[0]))
+    if isinstance(state, QuantumState):
+        N_qubits = state.n_qubits
+        state = state.to_sparse_matrix.toarray().reshape([-1])
+    else:
+        state = np.asarray(state).reshape([-1])
+        N_qubits = round(np.log2(state.shape[0]))
+        missing_amps = 2**N_qubits - state.shape[0]
+        state = np.hstack((state, np.zeros(missing_amps, dtype=complex)))
 
-    missing_amps = 2**N_qubits - state.shape[0]
-    state = np.hstack((state, np.zeros(missing_amps, dtype=complex)))
-
-    assert len(state) == 2**N_qubits, 'state is not defined on power of two'
+    assert state.shape[0] == 2**N_qubits, 'state is not defined on power of two'
     assert np.isclose(np.linalg.norm(state), 1), 'state is not normalized'
 
     M = np.eye(2**N_qubits, dtype=complex)
@@ -129,6 +161,7 @@ def gram_schmidt_from_quantum_state(state) ->np.array:
         M[:, a] = M[:, a] / np.linalg.norm( M[:, a])
 
     return M
+
 
 def Draw_molecule(
         xyz_string: str, width: int = 400, height: int = 400, style: str = "sphere"

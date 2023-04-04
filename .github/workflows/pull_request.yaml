@@ -31,7 +31,8 @@ jobs:
           pip install .
       - name: Poetry install package
         run: |
-          pip install poetry
+          # poetry 1.4.1 has problems with debugpy for some reason.
+          pip install poetry==1.4.0
           poetry install
       - name: Linting
         run: |

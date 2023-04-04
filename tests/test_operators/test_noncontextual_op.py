@@ -208,6 +208,17 @@ def test_from_hamiltonian_basis():
     assert H_noncon_basis2.n_terms >= H_noncon_basis1.n_terms
 
 
+def test_noncon_no_symmertry_generators():
+    Pwords = PauliwordOp.from_list(['X', 'Y', 'Z'])
+    E_ground = -1.7320508075688772
+
+    with pytest.warns():
+        # capture warning of no Z2 symmetries
+        H_noncon = NoncontextualOp.from_PauliwordOp(Pwords)
+    assert H_noncon.n_terms == Pwords.n_terms
+    H_noncon.solve()
+    assert np.isclose(H_noncon.energy, E_ground)
+
 
 ####################################
 # Testing noncontextual optimizers #
@@ -366,10 +377,12 @@ def test_solve_brute_force_discrete_partial_ref():
 
     partial_reference_state = noncon_problem['partial_reference_state']
 
-    H_noncon_op.solve(strategy='brute_force',
-                   ref_state=partial_reference_state,
-                   discrete_optimization_order=None,
-                   num_anneals=None)
+    with pytest.warns():
+        # capture warning when Z stabilizers measured give zero expec value
+        H_noncon_op.solve(strategy='brute_force',
+                       ref_state=partial_reference_state,
+                       discrete_optimization_order=None,
+                       num_anneals=None)
     assert np.isclose(H_noncon_op.energy, noncon_problem['E'])
 
 
@@ -392,10 +405,12 @@ def test_solve_brute_force_PUSO_discrete_partial_ref():
 
     partial_reference_state = noncon_problem['partial_reference_state']
 
-    H_noncon_op.solve(strategy='brute_force_PUSO',
-                   ref_state=partial_reference_state,
-                   discrete_optimization_order='first', # <- HERE
-                   num_anneals=None)
+    with pytest.warns():
+        # capture warning when Z stabilizers measured give zero expec value
+        H_noncon_op.solve(strategy='brute_force_PUSO',
+                       ref_state=partial_reference_state,
+                       discrete_optimization_order='first', # <- HERE
+                       num_anneals=None)
     assert np.isclose(H_noncon_op.energy, noncon_problem['E'])
 
 
@@ -405,10 +420,12 @@ def test_solve_brute_force_QUSO_discrete_partial_ref():
 
     partial_reference_state = noncon_problem['partial_reference_state']
 
-    H_noncon_op.solve(strategy='brute_force_QUSO',
-                   ref_state=partial_reference_state,
-                   discrete_optimization_order='first', # <- HERE
-                   num_anneals=None)
+    with pytest.warns():
+        # capture warning when Z stabilizers measured give zero expec value
+        H_noncon_op.solve(strategy='brute_force_QUSO',
+                       ref_state=partial_reference_state,
+                       discrete_optimization_order='first', # <- HERE
+                       num_anneals=None)
     assert np.isclose(H_noncon_op.energy, noncon_problem['E'])
 
 
@@ -418,10 +435,12 @@ def test_solve_annealing_PUSO_discrete_partial_ref():
 
     partial_reference_state = noncon_problem['partial_reference_state']
 
-    H_noncon_op.solve(strategy='annealing_PUSO',
-                   ref_state=partial_reference_state,
-                   discrete_optimization_order='first', # <- HERE
-                   num_anneals=1_000)
+    with pytest.warns():
+        # capture warning when Z stabilizers measured give zero expec value
+        H_noncon_op.solve(strategy='annealing_PUSO',
+                       ref_state=partial_reference_state,
+                       discrete_optimization_order='first', # <- HERE
+                       num_anneals=1_000)
     assert np.isclose(H_noncon_op.energy, noncon_problem['E'])
 
 
@@ -431,10 +450,12 @@ def test_solve_annealing_QUSO_discrete_partial_ref():
 
     partial_reference_state = noncon_problem['partial_reference_state']
 
-    H_noncon_op.solve(strategy='annealing_QUSO',
-                   ref_state=partial_reference_state,
-                   discrete_optimization_order='first', # <- HERE
-                   num_anneals=1_000)
+    with pytest.warns():
+        # capture warning when Z stabilizers measured give zero expec value
+        H_noncon_op.solve(strategy='annealing_QUSO',
+                       ref_state=partial_reference_state,
+                       discrete_optimization_order='first', # <- HERE
+                       num_anneals=1_000)
     assert np.isclose(H_noncon_op.energy, noncon_problem['E'])
 
 
@@ -504,12 +525,17 @@ def test_get_qaoa_qubo_with_partial_reference():
     H_noncon_op = NoncontextualOp.from_PauliwordOp(H_noncon)
     reference = noncon_problem['partial_reference_state']
 
-    H_noncon_op.symmetry_generators.update_sector(reference)
+    with pytest.warns():
+        # capture warning when Z stabilizers measured give zero expec value
+        H_noncon_op.symmetry_generators.update_sector(reference)
+
     ev_assignment = H_noncon_op.symmetry_generators.coeff_vec
     fixed_ev_mask = ev_assignment != 0
     fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
 
-    QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference, type='qubo')
+    with pytest.warns():
+        # capture warning when Z stabilizers measured give zero expec value
+        QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference, type='qubo')
 
     for key in QAOA_dict.keys():
         exp = QAOA_dict[key]
@@ -593,12 +619,17 @@ def test_get_qaoa_pubo_with_partial_reference():
     H_noncon_op = NoncontextualOp.from_PauliwordOp(H_noncon)
     reference = noncon_problem['partial_reference_state']
 
-    H_noncon_op.symmetry_generators.update_sector(reference)
+    with pytest.warns():
+        # capture warning when Z stabilizers measured give zero expec value
+        H_noncon_op.symmetry_generators.update_sector(reference)
+
     ev_assignment = H_noncon_op.symmetry_generators.coeff_vec
     fixed_ev_mask = ev_assignment != 0
     fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
 
-    QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference, type='pubo')
+    with pytest.warns():
+        # capture warning when Z stabilizers measured give zero expec value
+        QAOA_dict = H_noncon_op.get_qaoa(ref_state=reference, type='pubo')
 
     for key in QAOA_dict.keys():
         exp = QAOA_dict[key]

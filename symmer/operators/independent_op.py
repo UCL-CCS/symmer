@@ -88,7 +88,9 @@ class IndependentOp(PauliwordOp):
         S_symp = cref_matrix[PwordOp.n_terms:,np.all(~cref_matrix[:PwordOp.n_terms], axis=0)].T
         S = cls(S_symp, np.ones(S_symp.shape[0]))
         if S.n_terms==0:
-            raise RuntimeError('The input PauliwordOp has no Z2 symmetries.')
+            warnings.warn('The input PauliwordOp has no Z2 symmetries.')
+            return S
+            # raise RuntimeError('The input PauliwordOp has no Z2 symmetries.')
         if np.all(S.adjacency_matrix) or commuting_override:
             return S
         else:

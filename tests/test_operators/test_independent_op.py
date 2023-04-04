@@ -42,10 +42,16 @@ def test_from_dictionary():
     )
     assert op1 == op2
 
-def test_no_symmetry_generator_error():
+# def test_no_symmetry_generator_error():
+#     op = PauliwordOp.from_list(['X', 'Y','Z'])
+#     with pytest.raises(RuntimeError):
+#         IndependentOp.symmetry_generators(op)
+
+def test_no_symmetry_generators():
     op = PauliwordOp.from_list(['X', 'Y','Z'])
-    with pytest.raises(RuntimeError):
-        IndependentOp.symmetry_generators(op)
+    ind_op = IndependentOp.symmetry_generators(op)
+    assert ind_op.n_terms == 0
+
 
 def test_commuting_overide_symmetry_generators():
     op = PauliwordOp.from_list(
