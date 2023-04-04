@@ -45,7 +45,7 @@ def update_eigenvalues(
     """ Update the +/-1 eigenvalue assigned to the input stabilizer
     according to the noncontextual ground state configuration
     """
-    reconstruction, successfully_reconstructed = stabilizers.basis_reconstruction(basis)
+    reconstruction, successfully_reconstructed = stabilizers.generator_reconstruction(basis)
     if ~np.all(successfully_reconstructed):
         raise ValueError('Basis not sufficient to reconstruct symmetry operators')
     stabilizers.coeff_vec = (-1) ** np.count_nonzero(
@@ -174,6 +174,7 @@ def stabilizer_walk(
         biasing_operator: ObservableBiasing,
         weighting_operator: PauliwordOp = None,
         print_info: bool = False,
+        use_X_only: bool = False
     ) -> IndependentOp:
     """
     """
@@ -183,7 +184,7 @@ def stabilizer_walk(
     def get_stabilizers(x):
         biasing_operator.HOMO_bias,biasing_operator.LUMO_bias = x
         biased_op = biasing_operator.HOMO_LUMO_biased_operator()
-        stabilizers = StabilizerIdentification(biased_op)
+        stabilizers = StabilizerIdentification(biased_op, use_X_only=use_X_only)
         S = stabilizers.symmetry_generators_by_subspace_dimension(n_sim_qubits)
         return(S)
     

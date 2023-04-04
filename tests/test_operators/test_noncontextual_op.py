@@ -6,6 +6,24 @@ from symmer.operators import PauliwordOp, NoncontextualOp, QuantumState
 from symmer.operators.noncontextual_op import NoncontextualSolver
 from symmer.utils import exact_gs_energy
 
+def jordan_generator_reconstruction_check(self, generators):
+    """ Function for jordan basis reconstruction test
+    This builds the noncontextual operator under the Jordan product, but does not give the
+    reconstruction matrix. This can be used to check that the function with the reconstruction
+    matrix IS correct!
+    """
+    mask_symmetries = np.all(generators.adjacency_matrix, axis=1)
+    Symmetries = generators[mask_symmetries]
+    Anticommuting = generators[~mask_symmetries]
+    assert np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
+
+    PwordOp_noncon = self[self.generator_reconstruction(Symmetries)[1]]
+    PwordOp_remain = self - PwordOp_noncon
+    for P in Anticommuting:
+        PwordOp_noncon += PwordOp_remain[PwordOp_remain.generator_reconstruction(P+Symmetries)[1]]
+
+    return PwordOp_noncon
+
 noncon_problem = {
     'H_dict':  {'IIII': (-0.09706626816762845+0j),
  'IIIZ': (-0.22343153690813597+0j),

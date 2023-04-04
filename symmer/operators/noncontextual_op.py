@@ -49,26 +49,28 @@ class NoncontextualOp(PauliwordOp):
             H: PauliwordOp, 
             strategy: str = 'diag', 
             basis: PauliwordOp = None, 
-            DFS_runtime: int = 10
+            DFS_runtime: int = 10,
+            override_noncontextuality_check: bool = True
         ) -> "NoncontextualOp":
         """ Given a PauliwordOp, extract from it a noncontextual sub-Hamiltonian by the specified strategy
         """
-        if H.is_noncontextual:
-            warnings.warn('input H is already noncontextual ignoring strategy')
-            return cls.from_PauliwordOp(H)
+        if not override_noncontextuality_check:
+            if H.is_noncontextual:
+                warnings.warn('input H is already noncontextual ignoring strategy')
+                return cls.from_PauliwordOp(H)
+        
+        if strategy == 'diag':
+            return cls._diag_noncontextual_op(H)
+        elif strategy == 'basis':
+            return cls._from_basis_noncontextual_op(H, basis)
+        elif strategy.find('DFS') != -1:
+            _, strategy = strategy.split('_')
+            return cls._dfs_noncontextual_op(H, strategy=strategy, runtime=DFS_runtime)
+        elif strategy.find('SingleSweep') != -1:
+            _, strategy = strategy.split('_')
+            return cls._single_sweep_noncontextual_operator(H, strategy=strategy)
         else:
-            if strategy == 'diag':
-                return cls._diag_noncontextual_op(H)
-            elif strategy == 'basis':
-                return cls._from_basis_noncontextual_op(H, basis)
-            elif strategy.find('DFS') != -1:
-                _, strategy = strategy.split('_')
-                return cls._dfs_noncontextual_op(H, strategy=strategy, runtime=DFS_runtime)
-            elif strategy.find('SingleSweep') != -1:
-                _, strategy = strategy.split('_')
-                return cls._single_sweep_noncontextual_operator(H, strategy=strategy)
-            else:
-                raise ValueError(f'Unrecognised noncontextual operator strategy {strategy}')
+            raise ValueError(f'Unrecognised noncontextual operator strategy {strategy}')
 
     @classmethod
     def _diag_noncontextual_op(cls, H: PauliwordOp):
@@ -170,29 +172,14 @@ class NoncontextualOp(PauliwordOp):
         return cls.from_PauliwordOp(operator[noncon_indices])
 
     @classmethod
-    def _from_basis_noncontextual_op(cls, H: PauliwordOp, basis: PauliwordOp):
+    def _from_basis_noncontextual_op(cls, H: PauliwordOp, generators: PauliwordOp):
         """ Construct a noncontextual operator given a noncontextual basis, via the Jordan product ( regular matrix product if the operators commute, and equal to zero if the operators anticommute.)
         """
-        assert basis is not None, 'Must specify a noncontextual basis.'
-        assert basis.is_noncontextual, 'Basis is contextual.'
-        
-        symmetry_mask = np.all(basis.adjacency_matrix, axis=1)
-        S = basis[symmetry_mask]
+        assert generators is not None, 'Must specify a noncontextual basis.'
+        assert generators.is_noncontextual, 'Basis is contextual.'
 
-        _, noncontextual_terms_from_S_mask = H.basis_reconstruction(S)
-        if np.sum(symmetry_mask) == basis.n_terms:
-            # basis is commuting
-            return cls.from_PauliwordOp(H[noncontextual_terms_from_S_mask])
-        else:
-            # when basis doesn't all commute
-
-            # add clique term to S!
-            aug_basis_reconstruction_masks = [
-                H.basis_reconstruction(S+c)[1] for c in basis[~symmetry_mask]
-            ]
-            noncontextual_terms_mask = np.any(np.array(aug_basis_reconstruction_masks), axis=0)
-
-            return cls.from_PauliwordOp(H[noncontextual_terms_mask])
+        _, noncontextual_terms_mask = H.jordan_generator_reconstruction(generators)
+        return cls.from_PauliwordOp(H[noncontextual_terms_mask])
 
     def noncontextual_basis(self) -> IndependentOp:
         """ Find an independent *generating set* for the noncontextual symmetry
@@ -203,7 +190,7 @@ class NoncontextualOp(PauliwordOp):
         symmetry_generators = IndependentOp.symmetry_generators(self)
         # try to reconstruct the noncontextual operator in this basis
         # not all terms can be decomposed in this basis, so check which can
-        reconstructed_indices, succesfully_reconstructed = self.basis_reconstruction(symmetry_generators)
+        reconstructed_indices, succesfully_reconstructed = self.generator_reconstruction(symmetry_generators)
         # extract the universally commuting noncontextual terms (i.e. those which may be constructed from symmetry generators)
         universal_operator = PauliwordOp(self.symp_matrix[succesfully_reconstructed],
                                          self.coeff_vec[succesfully_reconstructed])
@@ -249,20 +236,20 @@ class NoncontextualOp(PauliwordOp):
                 )
                 GuCi_symp = np.vstack([self.symmetry_generators.symp_matrix, Ci.symp_matrix])
                 GuCi = IndependentOp(GuCi_symp)
-                reconstructed, row_mask_inds = self.basis_reconstruction(GuCi)
+                reconstructed, row_mask_inds = self.generator_reconstruction(GuCi)
                 row_col_mask = np.ix_(row_mask_inds, col_mask_inds)
                 reconstruction_ind_matrix[row_col_mask] = reconstructed[row_mask_inds]
         else:
             (
                 reconstruction_ind_matrix, 
                 succesfully_reconstructed
-            ) = self.basis_reconstruction(self.symmetry_generators)
+            ) = self.generator_reconstruction(self.symmetry_generators)
         
         G_part = reconstruction_ind_matrix[:,:self.symmetry_generators.n_terms]
         r_part = reconstruction_ind_matrix[:,self.symmetry_generators.n_terms:]
         # individual elements of r_part commute with all of G_part - taking products over G_part with
         # a single element of r_part will therefore never produce a complex phase, but might result in
-        # a sign slip that must be accounted for in the basis reconstruction TODO: add to basis_reconstruction!
+        # a sign slip that must be accounted for in the basis reconstruction TODO: add to generator_reconstruction!
         pauli_mult_signs = np.ones(self.n_terms)
         for index, (G, r) in enumerate(zip(G_part, r_part)):
             G_inds = np.where(G!=0)[0]

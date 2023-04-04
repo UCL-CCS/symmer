@@ -59,8 +59,8 @@ def test_symmetry_generators_H2():
     G1 = QT.symmetry_generators
     G2 = IndependentOp.from_list(['ZIZI', 'IZIZ', 'IIZZ'])
     assert (
-        np.all(G1.basis_reconstruction(G2)[1]) and
-        np.all(G2.basis_reconstruction(G1)[1])
+        np.all(G1.generator_reconstruction(G2)[1]) and
+        np.all(G2.generator_reconstruction(G1)[1])
     )
 
 def test_taper_H2_hamiltonian():

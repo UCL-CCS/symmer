@@ -317,3 +317,20 @@ def check_adjmat_noncontextual(adjmat) -> bool:
     # between rows, the operator is noncontextual - hence we sum over rows and check
     # the resulting vector consists of all ones.
     return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
+
+def check_independent(operators):
+    """ Check if the input PauliwordOp contains algebraically dependent terms
+    """
+    check_independent = _rref_binary(operators.symp_matrix)
+    return ~np.any(np.all(~check_independent, axis=1))
+
+def check_jordan_independent(operators):
+    """ Check if the input PauliwordOp contains algebraically dependent terms
+    """
+    mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
+    Symmetries = operators[mask_symmetries]
+    Anticommuting = operators[~mask_symmetries]
+    return (
+        check_independent(Symmetries) & 
+        np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
+    )

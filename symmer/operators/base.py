@@ -13,7 +13,7 @@ from scipy.sparse import csr_matrix, csc_matrix, coo_matrix, dok_matrix
 from symmer.operators.utils import *
 from openfermion import QubitOperator, count_qubits
 import matplotlib.pyplot as plt
-from qiskit.opflow import PauliSumOp
+from qiskit.opflow import PauliSumOp as ibm_PauliSumOp
 from scipy.stats import unitary_group
 import warnings
 warnings.simplefilter('always', UserWarning)
@@ -141,11 +141,11 @@ class PauliwordOp:
 
     @classmethod
     def from_qiskit(cls,
-            qiskit_op: PauliSumOp
+            qiskit_op: ibm_PauliSumOp
         ) -> "PauliwordOp":
         """ Initialize a PauliwordOp from Qiskit's PauliSumOp representation
         """
-        assert(isinstance(qiskit_op, PauliSumOp)), 'Must supply a PauliSumOp'
+        assert(isinstance(qiskit_op, ibm_PauliSumOp)), 'Must supply a PauliSumOp'
         operator_dict = PauliSumOp_to_dict(
             qiskit_op
         )
@@ -386,8 +386,9 @@ class PauliwordOp:
         
         return PauliwordOp(np.hstack([new_X_block, new_Z_block]), self.coeff_vec)
 
-    def basis_reconstruction(self, 
-            operator_basis: "PauliwordOp"
+    def generator_reconstruction(self, 
+            generators: "PauliwordOp",
+            override_independence_check: bool = False
         ) -> np.array:
         """ Simultaneously reconstruct every operator term in the supplied basis.
         With B and M the symplectic form of the supplied basis and the internal 
@@ -407,12 +408,50 @@ class PauliwordOp:
         Since we only need to reduce columns, the algorithm scales with the number of
         qubits N, not the number of terms M, and is therefore at worst O(N^2).
         """
-        dim = operator_basis.n_terms
-        basis_op_stack = np.vstack([operator_basis.symp_matrix, self.symp_matrix])
+        if not override_independence_check:
+            assert check_independent(generators), 'Supplied generators are algebraically dependent'
+        dim = generators.n_terms
+        basis_op_stack = np.vstack([generators.symp_matrix, self.symp_matrix])
         reduced = cref_binary(basis_op_stack)
         mask_successfully_reconstructed = np.all(~reduced[dim:,dim:], axis=1)
         op_reconstruction = reduced[dim:,:dim]
         return op_reconstruction.astype(int), mask_successfully_reconstructed
+
+    def jordan_generator_reconstruction(self, generators: "PauliwordOp"):
+        """ Reconstruct this PauliwordOp under the Jordan product PQ = {P,Q}/2
+        with respect to the supplied generators
+        """
+        assert (
+            check_jordan_independent(generators),
+            'The non-symmetry elements do not pairwise anticommute.'
+        )
+        # empty reconstruction matrix to be updated in loop over anticommuting elements
+        op_reconstruction = np.zeros([self.n_terms, generators.n_terms])
+        successfully_reconstructed = np.zeros(self.n_terms, dtype=bool)
+
+        # first, separate symmetry elements  from anticommuting ones
+        mask_symmetries = np.all(generators.adjacency_matrix, axis=1)
+        Symmetries = generators[mask_symmetries]
+        Anticommuting = generators[~mask_symmetries]
+        where_anti = np.where(~mask_symmetries)[0]
+        
+        if Anticommuting.n_terms == 0:
+            # If not anticommuting component, return standard generator recon over symmetries
+            return self.generator_reconstruction(Symmetries)
+        else:
+            # loop over anticommuting elements to enforce Jordan condition (no two anticommuting elements multiplied)
+            for index, P in zip(where_anti, Anticommuting):
+                mask_symmetries_with_P = mask_symmetries.copy()
+                mask_symmetries_with_P[index] = True
+                # reconstruct this PauliwordOp in the augemented symmetry + single anticommuting term generating set
+                recon_mat_P, successful_P = self.generator_reconstruction(P+Symmetries)
+                # np.ix_ needed to correctly slice op_reconstruction as mask method does not work
+                row, col = np.ix_(successful_P,mask_symmetries_with_P)
+                op_reconstruction[row, col] = recon_mat_P[successful_P]
+                # will have duplicate succesful reconstruction of symmetries, so only sets True once in logical OR
+                successfully_reconstructed = np.logical_or(successfully_reconstructed, successful_P)
+
+            return op_reconstruction, successfully_reconstructed
 
     @cached_property
     def Y_count(self) -> np.array:
@@ -934,10 +973,10 @@ class PauliwordOp:
             return sum(pauli_terms)
 
     @cached_property
-    def to_qiskit(self) -> PauliSumOp:
+    def to_qiskit(self) -> ibm_PauliSumOp:
         """ convert to Qiskit Pauli operator representation
         """
-        return PauliSumOp.from_list(self.to_dictionary.items())
+        return ibm_PauliSumOp.from_list(self.to_dictionary.items())
 
     @cached_property
     def to_dictionary(self) -> Dict[str, complex]:
