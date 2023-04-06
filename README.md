@@ -8,7 +8,11 @@
 A Python package for reducing the quantum resource requirement of your problems, making them more NISQ-friendly!
 
 ## Installation
-To install from the root of the project run:
+To install this package either run:
+```
+pip install symmer
+```
+for the latest stable version OR from the root of the project run:
 
 ```
 pip install .
