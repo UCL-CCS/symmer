@@ -219,7 +219,7 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
         P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_cpus, P_op.n_terms))).astype(set).astype(int)
 
         # miss zero index out (as emtpy list)
-        P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i+1]] for ind_i, ind_j in enumerate(P_op_chunks_inds[1:])]
+        P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i+1]] for ind_i, _ in enumerate(P_op_chunks_inds[1:])]
         with mp.Pool(n_cpus) as pool:
             tracker = pool.map(_get_sparse_matrix_large_pauliwordop, P_op_chunks)
 
@@ -251,3 +251,23 @@ def _get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
 
     return mat
 
+
+def matrix_allclose(A: Union[csr_matrix, np.array], B:Union[csr_matrix, np.array], tol:int = 1e-15) -> bool:
+    """
+    check matrix A and B have the same entries up to a given tolerance
+    Args:
+        A : matrix A
+        B:  matrix B
+        tol: allowed difference
+
+    Returns:
+        bool
+
+    """
+    if isinstance(A, csr_matrix) and isinstance(B, csr_matrix):
+        max_diff = np.abs(A-B).max()
+        return max_diff <= tol
+    else:
+        A = A.toarray()
+        B = B.toarray()
+        return np.allclose(A, B, atol=tol)
