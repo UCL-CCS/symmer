@@ -94,6 +94,7 @@ def PauliwordOp_to_QuantumCircuit(
     trotter_number: int = 1, 
     bind_params: bool = True,
     include_barriers:bool = True,
+    parameter_label: str = 'P'
     ) -> QuantumCircuit:
     """
     Convert the operator to a QASM circuit string for input 
@@ -136,7 +137,7 @@ def PauliwordOp_to_QuantumCircuit(
     if bind_params:
         angles = PwordOp.coeff_vec.real/trotter_number
     else:
-        angles = np.array(ParameterVector('P', PwordOp.n_terms))/trotter_number
+        angles = np.array(ParameterVector(parameter_label, PwordOp.n_terms))/trotter_number
 
     instructions = PauliwordOp_to_instructions(PwordOp)
     assert(len(angles)==len(instructions)), 'Number of parameters does not match the circuit instructions'
