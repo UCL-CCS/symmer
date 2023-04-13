@@ -212,7 +212,7 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
         mat (csr_matrix): sparse matrix of P_op
     """
     nq = P_op.n_qubits
-    if nq<15:
+    if nq<16:
         mat = P_op.to_sparse_matrix
     else:
         n_cpus = mp.cpu_count()

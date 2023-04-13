@@ -1,6 +1,7 @@
 from symmer.operators import PauliwordOp, QuantumState
 from symmer.utils import (exact_gs_energy, random_anitcomm_2n_1_PauliwordOp,Draw_molecule,
-                          tensor_list, gram_schmidt_from_quantum_state, product_list)
+                          tensor_list, gram_schmidt_from_quantum_state, product_list,
+                          get_sparse_matrix_large_pauliwordop, matrix_allclose)
 import numpy as np
 from openfermion import QubitOperator
 import py3Dmol
@@ -454,3 +455,39 @@ def test_Draw_molecule():
 
     viewer_stick = Draw_molecule(xyz, width=400, height=400, style='stick')
     assert isinstance(viewer_stick, py3Dmol.view)
+
+def test_get_sparse_matrix_large_pauliwordop():
+    for nq in range(2,6):
+        n_terms = 10*nq
+        random_P = PauliwordOp.random(nq, n_terms)
+        sparse_mat = get_sparse_matrix_large_pauliwordop(random_P)
+        assert np.allclose(random_P.to_sparse_matrix.toarray(),
+                           sparse_mat.toarray())
+
+def test_matrix_allclose_sparse():
+    for nq in range(2,6):
+        n_terms = 10*nq
+        random_P = PauliwordOp.random(nq, n_terms)
+        sparse_mat = get_sparse_matrix_large_pauliwordop(random_P)
+        assert matrix_allclose(random_P.to_sparse_matrix,
+                           sparse_mat)
+
+    # assert false output
+    Pop_XI= PauliwordOp.from_list(['XI']).to_sparse_matrix
+    Pop_ZI = PauliwordOp.from_list(['ZI']).to_sparse_matrix
+    assert not matrix_allclose(Pop_XI,
+                           Pop_ZI)
+
+def test_matrix_allclose_dense():
+    for nq in range(2,6):
+        n_terms = 10*nq
+        random_P = PauliwordOp.random(nq, n_terms)
+        sparse_mat = get_sparse_matrix_large_pauliwordop(random_P)
+        assert matrix_allclose(random_P.to_sparse_matrix.toarray(),
+                           sparse_mat.toarray())
+
+    # assert false output
+    Pop_XI= PauliwordOp.from_list(['XI']).to_sparse_matrix
+    Pop_ZI = PauliwordOp.from_list(['ZI']).to_sparse_matrix
+    assert not matrix_allclose(Pop_XI.toarray(),
+                           Pop_ZI.toarray())
