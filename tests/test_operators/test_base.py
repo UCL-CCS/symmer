@@ -1,10 +1,10 @@
 import pytest
 import numpy as np
-from symmer.operators import PauliwordOp
-from functools import reduce
+from symmer.operators import PauliwordOp, QuantumState
 from qiskit.opflow import PauliSumOp
 from openfermion import QubitOperator
 from scipy.sparse import rand, csr_matrix
+from symmer.utils import matrix_allclose
 
 P_matrices ={
     'X': np.array([[0, 1],
@@ -626,3 +626,18 @@ def test_to_sparse_matrix_2(
     ):
     P = PauliwordOp.from_dictionary(P_dict)
     assert np.all(P.to_sparse_matrix.toarray() == P_array)
+
+
+def test_QuantumState_overlap():
+    for n_q in range(1,5):
+        random_ket_1 = QuantumState.haar_random(n_q, vec_type='ket')
+        random_ket_2 = QuantumState.haar_random(n_q, vec_type='ket')
+
+        ket = random_ket_1.to_sparse_matrix.toarray()
+        bra = random_ket_2.to_sparse_matrix.toarray().conj().T
+
+        assert np.isclose(np.dot(bra, ket),
+                          random_ket_1.dagger * random_ket_2)
+
+        assert np.isclose(np.abs(random_ket_1.dagger * random_ket_2),
+                          np.abs(random_ket_2.dagger * random_ket_1))
