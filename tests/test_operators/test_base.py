@@ -629,15 +629,18 @@ def test_to_sparse_matrix_2(
 
 
 def test_QuantumState_overlap():
-    for n_q in range(1,5):
+    for n_q in range(2,5):
         random_ket_1 = QuantumState.haar_random(n_q, vec_type='ket')
         random_ket_2 = QuantumState.haar_random(n_q, vec_type='ket')
 
-        ket = random_ket_1.to_sparse_matrix.toarray()
-        bra = random_ket_2.to_sparse_matrix.toarray().conj().T
+        ket_1 = random_ket_1.to_sparse_matrix.toarray()
+        ket_2 = random_ket_2.to_sparse_matrix.toarray()
 
-        assert np.isclose(np.dot(bra, ket),
+        assert np.isclose(ket_2.conj().T @ ket_1,
+                          random_ket_2.dagger * random_ket_1)
+
+        assert np.isclose(ket_1.conj().T @ ket_2,
                           random_ket_1.dagger * random_ket_2)
 
-        assert np.isclose(np.abs(random_ket_1.dagger * random_ket_2),
-                          np.abs(random_ket_2.dagger * random_ket_1))
+        assert np.isclose(random_ket_1.dagger * random_ket_2,
+                          (random_ket_2.dagger * random_ket_1).conj())

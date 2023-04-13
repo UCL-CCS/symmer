@@ -1284,12 +1284,20 @@ class QuantumState:
         if isinstance(mul_obj, QuantumState):
             assert(mul_obj.vec_type=='ket'), 'Cannot multiply a bra with another bra'
             inner_product=0
-            for (bra_string, bra_coeff),(ket_string, ket_coeff) in product(
-                    zip(self.state_matrix, self.state_op.coeff_vec), 
-                    zip(mul_obj.state_matrix, mul_obj.state_op.coeff_vec)
-                ):
-                if np.all(bra_string == ket_string):
-                    inner_product += (bra_coeff*ket_coeff)
+
+            # set left state to be smallest in number of bitstrings making loop short!
+            if self.state_op.n_terms < mul_obj.n_terms:
+                left_state = self
+                right_state = mul_obj
+            else:
+                left_state = mul_obj
+                right_state = self
+
+            # O(length_smallest_statevector) runtime. (Note linear rather than quadratic!)
+            for bstring, left_coeff in left_state.to_dictionary.items():
+                right_coeff = right_state.to_dictionary.get(bstring, 0)
+                inner_product += left_coeff * right_coeff
+
             return inner_product
 
         elif isinstance(mul_obj, PauliwordOp):
