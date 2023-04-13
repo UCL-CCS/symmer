@@ -268,6 +268,10 @@ def matrix_allclose(A: Union[csr_matrix, np.array], B:Union[csr_matrix, np.array
         max_diff = np.abs(A-B).max()
         return max_diff <= tol
     else:
-        A = A.toarray()
-        B = B.toarray()
+        if isinstance(A, csr_matrix):
+            A = A.toarray()
+
+        if isinstance(B, csr_matrix):
+            B = B.toarray()
+
         return np.allclose(A, B, atol=tol)
