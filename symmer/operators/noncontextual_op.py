@@ -28,14 +28,13 @@ class NoncontextualOp(PauliwordOp):
         """
         super().__init__(symp_matrix, coeff_vec)
         assert(self.is_noncontextual), 'Specified operator is contextual.'
-        self.symmetry_generators, self.clique_operator = self.noncontextual_basis()
+        # extract the symmetry generating set G and clique operator C(r)
+        self.noncontextual_generators()
         # Reconstruct the noncontextual Hamiltonian into its G and C(r) components
         self.noncontextual_reconstruction()
-        # determine the noncontextual ground state - this updates the coefficients of the clique 
-        # representative operator C(r) and symmetry generators G with the optimal configuration
         
     @classmethod
-    def from_PauliwordOp(cls, H):
+    def from_PauliwordOp(cls, H) -> "NoncontextualOp":
         """ for convenience, initialize from an existing PauliwordOp
         """
         noncontextual_operator = cls(
@@ -73,7 +72,7 @@ class NoncontextualOp(PauliwordOp):
             raise ValueError(f'Unrecognised noncontextual operator strategy {strategy}')
 
     @classmethod
-    def _diag_noncontextual_op(cls, H: PauliwordOp):
+    def _diag_noncontextual_op(cls, H: PauliwordOp) -> "NoncontextualOp":
         """ Return the diagonal terms of the PauliwordOp - this is the simplest noncontextual operator
         """
         mask_diag = np.where(~np.any(H.X_block, axis=1))
@@ -84,7 +83,7 @@ class NoncontextualOp(PauliwordOp):
         return noncontextual_operator
 
     @classmethod
-    def _dfs_noncontextual_op(cls, H: PauliwordOp, runtime=10, strategy='magnitude'):
+    def _dfs_noncontextual_op(cls, H: PauliwordOp, runtime=10, strategy='magnitude') -> "NoncontextualOp":
         """ function orders operator by coeff mag
         then going from first term adds ops to a pauliword op ensuring it is noncontextual
         adds to a tracking list and then changes the original ordering so first term is now at the end
@@ -122,7 +121,7 @@ class NoncontextualOp(PauliwordOp):
         return cls.from_PauliwordOp(noncontextual_operator)
 
     @classmethod
-    def _diag_first_noncontextual_op(cls, H: PauliwordOp):
+    def _diag_first_noncontextual_op(cls, H: PauliwordOp) -> "NoncontextualOp":
         """ Start from the diagonal noncontextual form and append additional off-diagonal
         contributions with respect to their coefficient magnitude.
         """
@@ -137,7 +136,7 @@ class NoncontextualOp(PauliwordOp):
         return cls.from_PauliwordOp(noncontextual_operator)
 
     @classmethod
-    def _single_sweep_noncontextual_operator(cls, H, strategy='magnitude'):
+    def _single_sweep_noncontextual_operator(cls, H, strategy='magnitude') -> "NoncontextualOp":
         """ Order the operator by some sorting key (magnitude, random or CurrentOrder)
         and then sweep accross the terms, appending to a growing noncontextual operator
         whenever possible.
@@ -172,7 +171,7 @@ class NoncontextualOp(PauliwordOp):
         return cls.from_PauliwordOp(operator[noncon_indices])
 
     @classmethod
-    def _from_basis_noncontextual_op(cls, H: PauliwordOp, generators: PauliwordOp):
+    def _from_basis_noncontextual_op(cls, H: PauliwordOp, generators: PauliwordOp) -> "NoncontextualOp":
         """ Construct a noncontextual operator given a noncontextual basis, via the Jordan product ( regular matrix product if the operators commute, and equal to zero if the operators anticommute.)
         """
         assert generators is not None, 'Must specify a noncontextual basis.'
@@ -181,94 +180,55 @@ class NoncontextualOp(PauliwordOp):
         _, noncontextual_terms_mask = H.jordan_generator_reconstruction(generators)
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
 
-    def noncontextual_basis(self) -> IndependentOp:
-        """ Find an independent *generating set* for the noncontextual symmetry
-        * technically not a basis!
+    def noncontextual_generators(self) -> None:
+        """ Find an independent generating set for the noncontextual operator
         """
-        self.decomposed = {}
-        # identify a basis of universally commuting operators
-        symmetry_generators = IndependentOp.symmetry_generators(self)
-        # try to reconstruct the noncontextual operator in this basis
-        # not all terms can be decomposed in this basis, so check which can
-        reconstructed_indices, succesfully_reconstructed = self.generator_reconstruction(symmetry_generators)
-        # extract the universally commuting noncontextual terms (i.e. those which may be constructed from symmetry generators)
-        universal_operator = PauliwordOp(self.symp_matrix[succesfully_reconstructed],
-                                         self.coeff_vec[succesfully_reconstructed])
-        self.decomposed['symmetry'] = universal_operator
-        # identify the anticommuting cliques
-        clique_union = self - universal_operator
-        if clique_union.n_terms != 0:
-            # identify unique rows in the adjacency matrix with inverse mapping 
-            # so that terms of the same clique have matching indices
-            clique_characters, clique_inverse_map = np.unique(clique_union.adjacency_matrix, axis=0, return_inverse=True)
-            clique_reps = []
-            for i in np.unique(clique_inverse_map):
-                # mask each clique and select a class represetative for its contribution in the noncontextual basis
-                Ci_indices = np.where(clique_inverse_map==i)[0]
-                Ci_symp,Ci_coeff = clique_union.symp_matrix[Ci_indices],clique_union.coeff_vec[Ci_indices]
-                Ci_operator = PauliwordOp(Ci_symp, Ci_coeff)
-                self.decomposed[f'clique_{i}'] = Ci_operator
-                # choose cliques representative that maximises basis_score (summed coefficients of commuting terms)
-                clique_reps.append(Ci_operator.symp_matrix[0])
-            clique_reps = np.vstack(clique_reps)
-            self.n_cliques = clique_reps.shape[0]
-            clique_operator = AntiCommutingOp(clique_reps, np.ones(self.n_cliques))
+        # identify the symmetry generating set
+        self.symmetry_generators = IndependentOp.symmetry_generators(self)
+        # mask the symmetry terms within the noncontextual operator
+        _, symmetry_mask = self.generator_reconstruction(self.symmetry_generators)
+        # identify the reamining commuting cliques
+        self.decomposed = self[~symmetry_mask].clique_cover(edge_relation='C')
+        self.n_cliques = len(self.decomposed)
+        if self.n_cliques > 0:
+            # choose clique representatives with the greatest coefficient
+            self.clique_operator = AntiCommutingOp.from_PauliwordOp(
+                sum([C.sort()[0] for C in self.decomposed.values()])
+            )
         else:
-            clique_operator = None
-            self.n_cliques  = 0
-
-        return symmetry_generators, clique_operator
-
-    def noncontextual_reconstruction(self):
+            self.clique_operator = PauliwordOp.empty(self.n_qubits).cleanup()
+        # extract the universally commuting noncontextual terms (i.e. those which may be constructed from symmetry generators)
+        self.decomposed['symmetry'] = self[symmetry_mask]
+        
+    def noncontextual_reconstruction(self) -> None:
         """ Reconstruct the noncontextual operator in each independent basis GuCi - one for every clique.
         This mitigates against dependency between the symmetry generators G and the clique representatives Ci
         """
-        if self.n_cliques > 0:
-            reconstruction_ind_matrix = np.zeros(
-                [self.n_terms, self.symmetry_generators.n_terms + self.n_cliques], dtype=int
-            )
-            # Cannot simultaneously know eigenvalues of cliques so zero rows with more than one clique
-            # therefore, we decompose the noncontextual terms in the respective independent bases
-            for index, Ci in enumerate(self.clique_operator):
-                clique_column_index = self.symmetry_generators.n_terms+index
-                col_mask_inds = np.append(
-                    np.arange(self.symmetry_generators.n_terms), clique_column_index
-                )
-                GuCi_symp = np.vstack([self.symmetry_generators.symp_matrix, Ci.symp_matrix])
-                GuCi = IndependentOp(GuCi_symp)
-                reconstructed, row_mask_inds = self.generator_reconstruction(GuCi)
-                row_col_mask = np.ix_(row_mask_inds, col_mask_inds)
-                reconstruction_ind_matrix[row_col_mask] = reconstructed[row_mask_inds]
-        else:
-            (
-                reconstruction_ind_matrix, 
-                succesfully_reconstructed
-            ) = self.generator_reconstruction(self.symmetry_generators)
-        
-        G_part = reconstruction_ind_matrix[:,:self.symmetry_generators.n_terms]
-        r_part = reconstruction_ind_matrix[:,self.symmetry_generators.n_terms:]
+        noncon_generators = IndependentOp(
+            np.vstack([self.symmetry_generators.symp_matrix, self.clique_operator.symp_matrix])
+        )
+        # Cannot simultaneously know eigenvalues of cliques so we peform a generator reconstruction
+        # that respects the jordan product A*B = {A, B}/2, i.e. anticommuting elements are zeroed out
+        jordan_recon_matrix, successful = self.jordan_generator_reconstruction(noncon_generators)
+        assert(np.all(successful)), 'The generating set is not sufficient to reconstruct the noncontextual Hamiltonian'
+        self.G_indices = jordan_recon_matrix[:, :-self.n_cliques]
+        self.r_indices = jordan_recon_matrix[:, -self.n_cliques:]
         # individual elements of r_part commute with all of G_part - taking products over G_part with
         # a single element of r_part will therefore never produce a complex phase, but might result in
-        # a sign slip that must be accounted for in the basis reconstruction TODO: add to generator_reconstruction!
-        pauli_mult_signs = np.ones(self.n_terms)
-        for index, (G, r) in enumerate(zip(G_part, r_part)):
-            G_inds = np.where(G!=0)[0]
-            r_inds = np.where(r!=0)[0]
-            G_component = self.symmetry_generators.symp_matrix[G_inds]
-            if self.n_cliques > 0:
-                r_component = self.clique_operator.symp_matrix[r_inds]
-                all_factors_symp_matrix = np.vstack([G_component, r_component])
-            else:
-                all_factors_symp_matrix = G_component
-            all_factors = PauliwordOp(
-                all_factors_symp_matrix,
-                np.ones(all_factors_symp_matrix.shape[0])
+        # a sign slip that must be accounted for in the generator reconstruction:
+        self.pauli_mult_signs = np.array(
+            list(
+                map(
+                    lambda inds:reduce(
+                        lambda x,y:x*y, # pairwise multiplication of Pauli factors
+                        noncon_generators[inds], # index the relevant noncontextual generating elements
+                        PauliwordOp.from_list(['I'*self.n_qubits]) # initialise product with identity
+                    ).coeff_vec[0], 
+                    jordan_recon_matrix.astype(bool) # iterate over the jordan reconstruction matrix
+                )
             )
-            if all_factors.n_terms > 0:
-                gen_mult = reduce(lambda x,y:x*y, list(all_factors))
-                pauli_mult_signs[index] = int(gen_mult.coeff_vec.real[0])
-        self.G_indices, self.r_indices, self.pauli_mult_signs = G_part, r_part, pauli_mult_signs
-
+        )
+        
     def noncontextual_objective_function(self, 
             nu: np.array, 
             r: np.array
@@ -309,9 +269,12 @@ class NoncontextualOp(PauliwordOp):
             num_anneals:int = 1_000,
             discrete_optimization_order = 'first'
         ) -> None:
-        """ Minimize the classical objective function, yielding the noncontextual ground state
+        """ Minimize the classical objective function, yielding the noncontextual 
+        ground state. This updates the coefficients of the clique representative 
+        operator C(r) and symmetry generators G with the optimal configuration.
 
         Note most QUSO functions/methods work faster than their PUSO counterparts.
+
         """
         
         if ref_state is not None:

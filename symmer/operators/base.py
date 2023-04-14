@@ -451,7 +451,7 @@ class PauliwordOp:
                 # will have duplicate succesful reconstruction of symmetries, so only sets True once in logical OR
                 successfully_reconstructed = np.logical_or(successfully_reconstructed, successful_P)
 
-            return op_reconstruction, successfully_reconstructed
+            return op_reconstruction.astype(int), successfully_reconstructed
 
     @cached_property
     def Y_count(self) -> np.array:
