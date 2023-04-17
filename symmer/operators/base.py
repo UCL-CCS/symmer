@@ -498,6 +498,16 @@ class PauliwordOp:
                 not np.sum(np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and 
                 np.allclose(check_1.coeff_vec, check_2.coeff_vec)
             )
+        
+    def append(self, 
+            PwordOp: "PauliwordOp"
+        ) -> "PauliwordOp":
+        """ Append another PauliwordOp onto this one - duplicates allowed
+        """
+        assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
+        P_symp_mat_new = np.vstack((self.symp_matrix, PwordOp.symp_matrix))
+        P_new_coeffs = np.hstack((self.coeff_vec, PwordOp.coeff_vec))
+        return PauliwordOp(P_symp_mat_new, P_new_coeffs) 
 
     def __add__(self, 
             PwordOp: "PauliwordOp"
@@ -505,12 +515,8 @@ class PauliwordOp:
         """ Add to this PauliwordOp another PauliwordOp by stacking the
         respective symplectic matrices and cleaning any resulting duplicates
         """
-        assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
-        P_symp_mat_new = np.vstack((self.symp_matrix, PwordOp.symp_matrix))
-        P_new_coeffs = np.hstack((self.coeff_vec, PwordOp.coeff_vec)) 
-
         # cleanup run to remove duplicate rows (Pauliwords)
-        return PauliwordOp(P_symp_mat_new, P_new_coeffs).cleanup()
+        return self.append(PwordOp).cleanup()
 
     def __radd__(self, 
             add_obj: Union[int, "PauliwordOp"]
