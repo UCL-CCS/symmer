@@ -215,19 +215,16 @@ class NoncontextualOp(PauliwordOp):
         self.r_indices = jordan_recon_matrix[:, -self.n_cliques:]
         # individual elements of r_part commute with all of G_part - taking products over G_part with
         # a single element of r_part will therefore never produce a complex phase, but might result in
-        # a sign slip that must be accounted for in the generator reconstruction:
+        # a sign flip that must be accounted for in the generator reconstruction:
+        multiply_indices = lambda inds:reduce(
+            lambda x,y:x*y, # pairwise multiplication of Pauli factors
+            noncon_generators[inds], # index the relevant noncontextual generating elements
+            PauliwordOp.from_list(['I'*self.n_qubits]) # initialise product with identity
+        ).coeff_vec[0].real
+
         self.pauli_mult_signs = np.array(
-            list(
-                map(
-                    lambda inds:reduce(
-                        lambda x,y:x*y, # pairwise multiplication of Pauli factors
-                        noncon_generators[inds], # index the relevant noncontextual generating elements
-                        PauliwordOp.from_list(['I'*self.n_qubits]) # initialise product with identity
-                    ).coeff_vec[0], 
-                    jordan_recon_matrix.astype(bool) # iterate over the jordan reconstruction matrix
-                )
-            )
-        )
+            list(map(multiply_indices,jordan_recon_matrix.astype(bool)))
+        ).astype(int)
         
     def noncontextual_objective_function(self, 
             nu: np.array, 
@@ -290,6 +287,10 @@ class NoncontextualOp(PauliwordOp):
 
         NC_solver.num_anneals = num_anneals
         NC_solver.discrete_optimization_order = discrete_optimization_order
+
+        # if np.all(fixed_ev_mask):
+        #     nu = fixed_eigvals
+        #     self.energy, r = self._convex_problem(nu)
 
         if strategy=='brute_force':
             self.energy, nu, r = NC_solver.energy_via_brute_force()
@@ -516,6 +517,41 @@ class NoncontextualSolver:
     #################################################################
     ################ UNCONSTRAINED SPIN OPTIMIZATION ################
     #################################################################    
+
+    def get_cost_func(self, r_vec: np.array):
+        """ Define the unconstrained spin cost function
+        """
+        r_part = np.sum(self.NC_op.r_indices * r_vec, axis=1)
+        r_part[~np.any(self.NC_op.r_indices, axis=1)] = 1  # set all zero terms to 1 (aka multiply by value of 1)
+        
+        # setup spin variables
+        fixed_indices = np.where(self.fixed_ev_mask)[0] # bool to indices
+        fixed_assignments = dict(zip(fixed_indices, self.fixed_eigvals))
+        q_vec_SPIN={}
+        for ind in range(self.NC_op.symmetry_generators.n_terms):
+            if ind in fixed_assignments.keys():
+                q_vec_SPIN[ind] = fixed_assignments[ind]
+            else:
+                q_vec_SPIN[ind] = qv.spin_var('x%d' % ind)
+
+        COST = 0
+        for P_index, term in enumerate(self.NC_op.G_indices):
+            non_zero_inds = term.nonzero()[0]
+            # collect all the spin terms
+            G_term = 1
+            for i in non_zero_inds:
+                G_term *= q_vec_SPIN[i]
+
+            # cost function
+            COST += (
+                G_term * 
+                self.NC_op.coeff_vec[P_index].real * 
+                self.NC_op.pauli_mult_signs[P_index] * 
+                r_part[P_index].real
+            )
+
+        return COST
+
     
     def _energy_xUSO(self, r_vec: np.array) -> Tuple[float, np.array, np.array]:
         """
@@ -543,57 +579,37 @@ class NoncontextualSolver:
         assert self.x in ['P', 'Q']
         assert self.method in ['brute_force', 'annealing']
         
-        r_part = np.sum(self.NC_op.r_indices * r_vec, axis=1)
-        r_part[~np.any(self.NC_op.r_indices, axis=1)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
+        COST = self.get_cost_func(r_vec=r_vec)
         
-        # setup spin variables
-        fixed_indices = np.where(self.fixed_ev_mask)[0] # bool to indices
-        fixed_assignments = dict(zip(fixed_indices, self.fixed_eigvals))
-        q_vec_SPIN={}
-        for ind in range(self.NC_op.symmetry_generators.n_terms):
-            if ind in fixed_assignments.keys():
-                q_vec_SPIN[ind] = fixed_assignments[ind]
-            else:
-                q_vec_SPIN[ind] = qv.spin_var('x%d' % ind)
-
-        COST = 0
-        for P_index, term in enumerate(self.NC_op.G_indices):
-            non_zero_inds = term.nonzero()[0]
-            # collect all the spin terms
-            G_term = 1
-            for i in non_zero_inds:
-                G_term *= q_vec_SPIN[i]
-
-            # cost function
-            COST += G_term * self.NC_op.coeff_vec[P_index].real * self.NC_op.pauli_mult_signs[P_index] * r_part[P_index].real
-
         if np.all(self.fixed_ev_mask):
             # if no degrees of freedom over nu vector, COST is a number
-            self._nu = self.fixed_eigvals
-            return COST, self.fixed_eigvals, r_vec
-
-        if self.x =='P':
-            spin_problem = COST.to_puso()
+            nu_vec = self.fixed_eigvals
+            energy = COST 
         else:
-            spin_problem = COST.to_quso()
+            if self.x =='P':
+                spin_problem = COST.to_puso()
+            else:
+                spin_problem = COST.to_quso()
 
-        if self.method=='brute_force':
-            sol = spin_problem.solve_bruteforce()
-        elif self.method == 'annealing':
-            if self.x == 'P':
-                puso_res = qv.sim.anneal_puso(spin_problem, num_anneals=self.num_anneals)
-            elif self.x == 'Q':
-                puso_res= qv.sim.anneal_quso(spin_problem, num_anneals=self.num_anneals)
-                assert COST.is_solution_valid(puso_res.best.state) is True
-            sol = puso_res.best.state
+            if self.method=='brute_force':
+                sol = spin_problem.solve_bruteforce()
+            elif self.method == 'annealing':
+                if self.x == 'P':
+                    puso_res = qv.sim.anneal_puso(spin_problem, num_anneals=self.num_anneals)
+                elif self.x == 'Q':
+                    puso_res= qv.sim.anneal_quso(spin_problem, num_anneals=self.num_anneals)
+                    assert COST.is_solution_valid(puso_res.best.state) is True
+                sol = puso_res.best.state
 
-        solution = COST.convert_solution(sol)
-        energy = COST.value(solution)
-        nu_vec = np.ones(self.NC_op.symmetry_generators.n_terms, dtype=int)
-        nu_vec[self.fixed_ev_mask] = self.fixed_eigvals
-        nu_vec[~self.fixed_ev_mask] = np.array(list(solution.values()))
+            solution = COST.convert_solution(sol)
+            energy   = COST.value(solution)
+
+            nu_vec = np.ones(self.NC_op.symmetry_generators.n_terms, dtype=int)
+            nu_vec[self.fixed_ev_mask] = self.fixed_eigvals
+            # must ensure the binary variables are correctly ordered in the solution:
+            nu_vec[~self.fixed_ev_mask] = np.array([solution[f'x{i}'] for i in range(COST.num_binary_variables)])
+        
         self._nu = nu_vec # so nu accessible during the _convex_then_xUSO optimization 
-
         if self.reoptimize_r_vec:
             opt_energy, opt_r_vec = self.NC_op._convex_problem(nu_vec)
             return opt_energy, nu_vec, opt_r_vec
