@@ -204,8 +204,9 @@ class NoncontextualOp(PauliwordOp):
         """ Reconstruct the noncontextual operator in each independent basis GuCi - one for every clique.
         This mitigates against dependency between the symmetry generators G and the clique representatives Ci
         """
-        noncon_generators = IndependentOp(
-            np.vstack([self.symmetry_generators.symp_matrix, self.clique_operator.symp_matrix])
+        noncon_generators = PauliwordOp(
+            np.vstack([self.symmetry_generators.symp_matrix, self.clique_operator.symp_matrix]),
+            np.ones(self.symmetry_generators.n_terms + self.n_cliques)
         )
         # Cannot simultaneously know eigenvalues of cliques so we peform a generator reconstruction
         # that respects the jordan product A*B = {A, B}/2, i.e. anticommuting elements are zeroed out
