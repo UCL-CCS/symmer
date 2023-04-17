@@ -1,6 +1,6 @@
 from functools import reduce
 from typing import Dict, List
-from symmer.operators import PauliwordOp
+from symmer.operators import PauliwordOp, QuantumState
 from symmer.evolution.gate_library import *
 from qiskit.circuit import QuantumCircuit, ParameterVector
 
@@ -89,7 +89,7 @@ def PauliwordOp_to_instructions(PwordOp) -> Dict[int, Dict[str, List[int]]]:
 
 def PauliwordOp_to_QuantumCircuit(
     PwordOp: PauliwordOp, 
-    ref_state: np.array = None,
+    ref_state: np.array  = None,
     basis_change_indices: Dict[str, List[int]] = {'X_indices':[],'Y_indices':[]},
     trotter_number: int = 1, 
     bind_params: bool = True,
@@ -102,6 +102,10 @@ def PauliwordOp_to_QuantumCircuit(
 
     basis_change_indices in form [X_indices, Y_indices]
     """
+    if isinstance(ref_state, QuantumState):
+        assert ref_state.n_terms == 1
+        ref_state = ref_state.state_matrix[0]
+
     def qiskit_ordering(indices):
         """ we index from left to right - in Qiskit this ordering is reversed
         """
@@ -111,44 +115,46 @@ def PauliwordOp_to_QuantumCircuit(
     for i in qiskit_ordering(np.where(ref_state==1)[0]):
         qc.x(i)
 
-    def CNOT_cascade(cascade_indices, reverse=False):
-        index_pairs = list(zip(cascade_indices[:-1], cascade_indices[1:]))
-        if reverse:
-            index_pairs = index_pairs[::-1]
-        for source, target in index_pairs:
-            qc.cx(source, target)
+    if np.any(PwordOp.symp_matrix):
 
-    def circuit_from_step(angle, H_indices, S_indices, CNOT_indices, RZ_index):
-        # to Pauli X basis
-        for i in S_indices:
-            qc.sdg(i)
-        # to Pauli Z basis
-        for i in H_indices:
-            qc.h(i)
-        # compute parity
-        CNOT_cascade(CNOT_indices)
-        qc.rz(-2*angle, RZ_index)
-        CNOT_cascade(CNOT_indices, reverse=True)
-        for i in H_indices:
-            qc.h(i)
-        for i in S_indices:
-            qc.s(i)
+        def CNOT_cascade(cascade_indices, reverse=False):
+            index_pairs = list(zip(cascade_indices[:-1], cascade_indices[1:]))
+            if reverse:
+                index_pairs = index_pairs[::-1]
+            for source, target in index_pairs:
+                qc.cx(source, target)
 
-    if bind_params:
-        angles = PwordOp.coeff_vec.real/trotter_number
-    else:
-        angles = np.array(ParameterVector(parameter_label, PwordOp.n_terms))/trotter_number
+        def circuit_from_step(angle, H_indices, S_indices, CNOT_indices, RZ_index):
+            # to Pauli X basis
+            for i in S_indices:
+                qc.sdg(i)
+            # to Pauli Z basis
+            for i in H_indices:
+                qc.h(i)
+            # compute parity
+            CNOT_cascade(CNOT_indices)
+            qc.rz(-2*angle, RZ_index)
+            CNOT_cascade(CNOT_indices, reverse=True)
+            for i in H_indices:
+                qc.h(i)
+            for i in S_indices:
+                qc.s(i)
 
-    instructions = PauliwordOp_to_instructions(PwordOp)
-    assert(len(angles)==len(instructions)), 'Number of parameters does not match the circuit instructions'
-    for trot_step in range(trotter_number):
-        for step, gate_indices in instructions.items():
-            qiskit_gate_indices = [qiskit_ordering(indices) for indices in gate_indices.values()]
+        if bind_params:
+            angles = PwordOp.coeff_vec.real/trotter_number
+        else:
+            angles = np.array(ParameterVector(parameter_label, PwordOp.n_terms))/trotter_number
 
-            if include_barriers:
-                qc.barrier()
+        instructions = PauliwordOp_to_instructions(PwordOp)
+        assert(len(angles)==len(instructions)), 'Number of parameters does not match the circuit instructions'
+        for trot_step in range(trotter_number):
+            for step, gate_indices in instructions.items():
+                qiskit_gate_indices = [qiskit_ordering(indices) for indices in gate_indices.values()]
 
-            circuit_from_step(angles[step], *qiskit_gate_indices)
+                if include_barriers:
+                    qc.barrier()
+
+                circuit_from_step(angles[step], *qiskit_gate_indices)
 
     if include_barriers:
         qc.barrier()

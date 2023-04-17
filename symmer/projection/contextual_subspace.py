@@ -251,7 +251,7 @@ class ContextualSubspace(S3_projection):
             valid_terms = valid_terms[anticom_with_existing_clique_reps_mask]
         
         if len(clique_reps)==n_cliques:
-            return sum(clique_reps)
+            return sum(clique_reps, PauliwordOp.empty(self.operator.n_qubits))
         elif valid_terms.n_terms == 0:
             raise RuntimeError(f'Cannot identify {n_cliques} cliques, try lowering n_cliques.')
         else:
