@@ -879,7 +879,7 @@ class PauliwordOp:
 
     def clique_cover(self, 
             edge_relation = 'C', 
-            strategy='independent_set',
+            strategy='largest_first',
             colouring_interchange=False
         ) -> Dict[int, "PauliwordOp"]:
         """ Perform a graph colouring to identify a clique partition
