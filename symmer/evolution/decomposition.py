@@ -115,7 +115,9 @@ def PauliwordOp_to_QuantumCircuit(
     for i in qiskit_ordering(np.where(ref_state==1)[0]):
         qc.x(i)
 
-    if np.any(PwordOp.symp_matrix):
+    non_identity = PwordOp[np.any(PwordOp.symp_matrix, axis=1)]
+
+    if non_identity.n_terms > 0:
 
         def CNOT_cascade(cascade_indices, reverse=False):
             index_pairs = list(zip(cascade_indices[:-1], cascade_indices[1:]))
@@ -141,11 +143,11 @@ def PauliwordOp_to_QuantumCircuit(
                 qc.s(i)
 
         if bind_params:
-            angles = PwordOp.coeff_vec.real/trotter_number
+            angles = non_identity.coeff_vec.real/trotter_number
         else:
-            angles = np.array(ParameterVector(parameter_label, PwordOp.n_terms))/trotter_number
+            angles = np.array(ParameterVector(parameter_label, non_identity.n_terms))/trotter_number
 
-        instructions = PauliwordOp_to_instructions(PwordOp)
+        instructions = PauliwordOp_to_instructions(non_identity)
         assert(len(angles)==len(instructions)), 'Number of parameters does not match the circuit instructions'
         for trot_step in range(trotter_number):
             for step, gate_indices in instructions.items():
