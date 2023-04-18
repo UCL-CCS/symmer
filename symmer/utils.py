@@ -4,6 +4,9 @@ import scipy as sp
 from typing import List, Tuple, Union
 from functools import reduce
 import py3Dmol
+from scipy.sparse import csr_matrix
+from scipy.sparse import kron as sparse_kron
+import multiprocessing as mp
 
 def exact_gs_energy(
         sparse_matrix, 
@@ -193,3 +196,82 @@ def Draw_molecule(
 
     view.zoomTo()
     return view
+
+
+def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
+    """
+    In order to build the sparse matrix (e.g. above 18 qubits), this function goes through each pauli term
+    divides into two equally sized tensor products finds the sparse matrix of those and then does a sparse
+    kron product to get the large matrix.
+
+    TODO:  Could also add how many junks to split problem into (e.g. three/four/... tensor products).
+
+    Args:
+        P_op (PauliwordOp): Pauli operator to convert into sparse matrix
+    Returns:
+        mat (csr_matrix): sparse matrix of P_op
+    """
+    nq = P_op.n_qubits
+    if nq<16:
+        mat = P_op.to_sparse_matrix
+    else:
+        n_cpus = mp.cpu_count()
+        P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_cpus, P_op.n_terms))).astype(set).astype(int)
+
+        # miss zero index out (as emtpy list)
+        P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i+1]] for ind_i, _ in enumerate(P_op_chunks_inds[1:])]
+        with mp.Pool(n_cpus) as pool:
+            tracker = pool.map(_get_sparse_matrix_large_pauliwordop, P_op_chunks)
+
+        mat = reduce(lambda x, y: x + y, tracker)
+
+    return mat
+
+
+def _get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
+    """
+    """
+    nq = P_op.n_qubits
+    mat = PauliwordOp.empty(nq).to_sparse_matrix
+    for op in P_op:
+        left_tensor = np.hstack((op.X_block[:, :nq // 2],
+                                 op.Z_block[:, :nq // 2]))
+        left_coeff = op.coeff_vec
+
+        right_tensor = np.hstack((op.X_block[:, nq // 2:],
+                                  op.Z_block[:, nq // 2:]))
+        right_coeff = np.array([1])
+
+        temp = sparse_kron(PauliwordOp(left_tensor, left_coeff).to_sparse_matrix,
+                           PauliwordOp(right_tensor, right_coeff).to_sparse_matrix,
+                           format='csr')  # setting format makes this faster!
+
+        mat += temp
+        del temp
+
+    return mat
+
+
+def matrix_allclose(A: Union[csr_matrix, np.array], B:Union[csr_matrix, np.array], tol:int = 1e-15) -> bool:
+    """
+    check matrix A and B have the same entries up to a given tolerance
+    Args:
+        A : matrix A
+        B:  matrix B
+        tol: allowed difference
+
+    Returns:
+        bool
+
+    """
+    if isinstance(A, csr_matrix) and isinstance(B, csr_matrix):
+        max_diff = np.abs(A-B).max()
+        return max_diff <= tol
+    else:
+        if isinstance(A, csr_matrix):
+            A = A.toarray()
+
+        if isinstance(B, csr_matrix):
+            B = B.toarray()
+
+        return np.allclose(A, B, atol=tol)
