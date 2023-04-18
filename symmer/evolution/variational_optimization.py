@@ -1,0 +1,293 @@
+from cached_property import cached_property
+from qiskit.opflow import CircuitStateFn
+from qiskit import QuantumCircuit
+from symmer import QuantumState, PauliwordOp
+from symmer.evolution import PauliwordOp_to_QuantumCircuit
+from scipy.optimize import minimize
+from copy import deepcopy
+import numpy as np
+import multiprocessing as mp
+from typing import *
+
+class VQE_Driver:
+    
+    # expectation value method one of the following choices:
+    # symbolic_direct: uses symmer to compute <psi|H|psi> directly using the QuantumState class
+    # symbolic_projector: computes expval by projecting onto +-1 eigenspaces of observable terms
+    # observable_rotation: implements the circuit as rotations applied to the observable
+    # sparse_array: direct calcaultion by converting observable/state to sparse array
+    # dense_array: direct calcaultion by converting observable/state to dense array
+    expectation_eval = 'symbolic_direct'
+    # prints out useful information during computation:
+    verbose = True
+       
+    def __init__(self,
+        observable: PauliwordOp,
+        ansatz_circuit: QuantumCircuit = None,
+        excitation_ops: PauliwordOp = None,
+        ref_state: QuantumState = None
+        ) -> None:
+        self.observable = observable
+        self.ref_state = ref_state
+        # observables must have real coefficients over the Pauli group:
+        assert np.all(self.observable.coeff_vec.imag == 0), 'Observable not Hermitian'
+        
+        if excitation_ops is not None:
+            self.prepare_for_evolution(excitation_ops)
+        else:
+            self.circuit = ansatz_circuit
+
+    def prepare_for_evolution(self, excitation_ops: PauliwordOp) -> None:
+        """ Save the excitation generators and construct corresponding ansatz circuit
+        """
+        self.excitation_generators = PauliwordOp(
+            excitation_ops.symp_matrix, np.ones(excitation_ops.n_terms)
+        )
+        self.circuit = PauliwordOp_to_QuantumCircuit(
+                PwordOp=self.excitation_generators, ref_state=self.ref_state, bind_params=False
+        )
+
+    def get_state(self, 
+            evolution_obj: Union[QuantumCircuit, PauliwordOp], 
+            x: np.array
+        ) -> Union[np.array, QuantumState, List[Tuple[PauliwordOp, float]]]:
+        """ Given a quantum circuit or excitation generating set, return the relevant state-type object:
+        - Array of the QuantumCircuit (for sparse/dense array methods)
+        - QuantumState representation of the QuantumCircuit (for symbolic methods)
+        - Rotations of the form [(generator, angle)] for the observable_rotation expectation_eval method
+        
+        """
+        if self.expectation_eval == 'observable_rotation':
+            return list(zip(evolution_obj, -2*x))
+        else:
+            state = CircuitStateFn(evolution_obj.bind_parameters(x))
+            if self.expectation_eval == 'dense_array':
+                return state.to_matrix().reshape([-1,1])
+            elif self.expectation_eval == 'sparse_array':
+                return state.to_spmatrix().reshape([-1,1])
+            elif self.expectation_eval.find('symbolic') != -1:
+                return QuantumState.from_array(state.to_matrix().reshape([-1,1]))
+        
+    def _f(self, 
+           observable: PauliwordOp, 
+           state: Union[np.array, QuantumState, List[Tuple[PauliwordOp, float]]]
+        ) -> float:
+        """ Given an observable and state in the relevant form for the
+        expectation value method, calculate the expectation value and return
+        """
+        if self.expectation_eval == 'dense_array':
+            return (state.conjugate().T @ observable.to_sparse_matrix.toarray() @ state)[0,0].real
+        elif self.expectation_eval == 'sparse_array':
+            return (state.conjugate().T @ observable.to_sparse_matrix @ state)[0,0].real
+        elif self.expectation_eval == 'symbolic_projector':
+            return observable.expval(state).real
+        elif self.expectation_eval == 'symbolic_direct':
+            return (state.dagger * observable * state).real   
+        elif self.expectation_eval == 'observable_rotation':
+            return (self.ref_state.dagger * observable.perform_rotations(state) * self.ref_state).real
+        
+    def f(self, x: np.array) -> float:
+        """ Given a parameter vector, bind to the circuit and retrieve expectation value
+        """
+        if self.expectation_eval == 'observable_rotation':
+            state = self.get_state(self.excitation_generators, x)
+        else:
+            state = self.get_state(self.circuit, x)
+        return self._f(self.observable, state)
+        
+    def partial_derivative(self, x: np.array, param_index: int) -> float:
+        """ Get the partial derivative with respect to an ansatz parameter
+        by the parameter shift rule.
+        """
+        x_upper = x.copy(); x_upper[param_index]+=np.pi/4
+        x_lower = x.copy(); x_lower[param_index]-=np.pi/4
+        return self.f(x_upper) - self.f(x_lower)
+    
+    def gradient(self, x: np.array) -> np.array:
+        """ Get the ansatz parameter gradient, i.e. the vector of partial derivatives.
+        """
+        if self.expectation_eval.find('projector') == -1:
+            with mp.Pool(mp.cpu_count()) as pool:
+                grad_vec = pool.starmap(
+                    self.partial_derivative, 
+                    [(x, i) for i in range(self.circuit.num_parameters)]
+                )
+        else:
+            grad_vec = [self.partial_derivative(x, i) for i in range(self.circuit.num_parameters)]
+        
+        return np.asarray(grad_vec)
+    
+    def run(self, x0:np.array=None, **kwargs):
+        """ Run the VQE routine
+        """
+        if x0 is None:
+            x0 = np.random.random(self.circuit.num_parameters)
+        
+        vqe_history = {'param':{}, 'energy':{}, 'gradient':{}}
+
+        # set up a counter to keep track of optimization steps this is important 
+        # as some optimizers do not compute gradients at each optimization step and 
+        # therefore must be labeled to match with the correct iteration later on
+        global counter
+        counter = -1
+        def get_counter(increment=True):
+            global counter
+            if increment:
+                counter += 1
+            return counter
+
+        # wrap VQE_Driver.f() for the optimizer and store the interim values
+        def fun(x):    
+            counter = get_counter(increment=True)
+            energy  = self.f(x)
+            vqe_history['param'][counter] = x
+            vqe_history['energy'][counter] = energy
+            if self.verbose:
+                print(f'Optimization step {counter: <2}:\n\t Energy = {energy}')
+            return energy
+
+        # wrap VQE_Driver.gradient() for the optimizer and store the interim values
+        def jac(x):
+            counter = get_counter(increment=False)
+            grad    = self.gradient(x)
+            vqe_history['gradient'][counter] = grad
+            if self.verbose:
+                print(f'\t    |∆| = {np.linalg.norm(grad)}')
+            return grad
+        
+        if self.verbose:
+            print('VQE simulation commencing...\n')
+        opt_out = minimize(
+            fun=fun, jac=jac, x0=x0, **kwargs
+        )
+        return opt_out, vqe_history
+
+class ADAPT_VQE(VQE_Driver):
+    
+    # method by which to calculate the operator pool derivatives, either
+    # commutators: compute the commutator of the observable with each pool element
+    # param_shift: use the parameter shift rule, requiring two expectation values per derivative
+    derivative_eval = 'commutators'
+    
+    def __init__(self,
+        observable: PauliwordOp,
+        excitation_pool: PauliwordOp = None,
+        ref_state: QuantumState = None
+        ) -> None:
+        super().__init__(
+            observable=observable,
+            excitation_ops=PauliwordOp.empty(observable.n_qubits),
+            ref_state=ref_state
+        )
+        self.excitation_pool = excitation_pool
+        self.excitation_pool.coeff_vec[:] = 1
+        self.adapt_operator = PauliwordOp.empty(observable.n_qubits)
+        self.opt_parameters = []
+        self.current_state = None
+      
+    @cached_property
+    def commutators(self) -> List[PauliwordOp]:
+        """ List of commutators [H, P] where P is some operator pool element
+        """
+        with mp.Pool(mp.cpu_count()) as pool:
+            commutators = pool.map(self.observable.commutator, self.excitation_pool)
+        return list(map(lambda x:x*1j, commutators))
+        
+    def _derivative_from_commutators(self, index: int) -> float:
+        """ Calculate derivative using the commutator method
+        """
+        assert self.current_state is not None
+        return self._f(observable=self.commutators[index], state=self.current_state) 
+    
+    def _derivative_from_param_shift(self, index):
+        """ Calculate the derivative using the parameter shift rule
+        """
+        adapt_op_temp = self.adapt_operator.append(self.excitation_pool[index])
+        circuit_temp = PauliwordOp_to_QuantumCircuit(
+            PwordOp=adapt_op_temp, ref_state=self.ref_state, bind_params=False)
+        upper_state = self.get_state(circuit_temp, np.append(self.opt_parameters, +np.pi/4))
+        lower_state = self.get_state(circuit_temp, np.append(self.opt_parameters, -np.pi/4))
+        return self._f(self.observable,upper_state) - self._f(self.observable,lower_state)
+
+    def pool_gradient(self):
+        """ Get the operator pool gradient by calculating the derivative with respect to
+        each element of the pool. This is parallelized for all but the symbolic_projector
+        expectation value calculation method as that is already multiprocessed and therefore
+        would result in nested daemonic processes.
+        """
+        if self.derivative_eval == 'commutators':
+            self.commutators # to ensure this has been cached, else nested daemonic process occurs            
+            if self.expectation_eval == 'observable_rotation':
+                self.current_state = self.get_state(self.adapt_operator, self.opt_parameters)
+            else:
+                circuit_temp = PauliwordOp_to_QuantumCircuit(
+                    PwordOp=self.adapt_operator, ref_state=self.ref_state, bind_params=False)
+                self.current_state = self.get_state(circuit_temp, self.opt_parameters)
+            if self.expectation_eval in ['sparse_array', 'symbolic_direct', 'observable_rotation']:
+                # the commutator method may be parallelized since the state is constant
+                with mp.Pool(mp.cpu_count()) as pool:
+                    gradient = pool.map(self._derivative_from_commutators, range(self.excitation_pool.n_terms))
+            else:
+                # ... unless using symbolic_projector since this is multiprocessed
+                gradient = list(map(self._derivative_from_commutators, range(self.excitation_pool.n_terms)))
+        
+        elif self.derivative_eval == 'param_shift':
+            # not parallelizable due the CircuitStateFn already using multiprocessing! 
+            gradient = list(map(self._derivative_from_param_shift, range(self.excitation_pool.n_terms)))
+        
+        else:
+            raise ValueError('Unrecognised derivative_eval method')
+        
+        return np.asarray(gradient)
+        
+    def optimize(self, max_cycles:int=10, gtol:float=1e-3, atol:float=1e-10):
+        """ Perform the ADAPT-VQE optimization
+        gtol: gradient throeshold below which optimization will terminate
+        max_cycles: maximum number of ADAPT cycles to perform
+        atol: if the difference between successive expectation values is below this threshold, terminate
+        """
+        interim_data = {'history':[]}
+        adapt_cycle=1
+        gmax=1
+        anew=1
+        aold=0
+        
+        while gmax>gtol and adapt_cycle<=max_cycles and abs(anew-aold)>atol:
+            # save the previous gmax to compare for the gdiff check
+            aold = deepcopy(anew)
+            # calculate gradient across the pool and select term with the largest derivative
+            pool_grad = self.pool_gradient()
+            best_index = int(np.argsort(pool_grad)[-1])
+            gmax = pool_grad[best_index]    
+            new_excitation = self.excitation_pool[best_index]
+            # append this term to the adapt_operator that stores our ansatz as it expands
+            if ~np.any(self.adapt_operator.symp_matrix):
+                self.adapt_operator += new_excitation
+            else:
+                self.adapt_operator = self.adapt_operator.append(new_excitation)
+            
+            if self.verbose:
+                print('-'*39)
+                print(f'ADAPT cycle {adapt_cycle}')
+                print(f'Largest pool derivative ∂P∂θ = {gmax: .5f}')
+                print('Selected excitation generators:')
+                print(self.adapt_operator)
+                print('-'*39)
+            
+            # having selected a new term to append to the ansatz, reoptimize with VQE
+            self.prepare_for_evolution(self.adapt_operator)
+            opt_out, vqe_hist = self.run(
+                x0=np.append(self.opt_parameters, 0), method='BFGS'
+            )
+            interim_data[adapt_cycle] = {
+                'output':opt_out, 'history':vqe_hist, 
+                'gmax':gmax, 'excitation': new_excitation
+            }
+            anew = opt_out['fun']
+            interim_data['history'].append(anew)
+            if self.verbose:
+                print(F'\nEnergy at ADAPT cycle {adapt_cycle}: {anew: .5f}\n')
+            self.opt_parameters = opt_out['x']
+            adapt_cycle+=1
+
+        return opt_out, self.adapt_operator, interim_data
