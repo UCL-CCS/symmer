@@ -261,11 +261,16 @@ class ADAPT_VQE(VQE_Driver):
             else:
                 self.adapt_operator = self.adapt_operator.append(excitation)
         
-    def optimize(self, max_cycles:int=10, gtol:float=1e-3, atol:float=1e-10):
+    def optimize(self, 
+            max_cycles:int=10, gtol:float=1e-3, atol:float=1e-10, 
+            target:float=0, target_error:float=1e-3
+        ):
         """ Perform the ADAPT-VQE optimization
         gtol: gradient throeshold below which optimization will terminate
-        max_cycles: maximum number of ADAPT cycles to perform
         atol: if the difference between successive expectation values is below this threshold, terminate
+        max_cycles: maximum number of ADAPT cycles to perform
+        target: if a target energy is known, this may be specified here
+        target_error: the absoluate error threshold with respect to the target energy 
         """
         interim_data = {'history':[]}
         adapt_cycle=1
@@ -273,7 +278,10 @@ class ADAPT_VQE(VQE_Driver):
         anew=1
         aold=0
         
-        while gmax>gtol and adapt_cycle<=max_cycles and abs(anew-aold)>atol:
+        while (
+                gmax>gtol and adapt_cycle<=max_cycles and 
+                abs(anew-aold)>atol and abs(anew-target)>target_error
+            ):
             # save the previous gmax to compare for the gdiff check
             aold = deepcopy(anew)
             # calculate gradient across the pool and select term with the largest derivative
