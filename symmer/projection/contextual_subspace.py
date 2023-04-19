@@ -1,9 +1,10 @@
 import numpy as np
-from symmer.operators import PauliwordOp, IndependentOp, NoncontextualOp
+from symmer.operators import PauliwordOp, IndependentOp, NoncontextualOp, QuantumState
 from symmer.projection.utils import (
     update_eigenvalues, StabilizerIdentification, ObservableBiasing, stabilizer_walk
 )
 from symmer.projection import S3_projection
+from symmer.evolution import trotter
 from typing import List, Union, Optional
 
 class ContextualSubspace(S3_projection):
@@ -30,14 +31,17 @@ class ContextualSubspace(S3_projection):
             num_anneals:Optional[int] = 1000,
             discrete_optimization_order = 'first',
             unitary_partitioning_method: str = 'LCU',
-            reference_state: np.array = None,
+            reference_state: Union[np.array, QuantumState] = None,
             noncontextual_operator: NoncontextualOp = None,
         ):
         """
         """
         # noncontextual startegy will have the form x_y, where x is the actual strategy
         # and y is some supplementary method indicating a sorting key such as magnitude
-        self.ref_state = reference_state
+        if reference_state is None or isinstance(reference_state, QuantumState):
+            self.ref_state = reference_state
+        else:
+            self.ref_state = QuantumState(reference_state)            
         extract_noncon_strat = noncontextual_strategy.split('_')
         self.nc_strategy = extract_noncon_strat[0]
         self.noncontextual_solver = noncontextual_solver
@@ -355,3 +359,22 @@ class ContextualSubspace(S3_projection):
         )
         cs_operator = self.project_onto_subspace()
         return cs_operator
+    
+    def project_state_onto_subspace(self, 
+            state_to_project: QuantumState = None
+        ) -> QuantumState:
+        """ Project a QuantumState into the contextual subspace
+        """
+        # can provide an auxiliary state to project, although not in general scalable
+        if state_to_project is None:
+            assert self.ref_state is not None, 'Must provide a state to project into the contextual subspace'
+            state_to_project = self.ref_state
+
+        # behaviour is different whether using the LCU or seq_rot UP methods
+        if self.unitary_partitioning_method == 'LCU':
+            rotation = self.unitary_partitioning_rotations
+        elif self.unitary_partitioning_method == 'seq_rot':
+            rotation_generator = sum([R*angle*.5*1j for R,angle in self.unitary_partitioning_rotations])
+            rotation = trotter(rotation_generator)
+
+        return self.project_state(rotation * state_to_project)
