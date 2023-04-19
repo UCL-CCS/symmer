@@ -123,7 +123,7 @@ class VQE_Driver:
         if x0 is None:
             x0 = np.random.random(self.circuit.num_parameters)
         
-        vqe_history = {'param':{}, 'energy':{}, 'gradient':{}}
+        vqe_history = {'params':{}, 'energy':{}, 'gradient':{}}
 
         # set up a counter to keep track of optimization steps this is important 
         # as some optimizers do not compute gradients at each optimization step and 
@@ -140,7 +140,7 @@ class VQE_Driver:
         def fun(x):    
             counter = get_counter(increment=True)
             energy  = self.f(x)
-            vqe_history['param'][counter] = x
+            vqe_history['params'][counter] = x
             vqe_history['energy'][counter] = energy
             if self.verbose:
                 print(f'Optimization step {counter: <2}:\n\t Energy = {energy}')
