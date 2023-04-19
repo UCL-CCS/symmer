@@ -2,6 +2,7 @@ from cached_property import cached_property
 from qiskit.opflow import CircuitStateFn
 from qiskit import QuantumCircuit
 from symmer import QuantumState, PauliwordOp
+from symmer.operators.utils import symplectic_to_string
 from symmer.evolution import PauliwordOp_to_QuantumCircuit
 from scipy.optimize import minimize
 from copy import deepcopy
@@ -183,15 +184,16 @@ class ADAPT_VQE(VQE_Driver):
         ref_state: QuantumState = None
         ) -> None:
         super().__init__(
-            observable=observable,
-            excitation_ops=PauliwordOp.empty(observable.n_qubits),
-            ref_state=ref_state
+            observable     = observable,
+            excitation_ops = PauliwordOp.empty(observable.n_qubits),
+            ref_state      = ref_state
         )
-        self.excitation_pool = excitation_pool
-        self.excitation_pool.coeff_vec[:] = 1
+        self.excitation_pool = PauliwordOp(
+            excitation_pool.symp_matrix, np.ones(excitation_pool.n_terms)
+        )
         self.adapt_operator = PauliwordOp.empty(observable.n_qubits)
         self.opt_parameters = []
-        self.current_state = None
+        self.current_state  = None
       
     @cached_property
     def commutators(self) -> List[PauliwordOp]:
@@ -248,13 +250,14 @@ class ADAPT_VQE(VQE_Driver):
         
         return np.asarray(gradient)
     
-    def append_to_adapt_operator(self, new_excitation):
+    def append_to_adapt_operator(self, excitations_to_append: List[PauliwordOp]):
         """ Append the input term(s) to the expanding adapt_operator
         """
-        if ~np.any(self.adapt_operator.symp_matrix):
-            self.adapt_operator += new_excitation
-        else:
-            self.adapt_operator = self.adapt_operator.append(new_excitation)
+        for excitation in excitations_to_append:
+            if ~np.any(self.adapt_operator.symp_matrix):
+                self.adapt_operator += excitation
+            else:
+                self.adapt_operator = self.adapt_operator.append(excitation)
         
     def optimize(self, max_cycles:int=10, gtol:float=1e-3, atol:float=1e-10):
         """ Perform the ADAPT-VQE optimization
@@ -272,35 +275,37 @@ class ADAPT_VQE(VQE_Driver):
             # save the previous gmax to compare for the gdiff check
             aold = deepcopy(anew)
             # calculate gradient across the pool and select term with the largest derivative
-            pool_grad = self.pool_gradient()
+            pool_grad = abs(self.pool_gradient())
             grad_rank = list(map(int, np.argsort(pool_grad)[::-1]))
             gmax = pool_grad[grad_rank[0]]
 
             # TETRIS-ADAPT-VQE
             if self.TETRIS:
-                n_new_terms = 0
+                new_excitation_list = []
                 support_mask = np.zeros(self.observable.n_qubits, dtype=bool)
                 for i in grad_rank:
                     new_excitation = self.excitation_pool[i]
                     support_exists = (new_excitation.X_block | new_excitation.Z_block) & support_mask
                     if ~np.any(support_exists):
-                        # append this term to the adapt_operator that stores our ansatz as it expands
-                        self.append_to_adapt_operator(new_excitation)
+                        new_excitation_list.append(new_excitation)
                         support_mask = support_mask | (new_excitation.X_block | new_excitation.Z_block)
-                        n_new_terms += 1                  
+                    if np.all(support_mask) or pool_grad[i] < gtol:
+                        break
             else:
-                n_new_terms = 1
-                new_excitation = self.excitation_pool[grad_rank[0]]
-                # append this term to the adapt_operator that stores our ansatz as it expands
-                self.append_to_adapt_operator(new_excitation)
-            
+                new_excitation_list = [self.excitation_pool[grad_rank[0]]]
+                
+            # append new term(s) to the adapt_operator that stores our ansatz as it expands
+            n_new_terms = len(new_excitation_list)
+            self.append_to_adapt_operator(new_excitation_list)
+                        
             if self.verbose:
                 print('-'*39)
-                print(f'ADAPT cycle {adapt_cycle}')
-                print(f'Largest pool derivative ∂P∂θ = {gmax: .5f}')
-                print('Selected excitation generators:')
-                print(self.adapt_operator)
-                print('-'*39)
+                print(f'ADAPT cycle {adapt_cycle}\n')
+                print(f'Largest pool derivative ∂P∂θ = {gmax: .5f}\n')
+                print('Selected excitation generator(s):\n')
+                for op in new_excitation_list:
+                    print(f'\t{symplectic_to_string(op.symp_matrix[0])}')
+                print('\n', '-'*39)
             
             # having selected a new term to append to the ansatz, reoptimize with VQE
             self.prepare_for_evolution(self.adapt_operator)
