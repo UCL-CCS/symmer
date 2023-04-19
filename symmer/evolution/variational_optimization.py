@@ -163,11 +163,18 @@ class VQE_Driver:
         return opt_out, vqe_history
 
 class ADAPT_VQE(VQE_Driver):
-    
+    """ Performs qubit-ADAPT-VQE (https://doi.org/10.1103/PRXQuantum.2.020310), a 
+    variant of ADAPT-VQE (https://doi.org/10.1038/s41467-019-10988-2) that takes 
+    its excitation pool as Pauli operators (mapped via some transformation such 
+    as Jordan-Wigner) instead of the originating fermionic operators.
+    """
     # method by which to calculate the operator pool derivatives, either
     # commutators: compute the commutator of the observable with each pool element
     # param_shift: use the parameter shift rule, requiring two expectation values per derivative
     derivative_eval = 'commutators'
+    # we have alost implemented TETRIS-ADAPT-VQE as per https://doi.org/10.48550/arXiv.2209.10562
+    # that aims to reduce circuit-depth in the ADAPT routine by adding multiple excitation terms
+    # per cycle that are supported on distinct qubit positions.
     TETRIS = False
     
     def __init__(self,
