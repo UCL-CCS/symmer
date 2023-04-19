@@ -168,6 +168,7 @@ class ADAPT_VQE(VQE_Driver):
     # commutators: compute the commutator of the observable with each pool element
     # param_shift: use the parameter shift rule, requiring two expectation values per derivative
     derivative_eval = 'commutators'
+    TETRIS = False
     
     def __init__(self,
         observable: PauliwordOp,
@@ -239,6 +240,14 @@ class ADAPT_VQE(VQE_Driver):
             raise ValueError('Unrecognised derivative_eval method')
         
         return np.asarray(gradient)
+    
+    def append_to_adapt_operator(self, new_excitation):
+        """ Append the input term(s) to the expanding adapt_operator
+        """
+        if ~np.any(self.adapt_operator.symp_matrix):
+            self.adapt_operator += new_excitation
+        else:
+            self.adapt_operator = self.adapt_operator.append(new_excitation)
         
     def optimize(self, max_cycles:int=10, gtol:float=1e-3, atol:float=1e-10):
         """ Perform the ADAPT-VQE optimization
@@ -257,14 +266,26 @@ class ADAPT_VQE(VQE_Driver):
             aold = deepcopy(anew)
             # calculate gradient across the pool and select term with the largest derivative
             pool_grad = self.pool_gradient()
-            best_index = int(np.argsort(pool_grad)[-1])
-            gmax = pool_grad[best_index]    
-            new_excitation = self.excitation_pool[best_index]
-            # append this term to the adapt_operator that stores our ansatz as it expands
-            if ~np.any(self.adapt_operator.symp_matrix):
-                self.adapt_operator += new_excitation
+            grad_rank = list(map(int, np.argsort(pool_grad)[::-1]))
+            gmax = pool_grad[grad_rank[0]]
+
+            # TETRIS-ADAPT-VQE
+            if self.TETRIS:
+                n_new_terms = 0
+                support_mask = np.zeros(self.observable.n_qubits, dtype=bool)
+                for i in grad_rank:
+                    new_excitation = self.excitation_pool[i]
+                    support_exists = (new_excitation.X_block | new_excitation.Z_block) & support_mask
+                    if ~np.any(support_exists):
+                        # append this term to the adapt_operator that stores our ansatz as it expands
+                        self.append_to_adapt_operator(new_excitation)
+                        support_mask = support_mask | (new_excitation.X_block | new_excitation.Z_block)
+                        n_new_terms += 1                  
             else:
-                self.adapt_operator = self.adapt_operator.append(new_excitation)
+                n_new_terms = 1
+                new_excitation = self.excitation_pool[grad_rank[0]]
+                # append this term to the adapt_operator that stores our ansatz as it expands
+                self.append_to_adapt_operator(new_excitation)
             
             if self.verbose:
                 print('-'*39)
@@ -277,7 +298,7 @@ class ADAPT_VQE(VQE_Driver):
             # having selected a new term to append to the ansatz, reoptimize with VQE
             self.prepare_for_evolution(self.adapt_operator)
             opt_out, vqe_hist = self.run(
-                x0=np.append(self.opt_parameters, 0), method='BFGS'
+                x0=np.append(self.opt_parameters, [0]*n_new_terms), method='BFGS'
             )
             interim_data[adapt_cycle] = {
                 'output':opt_out, 'history':vqe_hist, 
