@@ -2,7 +2,9 @@ from cached_property import cached_property
 from qiskit.opflow import CircuitStateFn
 from qiskit import QuantumCircuit
 from symmer import QuantumState, PauliwordOp
-from symmer.operators.utils import symplectic_to_string
+from symmer.operators.utils import (
+    symplectic_to_string, safe_PauliwordOp_to_dict, safe_QuantumState_to_dict
+)
 from symmer.evolution import PauliwordOp_to_QuantumCircuit
 from scipy.optimize import minimize
 from copy import deepcopy
@@ -141,7 +143,7 @@ class VQE_Driver:
         def fun(x):    
             counter = get_counter(increment=True)
             energy  = self.f(x)
-            vqe_history['params'][counter] = x
+            vqe_history['params'][counter] = tuple(x)
             vqe_history['energy'][counter] = energy
             if self.verbose:
                 print(f'Optimization step {counter: <2}:\n\t Energy = {energy}')
@@ -151,7 +153,7 @@ class VQE_Driver:
         def jac(x):
             counter = get_counter(increment=False)
             grad    = self.gradient(x)
-            vqe_history['gradient'][counter] = grad
+            vqe_history['gradient'][counter] = tuple(grad)
             if self.verbose:
                 print(f'\t    |∆| = {np.linalg.norm(grad)}')
             return grad
@@ -161,7 +163,7 @@ class VQE_Driver:
         opt_out = minimize(
             fun=fun, jac=jac, x0=x0, **kwargs
         )
-        return opt_out, vqe_history
+        return serialize_opt_data(opt_out), vqe_history
 
 class ADAPT_VQE(VQE_Driver):
     """ Performs qubit-ADAPT-VQE (https://doi.org/10.1103/PRXQuantum.2.020310), a 
@@ -313,8 +315,8 @@ class ADAPT_VQE(VQE_Driver):
                 x0=np.append(self.opt_parameters, [0]*n_new_terms), method='BFGS'
             )
             interim_data[adapt_cycle] = {
-                'output':opt_out, 'history':vqe_hist, 
-                'gmax':gmax, 'excitation': new_excitation
+                'output':opt_out, 'history':vqe_hist, 'gmax':gmax, 
+                'excitation': safe_PauliwordOp_to_dict(sum(new_excitation_list))
             }
             anew = opt_out['fun']
             interim_data['history'].append(anew)
@@ -323,4 +325,16 @@ class ADAPT_VQE(VQE_Driver):
             self.opt_parameters = opt_out['x']
             adapt_cycle+=1
 
-        return opt_out, self.adapt_operator, interim_data
+        return {
+            'result': opt_out, 
+            'interim_data': interim_data,
+            'ref_state': safe_QuantumState_to_dict(self.ref_state),
+            'adapt_operator': safe_PauliwordOp_to_dict(self.adapt_operator)
+        }
+    
+def serialize_opt_data(opt_data):
+    return {
+        'message':opt_data.message, 'success':opt_data.success, 'status':opt_data.status,
+        'fun':opt_data.fun, 'x':tuple(opt_data.x),'jac':tuple(opt_data.jac),
+        'nit':opt_data.nit, 'nfev':opt_data.nfev,'njev':opt_data.njev,
+    }
