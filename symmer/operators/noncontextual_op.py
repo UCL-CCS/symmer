@@ -212,8 +212,8 @@ class NoncontextualOp(PauliwordOp):
         # that respects the jordan product A*B = {A, B}/2, i.e. anticommuting elements are zeroed out
         jordan_recon_matrix, successful = self.jordan_generator_reconstruction(noncon_generators)
         assert(np.all(successful)), 'The generating set is not sufficient to reconstruct the noncontextual Hamiltonian'
-        self.G_indices = jordan_recon_matrix[:, :-self.n_cliques]
-        self.r_indices = jordan_recon_matrix[:, -self.n_cliques:]
+        self.G_indices = jordan_recon_matrix[:, :self.symmetry_generators.n_terms]
+        self.r_indices = jordan_recon_matrix[:, self.symmetry_generators.n_terms:]
         # individual elements of r_part commute with all of G_part - taking products over G_part with
         # a single element of r_part will therefore never produce a complex phase, but might result in
         # a sign flip that must be accounted for in the generator reconstruction:
@@ -274,7 +274,6 @@ class NoncontextualOp(PauliwordOp):
         Note most QUSO functions/methods work faster than their PUSO counterparts.
 
         """
-        
         if ref_state is not None:
             # update the symmetry generator G coefficients w.r.t. the reference state
             self.symmetry_generators.update_sector(ref_state)
@@ -288,10 +287,6 @@ class NoncontextualOp(PauliwordOp):
 
         NC_solver.num_anneals = num_anneals
         NC_solver.discrete_optimization_order = discrete_optimization_order
-
-        # if np.all(fixed_ev_mask):
-        #     nu = fixed_eigvals
-        #     self.energy, r = self._convex_problem(nu)
 
         if strategy=='brute_force':
             self.energy, nu, r = NC_solver.energy_via_brute_force()
