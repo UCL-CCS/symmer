@@ -290,10 +290,11 @@ def test_from_matrix_defined_basis_dense():
     for n_qubits in range(2,6):
         n_terms = (4**n_qubits)//2
         op_basis = PauliwordOp.random(n_qubits, n_terms)
-        PauliOp_from_matrix = PauliwordOp.from_matrix(op_basis.to_sparse_matrix.toarray(),
+        random_mat = sum(op.multiply_by_constant(np.random.uniform(0,10)) for op in op_basis).to_sparse_matrix.toarray()
+        PauliOp_from_matrix = PauliwordOp.from_matrix(random_mat,
                                                       strategy='full_basis',
                                                       operator_basis=op_basis)
-        assert np.allclose(op_basis.to_sparse_matrix.toarray(),
+        assert np.allclose(random_mat,
                            PauliOp_from_matrix.to_sparse_matrix.toarray())
 
 
@@ -386,7 +387,25 @@ def test_from_matrix_incomplete_op_basis():
                     [-1. + 0.j, 0. - 1.j, 0. + 0.j, 2. + 0.j]])
 
     with pytest.warns(UserWarning):
-        PauliOp_from_matrix = PauliwordOp.from_matrix(mat, operator_basis=op_basis)
+        PauliwordOp.from_matrix(mat, operator_basis=op_basis)
+
+
+def test_from_matrix_incomplete_op_basis_sparse():
+    """
+    Test to see if warning thrown if supplied basis is not enough.
+    Returns:
+
+    """
+    op_basis = PauliwordOp.from_dictionary({'XX': 1})
+
+    dim = 2**op_basis.n_qubits
+    mat = rand(dim, dim,
+               density=0.5,
+               format='csr',
+               dtype=complex)
+
+    with pytest.warns(UserWarning):
+        PauliwordOp.from_matrix(mat, operator_basis=op_basis)
 
 
 def test_from_matrix_to_matrix():
@@ -644,3 +663,15 @@ def test_QuantumState_overlap():
 
         assert np.isclose(random_ket_1.dagger * random_ket_2,
                           (random_ket_2.dagger * random_ket_1).conj())
+
+def test_pauliwordop_hash():
+    XI = PauliwordOp.from_dictionary({'XI':1})
+    XI_copy = PauliwordOp.from_dictionary({'XI': 1})
+    assert hash(XI) == hash(XI_copy)
+
+    YI = PauliwordOp.from_dictionary({'YI': 1})
+    assert hash(YI) != hash(XI_copy)
+
+    # different coeff means different hash!
+    XI_3 = PauliwordOp.from_dictionary({'XI': 3})
+    assert hash(XI) != hash(XI_3)
