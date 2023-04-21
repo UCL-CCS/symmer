@@ -58,7 +58,14 @@ class MPOOp:
 
         contr = np.squeeze(contr)
         return contr
-
+    
+def get_MPO(operator: PauliwordOp, max_bond_dimension: int) -> MPOOp:
+    """ Return the Matrix Product Operator (MPO) of a PauliwordOp 
+    (linear combination of Paulis) given a maximum bond dimension
+    """
+    pstrings, coefflist = zip(*operator.to_dictionary.items())
+    mpo = MPOOp(pstrings, coefflist, Dmax=max_bond_dimension)
+    return mpo
 
 def find_groundstate_quimb(MPOOp: MPOOp, dmrg=None, gs_guess=None) -> QuantumState:
     """

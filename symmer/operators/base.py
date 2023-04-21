@@ -436,27 +436,25 @@ class PauliwordOp:
 
         # first, separate symmetry elements  from anticommuting ones
         mask_symmetries = np.all(generators.adjacency_matrix, axis=1)
-        Symmetries = generators[mask_symmetries]
-        Anticommuting = generators[~mask_symmetries]
-        where_anti = np.where(~mask_symmetries)[0]
         
-        if Anticommuting.n_terms == 0:
+        if np.all(mask_symmetries):
             # If not anticommuting component, return standard generator recon over symmetries
-            return self.generator_reconstruction(Symmetries)
+            return self.generator_reconstruction(generators)
         else:
             # loop over anticommuting elements to enforce Jordan condition (no two anticommuting elements multiplied)
-            for index, P in zip(where_anti, Anticommuting):
+            for index in np.where(~mask_symmetries)[0]:
                 mask_symmetries_with_P = mask_symmetries.copy()
                 mask_symmetries_with_P[index] = True
                 # reconstruct this PauliwordOp in the augemented symmetry + single anticommuting term generating set
-                recon_mat_P, successful_P = self.generator_reconstruction(P+Symmetries)
+                augmented_symmetries = generators[mask_symmetries_with_P]
+                recon_mat_P, successful_P = self.generator_reconstruction(augmented_symmetries)
                 # np.ix_ needed to correctly slice op_reconstruction as mask method does not work
                 row, col = np.ix_(successful_P,mask_symmetries_with_P)
                 op_reconstruction[row, col] = recon_mat_P[successful_P]
                 # will have duplicate succesful reconstruction of symmetries, so only sets True once in logical OR
                 successfully_reconstructed = np.logical_or(successfully_reconstructed, successful_P)
 
-            return op_reconstruction, successfully_reconstructed
+            return op_reconstruction.astype(int), successfully_reconstructed
 
     @cached_property
     def Y_count(self) -> np.array:
@@ -517,18 +515,24 @@ class PauliwordOp:
         hash_val = hash(tuple_of_tuples)
         return hash_val
 
+    def append(self, 
+            PwordOp: "PauliwordOp"
+        ) -> "PauliwordOp":
+        """ Append another PauliwordOp onto this one - duplicates allowed
+        """
+        assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
+        P_symp_mat_new = np.vstack((self.symp_matrix, PwordOp.symp_matrix))
+        P_new_coeffs = np.hstack((self.coeff_vec, PwordOp.coeff_vec))
+        return PauliwordOp(P_symp_mat_new, P_new_coeffs) 
+
     def __add__(self, 
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
         """ Add to this PauliwordOp another PauliwordOp by stacking the
         respective symplectic matrices and cleaning any resulting duplicates
         """
-        assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
-        P_symp_mat_new = np.vstack((self.symp_matrix, PwordOp.symp_matrix))
-        P_new_coeffs = np.hstack((self.coeff_vec, PwordOp.coeff_vec)) 
-
         # cleanup run to remove duplicate rows (Pauliwords)
-        return PauliwordOp(P_symp_mat_new, P_new_coeffs).cleanup()
+        return self.append(PwordOp).cleanup()
 
     def __radd__(self, 
             add_obj: Union[int, "PauliwordOp"]
@@ -897,7 +901,7 @@ class PauliwordOp:
 
     def clique_cover(self, 
             edge_relation = 'C', 
-            strategy='independent_set',
+            strategy='largest_first',
             colouring_interchange=False
         ) -> Dict[int, "PauliwordOp"]:
         """ Perform a graph colouring to identify a clique partition

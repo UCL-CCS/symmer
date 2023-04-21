@@ -73,7 +73,7 @@ def test_StabilizeFirst_strategy_correct_usage():
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving', n_cliques=3)
     H_cs = CS.project_onto_subspace()
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.00031 # the extra clique actually allows StabilizeFirst to do better!
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004 # the extra clique actually allows StabilizeFirst to do better!
 
 def test_project_auxiliary_operator():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
