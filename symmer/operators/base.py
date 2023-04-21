@@ -501,15 +501,11 @@ class PauliwordOp:
         elif check_1.n_terms != check_2.n_terms:
             return False
         else:
-            eq_flag = (
-                not np.sum(np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and
-                np.allclose(check_1.coeff_vec, check_2.coeff_vec)
-            )
-
+            return (not np.sum(np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and
+                         np.allclose(check_1.coeff_vec, check_2.coeff_vec))
             # if eq_flag is True:
             #     assert hash(check_1) == hash(check_2), 'equal objects have different hash values'
-
-            return eq_flag
+            # return eq_flag
 
     def __hash__(self) -> int:
         """ build unique hash from dictionary of PauliwordOp"""
