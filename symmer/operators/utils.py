@@ -334,3 +334,28 @@ def check_jordan_independent(operators):
         check_independent(Symmetries) & 
         np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
     )
+
+def binary_array_to_int(bin_arr):
+    """
+    function to convert an array composed of rows of binary into integars
+
+    Args:
+        bin_arr(np.array): 2D numpy array of binary
+    Returns:
+        int_arr (np.array): 1D numpy array of ints
+
+    """
+
+    if bin_arr.shape[1] < 64:
+        b2i = 2 ** np.arange(bin_arr.shape[1] - 1, -1, -1)
+    else:
+        b2i = 2 ** np.arange(bin_arr.shape[1] - 1, -1, -1, dtype=float)
+        # b2i = 2 ** np.arange(bin_arr.shape[1] - 1, -1, -1, dtype=object)
+
+    int_arr = np.einsum('j, ij->i', b2i, bin_arr)
+    # int_arr = (b2i*bin_arr).sum(axis=1)
+
+    ## slower as does matrix product rather than multiplication along rows followed by a sum!
+    # int_arr = bin_arr @ b2i
+
+    return int_arr

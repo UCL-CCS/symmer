@@ -3,7 +3,6 @@ import pandas as pd
 import networkx as nx
 from tqdm.auto import tqdm
 from copy import deepcopy
-from itertools import product
 from functools import reduce
 from typing import List, Union
 from numbers import Number
@@ -199,7 +198,14 @@ class PauliwordOp:
         operator_out.coeff_vec = operator_out.coeff_vec * Y_sign
 
         if operator_basis is not None:
-            if not np.all(operator_out.to_sparse_matrix.toarray() == matrix):
+            if isinstance(matrix, csr_matrix):
+                tol=1e-15
+                max_diff = np.abs(matrix - operator_out.to_sparse_matrix).max()
+                flag = not (max_diff <= tol)
+            else:
+                flag = not np.allclose(operator_out.to_sparse_matrix.toarray(), matrix)
+
+            if flag:
                 warnings.warn('Basis not sufficiently expressive, output operator projected onto basis supplied.')
 
         return operator_out
@@ -230,7 +236,7 @@ class PauliwordOp:
                 (
                         np.arange(2 ** n_qubits).reshape([-1, 1]) &
                         (1 << np.arange(n_qubits))[::-1]
-                ) > 0).astype(bool)
+                ) > 0)#.astype(bool)
 
         binary_convert = 1 << np.arange(2 * n_qubits)[::-1]
         # P_out = cls.empty(n_qubits)
@@ -241,7 +247,8 @@ class PauliwordOp:
                                                           return_operator=False)
 
             ### find location in symp matrix
-            int_list = ij_symp_matrix @ binary_convert  # (1 << np.arange(ij_symp_matrix.shape[1])[::-1])
+            # int_list = ij_symp_matrix @ binary_convert  # (1 << np.arange(ij_symp_matrix.shape[1])[::-1])
+            int_list = np.einsum('j, ij->i', binary_convert, ij_symp_matrix)
 
             # populate sparse mats
             sym_operator[int_list, :] = ij_symp_matrix
@@ -421,10 +428,8 @@ class PauliwordOp:
         """ Reconstruct this PauliwordOp under the Jordan product PQ = {P,Q}/2
         with respect to the supplied generators
         """
-        assert (
-            check_jordan_independent(generators),
-            'The non-symmetry elements do not pairwise anticommute.'
-        )
+        assert check_jordan_independent(generators), 'The non-symmetry elements do not pairwise anticommute.'
+
         # empty reconstruction matrix to be updated in loop over anticommuting elements
         op_reconstruction = np.zeros([self.n_terms, generators.n_terms])
         successfully_reconstructed = np.zeros(self.n_terms, dtype=bool)
@@ -482,12 +487,12 @@ class PauliwordOp:
                 )
             )
 
-    def __eq__(self, 
+    def __eq__(self,
             Pword: "PauliwordOp"
         ) -> bool:
         """ In theory should use logical XNOR to check symplectic matrix match, however
         can use standard logical XOR and look for False indices instead (implementation
-        skips an additional NOT operation) 
+        skips an additional NOT operation)
         """
         check_1 = self.cleanup()
         check_2 = Pword.cleanup()
@@ -496,10 +501,25 @@ class PauliwordOp:
         elif check_1.n_terms != check_2.n_terms:
             return False
         else:
-            return (
-                not np.sum(np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and 
+            eq_flag = (
+                not np.sum(np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and
                 np.allclose(check_1.coeff_vec, check_2.coeff_vec)
             )
+
+            # if eq_flag is True:
+            #     assert hash(check_1) == hash(check_2), 'equal objects have different hash values'
+
+            return eq_flag
+
+    def __hash__(self) -> int:
+        """ build unique hash from dictionary of PauliwordOp"""
+
+        self.cleanup()  # self.cleanup(zero_threshold=1e-15)
+
+        # tuples are immutable
+        tuple_of_tuples = tuple(self.to_dictionary.items())
+        hash_val = hash(tuple_of_tuples)
+        return hash_val
 
     def __add__(self, 
             PwordOp: "PauliwordOp"
@@ -1018,14 +1038,16 @@ class PauliwordOp:
         if self.n_qubits == 0:
             return csr_matrix(self.coeff_vec)
 
-        if self.n_qubits > 64:
-            # numpy cannot handle ints over int64s (2**64) therefore use python objects
-            binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1).astype(object)
-        else:
-            binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1)
+        # if self.n_qubits > 64:
+        #     # numpy cannot handle ints over int64s (2**64) therefore use python objects
+        #     binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1).astype(object)
+        # else:
+        #     binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1)
+        # x_int = (self.X_block @ binary_int_array).reshape(-1, 1)
+        # z_int = (self.Z_block @ binary_int_array).reshape(-1, 1)
 
-        x_int = (self.X_block @ binary_int_array).reshape(-1, 1)
-        z_int = (self.Z_block @ binary_int_array).reshape(-1, 1)
+        x_int = binary_array_to_int(self.X_block).reshape(-1, 1)
+        z_int = binary_array_to_int(self.Z_block).reshape(-1, 1)
 
         Y_number = np.sum(np.bitwise_and(self.X_block, self.Z_block).astype(int), axis=1)
         global_phase = (-1j) ** Y_number
@@ -1440,10 +1462,11 @@ class QuantumState:
             sparse_Qstate (csr_matrix): sparse matrix representation of the statevector
         """
         # nonzero_indices = [int(''.join([str(i) for i in row]),2) for row in self.state_matrix]
-        if self.n_qubits<64:
-            nonzero_indices = self.state_matrix @ (1 << np.arange(self.state_matrix.shape[1])[::-1])
-        else:
-            nonzero_indices = self.state_matrix @ (1 << np.arange(self.state_matrix.shape[1], dtype=object)[::-1])
+        # if self.n_qubits<64:
+        #     nonzero_indices = self.state_matrix @ (1 << np.arange(self.state_matrix.shape[1])[::-1])
+        # else:
+        #     nonzero_indices = self.state_matrix @ (1 << np.arange(self.state_matrix.shape[1], dtype=object)[::-1])
+        nonzero_indices = binary_array_to_int(self.state_matrix)
 
         sparse_Qstate = csr_matrix(
             (self.state_op.coeff_vec, (nonzero_indices, np.zeros_like(nonzero_indices))),
@@ -1595,10 +1618,11 @@ class QuantumState:
 
         fig, ax = plt.subplots(1, 1, dpi=dpi)
 
-        if q_state.state_op.n_qubits<64:
-            x_binary_ints = q_state.state_matrix @ (1 << np.arange(q_state.state_matrix.shape[1])[::-1])
-        else:
-            x_binary_ints = q_state.state_matrix @ (1 << np.arange(q_state.state_matrix.shape[1], dtype=object)[::-1])
+        # if q_state.state_op.n_qubits<64:
+        #     x_binary_ints = q_state.state_matrix @ (1 << np.arange(q_state.state_matrix.shape[1])[::-1])
+        # else:
+        #     x_binary_ints = q_state.state_matrix @ (1 << np.arange(q_state.state_matrix.shape[1], dtype=object)[::-1])
+        x_binary_ints = binary_array_to_int(q_state.state_matrix)
 
         if prob.shape[0]<2**8:
             # bar chart
