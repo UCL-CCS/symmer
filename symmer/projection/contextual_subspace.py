@@ -370,11 +370,13 @@ class ContextualSubspace(S3_projection):
             assert self.ref_state is not None, 'Must provide a state to project into the contextual subspace'
             state_to_project = self.ref_state
 
-        # behaviour is different whether using the LCU or seq_rot UP methods
-        if self.unitary_partitioning_method == 'LCU':
-            rotation = self.unitary_partitioning_rotations
-        elif self.unitary_partitioning_method == 'seq_rot':
-            rotation_generator = sum([R*angle*.5*1j for R,angle in self.unitary_partitioning_rotations])
-            rotation = trotter(rotation_generator)
-
-        return self.project_state(rotation * state_to_project)
+        if self.perform_unitary_partitioning:
+            # behaviour is different whether using the LCU or seq_rot UP methods
+            if self.unitary_partitioning_method == 'LCU':
+                rotation = self.unitary_partitioning_rotations
+            elif self.unitary_partitioning_method == 'seq_rot':
+                rotation_generator = sum([R*angle*.5*1j for R,angle in self.unitary_partitioning_rotations])
+                rotation = trotter(rotation_generator)
+            return self.project_state(rotation * state_to_project)
+        else:
+            return self.project_state(state_to_project)
