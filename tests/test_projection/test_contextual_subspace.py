@@ -8,8 +8,10 @@ from symmer.operators import PauliwordOp, IndependentOp
 from symmer.evolution import trotter
 from symmer.utils import exact_gs_energy
 
-ham_data_dir = os.path.join(os.getcwd(), 'tests/hamiltonian_data')
-with open(f'{ham_data_dir}/Be_STO-3G_SINGLET_JW.json', 'r') as f:
+test_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ham_data_dir = os.path.join(test_dir, 'hamiltonian_data')
+
+with open(os.path.join(ham_data_dir, 'Be_STO-3G_SINGLET_JW.json'), 'r') as f:
     H_data = json.load(f)
 hf_energy = H_data['data']['calculated_properties']['HF']['energy']
 fci_energy = H_data['data']['calculated_properties']['FCI']['energy']

@@ -6,8 +6,10 @@ from symmer.projection.utils import *
 from symmer import QubitTapering
 from symmer.operators import PauliwordOp, IndependentOp
 
-ham_data_dir = os.path.join(os.getcwd(), 'tests/hamiltonian_data')
-with open(f'{ham_data_dir}/Be_STO-3G_SINGLET_JW.json', 'r') as f:
+test_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ham_data_dir = os.path.join(test_dir, 'hamiltonian_data')
+
+with open(os.path.join(ham_data_dir, 'Be_STO-3G_SINGLET_JW.json'), 'r') as f:
     H_data = json.load(f)
 H_op = PauliwordOp.from_dictionary(H_data['hamiltonian'])
 CC_op = PauliwordOp.from_dictionary(H_data['data']['auxiliary_operators']['UCCSD_operator'])
