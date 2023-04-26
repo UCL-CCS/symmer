@@ -1,15 +1,16 @@
 import warnings
-
+import itertools
 import numpy as np
+import networkx as nx
+import multiprocessing as mp
+import qubovert as qv
 from time import time
 from functools import reduce
 from typing import Optional, Union, Tuple
-import multiprocessing as mp
+from matplotlib import pyplot as plt
 from scipy.optimize import differential_evolution, shgo
 from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
 from symmer.operators.utils import unit_n_sphere_cartesian_coords, check_adjmat_noncontextual
-import itertools
-import qubovert as qv
 
 class NoncontextualOp(PauliwordOp):
     """ Class for representing noncontextual Hamiltonians
@@ -179,6 +180,33 @@ class NoncontextualOp(PauliwordOp):
 
         _, noncontextual_terms_mask = H.jordan_generator_reconstruction(generators)
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
+    
+    def draw_graph_structure(self, 
+            line_weight=1,
+            node_colour='black',
+            node_size=20,
+            seed=None
+        ):
+        """ Draw the noncontextual graph structure
+        """
+        adjmat = self.adjacency_matrix.copy()
+        adjmat = self.adjacency_matrix.copy()
+        index_symmetries = np.where(np.all(adjmat, axis=1))[0]
+        np.fill_diagonal(adjmat, False)
+        
+        G = nx.Graph()
+        for i,j in list(zip(*np.where(adjmat))):
+            if i in index_symmetries or j in index_symmetries:
+                G.add_edge(i,j,color='grey',weight=line_weight*.25)
+            else:
+                G.add_edge(i,j,color='black',weight=line_weight)
+
+        pos = nx.spring_layout(G, seed=seed)
+        edges = G.edges()
+        colors = [G[u][v]['color'] for u,v in edges]
+        weights = [G[u][v]['weight'] for u,v in edges]
+        nx.draw(G, pos, edge_color=colors, width=weights, 
+                node_color=node_colour, node_size=node_size)
 
     def noncontextual_generators(self) -> None:
         """ Find an independent generating set for the noncontextual operator
