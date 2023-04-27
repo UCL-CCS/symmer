@@ -296,7 +296,7 @@ class ContextualSubspace(S3_projection):
             # consistent with the noncontextual ground state configuration - this is 
             # G U {RARdag} in the original CS-VQE notation. 
             augmented_basis = (
-                IndependentOp.from_PauliwordOp(self.mapped_clique_rep) + 
+                IndependentOp(self.mapped_clique_rep.symp_matrix, self.mapped_clique_rep.coeff_vec.astype(int)) + 
                 self.noncontextual_operator.symmetry_generators
             )
             # given this new basis, we reconstruct the given stabilizers to identify
