@@ -186,7 +186,8 @@ class NoncontextualOp(PauliwordOp):
             symmetry_lw=.25,
             node_colour='black',
             node_size=20,
-            seed=None
+            seed=None,
+            axis=None
         ):
         """ Draw the noncontextual graph structure
         """
@@ -207,7 +208,7 @@ class NoncontextualOp(PauliwordOp):
         colors = [G[u][v]['color'] for u,v in edges]
         weights = [G[u][v]['weight'] for u,v in edges]
         nx.draw(G, pos, edge_color=colors, width=weights, 
-                node_color=node_colour, node_size=node_size)
+                node_color=node_colour, node_size=node_size, ax=axis)
 
     def noncontextual_generators(self) -> None:
         """ Find an independent generating set for the noncontextual operator
