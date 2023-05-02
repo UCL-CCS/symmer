@@ -29,7 +29,6 @@ class ContextualSubspace(S3_projection):
             noncontextual_strategy: str = 'diag',
             noncontextual_solver: str = 'brute_force',
             num_anneals:Optional[int] = 1000,
-            discrete_optimization_order = 'first',
             unitary_partitioning_method: str = 'LCU',
             reference_state: Union[np.array, QuantumState] = None,
             noncontextual_operator: NoncontextualOp = None,
@@ -46,7 +45,6 @@ class ContextualSubspace(S3_projection):
         self.nc_strategy = extract_noncon_strat[0]
         self.noncontextual_solver = noncontextual_solver
         self.num_anneals = num_anneals
-        self.discrete_optimization_order = discrete_optimization_order
         if self.nc_strategy=='StabilizeFirst':
             self.stabilize_first_method = extract_noncon_strat[1]
         # With the exception of the StabilizeFirst noncontextual strategy, here we build
@@ -58,21 +56,21 @@ class ContextualSubspace(S3_projection):
             )
         else:
             self.noncontextual_operator = noncontextual_operator
-        self._noncontextual_update()
         self.unitary_partitioning_method = unitary_partitioning_method
+        self._noncontextual_update()
     
     def _noncontextual_update(self):
         """ To be executed each time the noncontextual operator is updated.
         """
         if self.noncontextual_operator is not None:
+            self.noncontextual_operator.up_method = self.unitary_partitioning_method
             self.contextual_operator = self.operator - self.noncontextual_operator
             if self.contextual_operator.n_terms == 0:
                 raise ValueError('The Hamiltonian is noncontextual, the contextual subspace is empty.')
             self.noncontextual_operator.solve(
                 strategy=self.noncontextual_solver, 
                 ref_state=self.ref_state, 
-                num_anneals=self.num_anneals,
-                discrete_optimization_order=self.discrete_optimization_order
+                num_anneals=self.num_anneals
             )
             self.n_cliques = self.noncontextual_operator.n_cliques
 
@@ -282,21 +280,15 @@ class ContextualSubspace(S3_projection):
             )
             # generate the unitary partitioning rotations that map onto the 
             # clique representative correpsonding with the given stabilizers
-            (
-                self.mapped_clique_rep, 
-                self.unitary_partitioning_rotations,        
-                clique_normalizaion, # always normalized in contextual subspace...
-                normalized_clique # therefore will be the same as the clique_operator
-
-            ) = self.noncontextual_operator.clique_operator.unitary_partitioning(
-                up_method=self.unitary_partitioning_method, s_index=int(np.where(mask_which_clique)[0][0])
+            self.noncontextual_operator.update_clique_representative_operator(
+                clique_index=int(np.where(mask_which_clique)[0][0])
             )
             # add the clique representative to the noncontextual basis in order to 
             # update the eigenvalue assignments of the chosen stablizers so they are 
             # consistent with the noncontextual ground state configuration - this is 
             # G U {RARdag} in the original CS-VQE notation. 
             augmented_basis = (
-                IndependentOp(self.mapped_clique_rep.symp_matrix, self.mapped_clique_rep.coeff_vec.astype(int)) + 
+                IndependentOp(self.noncontextual_operator.mapped_clique_rep.symp_matrix, [-1]) + 
                 self.noncontextual_operator.symmetry_generators
             )
             # given this new basis, we reconstruct the given stabilizers to identify
@@ -325,13 +317,13 @@ class ContextualSubspace(S3_projection):
         # perform unitary partitioning
         if self.perform_unitary_partitioning:
             # the rotation is implemented differently depending on the choice of LCU or seq_rot
-            if self.unitary_partitioning_method=='LCU':
+            if self.noncontextual_operator.up_method=='LCU':
                 # linear-combination-of-unitaries approach
-                rotated_op = (self.unitary_partitioning_rotations * operator_to_project
-                        * self.unitary_partitioning_rotations.dagger).cleanup()
-            elif self.unitary_partitioning_method=='seq_rot':
+                rotated_op = (self.noncontextual_operator.unitary_partitioning_rotations * operator_to_project
+                        * self.noncontextual_operator.unitary_partitioning_rotations.dagger).cleanup()
+            elif self.noncontextual_operator.up_method=='seq_rot':
                 # sequence-of-rotations approach
-                rotated_op = operator_to_project.perform_rotations(self.unitary_partitioning_rotations)
+                rotated_op = operator_to_project.perform_rotations(self.noncontextual_operator.unitary_partitioning_rotations)
             else:
                 raise ValueError('Unrecognised unitary partitioning rotation method, must be one of LCU or seq_rot.')
         else:
@@ -372,10 +364,10 @@ class ContextualSubspace(S3_projection):
 
         if self.perform_unitary_partitioning:
             # behaviour is different whether using the LCU or seq_rot UP methods
-            if self.unitary_partitioning_method == 'LCU':
-                rotation = self.unitary_partitioning_rotations
-            elif self.unitary_partitioning_method == 'seq_rot':
-                rotation_generator = sum([R*angle*.5*1j for R,angle in self.unitary_partitioning_rotations])
+            if self.noncontextual_operator.up_method == 'LCU':
+                rotation = self.noncontextual_operator.unitary_partitioning_rotations
+            elif self.noncontextual_operator.up_method == 'seq_rot':
+                rotation_generator = sum([R*angle*.5*1j for R,angle in self.noncontextual_operator.unitary_partitioning_rotations])
                 rotation = trotter(rotation_generator)
             return self.project_state(rotation * state_to_project)
         else:

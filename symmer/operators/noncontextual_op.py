@@ -6,7 +6,7 @@ import multiprocessing as mp
 import qubovert as qv
 from time import time
 from functools import reduce
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, List
 from matplotlib import pyplot as plt
 from scipy.optimize import differential_evolution, shgo
 from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
@@ -21,6 +21,8 @@ class NoncontextualOp(PauliwordOp):
     Refer to https://arxiv.org/abs/1904.02260 for further details. 
     
     """
+    up_method = 'seq_rot'
+
     def __init__(self,
             symp_matrix,
             coeff_vec
@@ -214,7 +216,7 @@ class NoncontextualOp(PauliwordOp):
         """ Find an independent generating set for the noncontextual operator
         """
         # identify the symmetry generating set
-        self.symmetry_generators = IndependentOp.symmetry_generators(self, commuting_override=True)
+        self.symmetry_generators = IndependentOp.symmetry_generators(self)#, commuting_override=True)
         # mask the symmetry terms within the noncontextual operator
         _, symmetry_mask = self.generator_reconstruction(self.symmetry_generators)
         # identify the reamining commuting cliques
@@ -240,10 +242,12 @@ class NoncontextualOp(PauliwordOp):
         )
         # Cannot simultaneously know eigenvalues of cliques so we peform a generator reconstruction
         # that respects the jordan product A*B = {A, B}/2, i.e. anticommuting elements are zeroed out
-        jordan_recon_matrix, successful = self.generator_reconstruction(noncon_generators, override_independence_check=True)
+        jordan_recon_matrix, successful = self.jordan_generator_reconstruction(noncon_generators)
         assert(np.all(successful)), 'The generating set is not sufficient to reconstruct the noncontextual Hamiltonian'
         self.G_indices = jordan_recon_matrix[:, :self.symmetry_generators.n_terms]
-        self.r_indices = jordan_recon_matrix[:, self.symmetry_generators.n_terms:]
+        self.C_indices = jordan_recon_matrix[:, self.symmetry_generators.n_terms:]
+        self.mask_S0 = ~np.any(self.C_indices, axis=1)
+        self.mask_Ci = self.C_indices.astype(bool).T
         # individual elements of r_part commute with all of G_part - taking products over G_part with
         # a single element of r_part will therefore never produce a complex phase, but might result in
         # a sign flip that must be accounted for in the generator reconstruction:
@@ -256,46 +260,44 @@ class NoncontextualOp(PauliwordOp):
         self.pauli_mult_signs = np.array(
             list(map(multiply_indices,jordan_recon_matrix.astype(bool)))
         ).astype(int)
-        
-    def noncontextual_objective_function(self, 
-            nu: np.array, 
-            r: np.array
-        ) -> float:
+
+    def get_symmetry_contributions(self, nu: np.array) -> float:
+        """
+        """
+        coeff_mod =  (
+            # coefficient vector whose signs we are modifying:
+            self.coeff_vec *
+            # sign flips from generator reconstruction:
+            self.pauli_mult_signs *
+            # sign flips from nu assignment:
+            (-1)**np.count_nonzero(np.logical_and(self.G_indices==1, nu == -1), axis=1)
+        )
+        s0 = np.sum(coeff_mod[self.mask_S0]).real
+        si = np.array([np.sum(coeff_mod[mask]).real for mask in self.mask_Ci])
+        return s0, si
+
+    def get_energy(self, nu: np.array) -> float:
         """ The classical objective function that encodes the noncontextual energies
         """
-        nu = np.asarray(nu, dtype=int) # must be an array!
-        G_prod = (-1)**np.count_nonzero(np.logical_and(self.G_indices==1, nu == -1), axis=1)
-        r_part = np.sum(self.r_indices*r, axis=1)
-        r_part[~np.any(self.r_indices, axis=1)]=1
-        return np.sum(self.coeff_vec*G_prod*r_part*self.pauli_mult_signs).real
-
-    def _convex_problem(self, nu):
-        """ given +/-1 value assignments nu, solve for the clique operator coefficients.
-        Note that, with nu fixed, the optimization problem is now convex.
-        """
-        if self.n_cliques==0:
-            optimized_energy = self.noncontextual_objective_function(nu=nu, r=None)
-            r_optimal = None
-        else:
-            # given M cliques, optimize over the unit (M-1)-sphere and convert to cartesians for the r vector
-            r_bounds = [(0, np.pi)]*(self.n_cliques-2)+[(0, 2*np.pi)]
-            optimizer_output = differential_evolution(
-                func=lambda angles:self.noncontextual_objective_function(
-                    nu, unit_n_sphere_cartesian_coords(angles)
-                    ), 
-                bounds=r_bounds
-            )
-            optimized_energy = optimizer_output['fun']
-            optimized_angles = optimizer_output['x']
-            r_optimal = unit_n_sphere_cartesian_coords(optimized_angles)
-
-        return optimized_energy, r_optimal
-
+        s0, si = self.get_symmetry_contributions(nu)
+        return s0 - np.linalg.norm(si)
+    
+    def update_clique_representative_operator(self, clique_index:int = None) -> List[Tuple[PauliwordOp, float]]:
+        _, si = self.get_symmetry_contributions(self.symmetry_generators.coeff_vec)
+        self.clique_operator.coeff_vec = si
+        if clique_index is None:
+            clique_index = 0
+        (
+            self.mapped_clique_rep, 
+            self.unitary_partitioning_rotations, 
+            self.clique_normalization,
+            self.clique_operator
+        ) = self.clique_operator.unitary_partitioning(up_method=self.up_method, s_index=clique_index)
+        
     def solve(self, 
             strategy: str = 'brute_force', 
             ref_state: np.array = None, 
-            num_anneals:int = 1_000,
-            discrete_optimization_order = 'first'
+            num_anneals:int = 1_000
         ) -> None:
         """ Minimize the classical objective function, yielding the noncontextual 
         ground state. This updates the coefficients of the clique representative 
@@ -316,13 +318,12 @@ class NoncontextualOp(PauliwordOp):
             NC_solver = NoncontextualSolver(self)
 
         NC_solver.num_anneals = num_anneals
-        NC_solver.discrete_optimization_order = discrete_optimization_order
 
         if strategy=='brute_force':
-            self.energy, nu, r = NC_solver.energy_via_brute_force()
+            self.energy, nu = NC_solver.energy_via_brute_force()
 
         elif strategy=='binary_relaxation':
-            self.energy, nu, r = NC_solver.energy_via_relaxation()
+            self.energy, nu = NC_solver.energy_via_relaxation()
         
         else:
             #### qubovert strategies below this point ####
@@ -343,13 +344,12 @@ class NoncontextualOp(PauliwordOp):
             else:
                 raise ValueError(f'Unknown optimization strategy: {strategy}')
         
-            self.energy, nu, r = NC_solver.energy_xUSO()
+            self.energy, nu = NC_solver.energy_xUSO()
 
         # optimize the clique operator coefficients
         self.symmetry_generators.coeff_vec = nu.astype(int)
-        if r is not None:
-            self.clique_operator.coeff_vec = r
-
+        self.update_clique_representative_operator()
+        
     def get_qaoa(self, ref_state:QuantumState=None, type='qubo') -> dict:
         """
         For a given PUBO / QUBO problem make the following replacement:
@@ -388,8 +388,8 @@ class NoncontextualOp(PauliwordOp):
             r_vec = np.zeros(r_vec_size)
             r_vec[j]=1
 
-            r_part = np.sum(self.r_indices * r_vec, axis=1)
-            r_part[~np.any(self.r_indices, axis=1)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
+            r_part = np.sum(self.C_indices * r_vec, axis=1)
+            r_part[~np.any(self.C_indices, axis=1)] = 1  # set all zero terms to 1 (aka multiply be value of 1)
 
             # setup spin
             q_vec_SPIN = {}
@@ -467,8 +467,6 @@ class NoncontextualSolver:
     method:str = 'brute_force'
     x:str = 'P'
     num_anneals:int = 1_000,
-    discrete_optimization_order:str = 'first'
-    reoptimize_r_vec:bool = False
     _nu = None
 
     def __init__(
@@ -495,7 +493,7 @@ class NoncontextualSolver:
     def energy_via_brute_force(self) -> Tuple[float, np.array, np.array]:
         """ Does what is says on the tin! Try every single eigenvalue assignment in parallel
         and return the minimizing noncontextual configuration. This scales exponentially in 
-        the number of qubits.
+        the number of unassigned symmetry elements.
         """
         if np.all(self.fixed_ev_mask):
             nu_list = self.fixed_eigvals.reshape([1,-1])
@@ -505,15 +503,16 @@ class NoncontextualSolver:
             nu_list[:,self.fixed_ev_mask] = np.tile(self.fixed_eigvals, [search_size,1])
             nu_list[:,~self.fixed_ev_mask] = np.array(list(itertools.product([-1,1],repeat=np.sum(~self.fixed_ev_mask))))
         
-        # optimize over all discrete value assignments of nu in parallel
+        # # optimize over all discrete value assignments of nu in parallel
+        # nu_chunks = [nu_list[i*n_cpu:(i+1)*n_cpu, :] for i in range(int(np.ceil(nu_list.shape[0] / n_cpu)))]
         with mp.Pool(mp.cpu_count()) as pool:    
-            tracker = pool.map(self.NC_op._convex_problem, nu_list)
+            tracker = pool.map(self.NC_op.get_energy, nu_list)
         
         # find the lowest energy eigenvalue assignment from the full list
         full_search_results = zip(tracker, nu_list)
-        (energy, r_optimal), fixed_nu = min(full_search_results, key=lambda x:x[0][0])
+        energy, fixed_nu = min(full_search_results, key=lambda x:x[0])
 
-        return energy, fixed_nu, r_optimal
+        return energy, fixed_nu
 
     #################################################################
     ###################### BINARY RELAXATION ########################
@@ -533,12 +532,11 @@ class NoncontextualSolver:
             nu[~self.fixed_ev_mask] = np.cos(angles)
             return nu
 
-        optimizer_output = shgo(func=lambda angles:self.NC_op._convex_problem(get_nu(angles))[0], bounds=nu_bounds)
+        optimizer_output = shgo(func=lambda angles:self.NC_op.get_energy(get_nu(angles)), bounds=nu_bounds)
         # if optimization was successful the optimal angles should consist of 0 and pi
         fix_nu = np.sign(np.array(get_nu(np.cos(optimizer_output['x'])))).astype(int)
         self.NC_op.symmetry_generators.coeff_vec = fix_nu 
-        energy, r_optimal = self.NC_op._convex_problem(fix_nu)
-        return energy, fix_nu, r_optimal
+        return optimizer_output['fun'], fix_nu
     
     #################################################################
     ################ UNCONSTRAINED SPIN OPTIMIZATION ################
@@ -547,9 +545,6 @@ class NoncontextualSolver:
     def get_cost_func(self, r_vec: np.array):
         """ Define the unconstrained spin cost function
         """
-        r_part = np.sum(self.NC_op.r_indices * r_vec, axis=1)
-        r_part[~np.any(self.NC_op.r_indices, axis=1)] = 1  # set all zero terms to 1 (aka multiply by value of 1)
-        
         # setup spin variables
         fixed_indices = np.where(self.fixed_ev_mask)[0] # bool to indices
         fixed_assignments = dict(zip(fixed_indices, self.fixed_eigvals))
@@ -559,6 +554,11 @@ class NoncontextualSolver:
                 q_vec_SPIN[ind] = fixed_assignments[ind]
             else:
                 q_vec_SPIN[ind] = qv.spin_var('x%d' % ind)
+
+        s0 = self.NC_op.G_indices[self.NC_op.mask_S0]
+        #(s0 - np.linalg.norm(si)) * (s0 + np.linalg.norm(si))
+
+        # minimizing s0 - ||s|| -> same as minimizing (s0 - ||s||)(s0 + ||s||) = s0^2 - (s1^2 + ... sM^2) and now polynomial (no roots)!
 
         COST = 0
         for P_index, term in enumerate(self.NC_op.G_indices):
@@ -572,8 +572,8 @@ class NoncontextualSolver:
             COST += (
                 G_term * 
                 self.NC_op.coeff_vec[P_index].real * 
-                self.NC_op.pauli_mult_signs[P_index] * 
-                r_part[P_index].real
+                self.NC_op.pauli_mult_signs[P_index]# * 
+                #r_part[P_index].real
             )
 
         return COST
