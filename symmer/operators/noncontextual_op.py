@@ -542,9 +542,20 @@ class NoncontextualSolver:
     ################ UNCONSTRAINED SPIN OPTIMIZATION ################
     #################################################################    
 
-    def get_cost_func(self, r_vec: np.array):
+    def get_cost_func(self):
         """ Define the unconstrained spin cost function
         """
+        
+        Si_list = [self.NC_op.decomposed['symmetry']]
+        for i in range(self.NC_op.n_cliques):
+            Ci = self.NC_op.decomposed[i][0]; Ci.coeff_vec[0]=1
+            Si = Ci*self.NC_op.decomposed[i]
+            Si_list.append(Si)
+        
+        poly_op = sum([Si**2 for Si in Si_list]) - Si_list[0] * sum(Si_list[1:]) * 2
+        poly_op *= -1 # maximizing -> minimizing
+        G_indices, _ = poly_op.generator_reconstruction(self.NC_op.symmetry_generators)
+
         # setup spin variables
         fixed_indices = np.where(self.fixed_ev_mask)[0] # bool to indices
         fixed_assignments = dict(zip(fixed_indices, self.fixed_eigvals))
@@ -555,13 +566,8 @@ class NoncontextualSolver:
             else:
                 q_vec_SPIN[ind] = qv.spin_var('x%d' % ind)
 
-        s0 = self.NC_op.G_indices[self.NC_op.mask_S0]
-        #(s0 - np.linalg.norm(si)) * (s0 + np.linalg.norm(si))
-
-        # minimizing s0 - ||s|| -> same as minimizing (s0 - ||s||)(s0 + ||s||) = s0^2 - (s1^2 + ... sM^2) and now polynomial (no roots)!
-
         COST = 0
-        for P_index, term in enumerate(self.NC_op.G_indices):
+        for P_index, term in enumerate(G_indices):
             non_zero_inds = term.nonzero()[0]
             # collect all the spin terms
             G_term = 1
@@ -571,15 +577,15 @@ class NoncontextualSolver:
             # cost function
             COST += (
                 G_term * 
-                self.NC_op.coeff_vec[P_index].real * 
-                self.NC_op.pauli_mult_signs[P_index]# * 
+                poly_op.coeff_vec[P_index].real
+                #self.NC_op.pauli_mult_signs[P_index]# * 
                 #r_part[P_index].real
             )
 
         return COST
 
     
-    def _energy_xUSO(self, r_vec: np.array) -> Tuple[float, np.array, np.array]:
+    def energy_xUSO(self) -> Tuple[float, np.array, np.array]:
         """
         Get energy via either: Polynomial unconstrained spin Optimization (x=P)
                                     or
@@ -605,7 +611,7 @@ class NoncontextualSolver:
         assert self.x in ['P', 'Q']
         assert self.method in ['brute_force', 'annealing']
         
-        COST = self.get_cost_func(r_vec=r_vec)
+        COST = self.get_cost_func()
         
         if np.all(self.fixed_ev_mask):
             # if no degrees of freedom over nu vector, COST is a number
@@ -628,60 +634,9 @@ class NoncontextualSolver:
                 sol = puso_res.best.state
 
             solution = COST.convert_solution(sol)
-            energy   = COST.value(solution)
-
             nu_vec = np.ones(self.NC_op.symmetry_generators.n_terms, dtype=int)
             nu_vec[self.fixed_ev_mask] = self.fixed_eigvals
             # must ensure the binary variables are correctly ordered in the solution:
             nu_vec[~self.fixed_ev_mask] = np.array([solution[f'x{i}'] for i in range(COST.num_binary_variables)])
         
-        self._nu = nu_vec # so nu accessible during the _convex_then_xUSO optimization 
-        if self.reoptimize_r_vec:
-            opt_energy, opt_r_vec = self.NC_op._convex_problem(nu_vec)
-            return opt_energy, nu_vec, opt_r_vec
-        else:
-            return energy, nu_vec, r_vec
-    
-    def _xUSO_then_convex(self) -> Tuple[float, np.array, np.array]:
-        """
-        """
-        self.reoptimize_r_vec = True
-        
-        extreme_r_vecs = np.eye(self.NC_op.n_cliques, dtype=int)
-        extreme_r_vecs = np.vstack([extreme_r_vecs, -extreme_r_vecs])
-        
-        with mp.Pool(mp.cpu_count()) as pool:    
-            tracker = pool.map(self._energy_xUSO, extreme_r_vecs)
-
-        return sorted(tracker, key=lambda x:x[0])[0]
-    
-    def _convex_then_xUSO(self) -> Tuple[float, np.array, np.array]:
-        """
-        """
-        self.reoptimize_r_vec = False
-
-        r_bounds = [(0, np.pi)]*(self.NC_op.n_cliques-2)+[(0, 2*np.pi)]
-    
-        optimizer_output = differential_evolution(
-            func=lambda angles:self._energy_xUSO(
-                unit_n_sphere_cartesian_coords(angles)
-            )[0],
-            bounds=r_bounds
-        )
-        optimized_energy = optimizer_output['fun']
-        optimized_angles = optimizer_output['x']
-        r_optimal = unit_n_sphere_cartesian_coords(optimized_angles)
-        
-        return optimized_energy, self._nu, r_optimal
-    
-    def energy_xUSO(self) -> Tuple[float, np.array, np.array]:
-        """
-        """
-        if self.NC_op.n_cliques == 0:
-            return self._energy_xUSO(None)
-        elif self.discrete_optimization_order == 'first':
-            return self._xUSO_then_convex()
-        elif self.discrete_optimization_order == 'last':
-            return self._convex_then_xUSO()
-        else:
-            raise ValueError('Unrecognised discrete optimization order, must be first or last')
+        return self.NC_op.get_energy(nu_vec), nu_vec
