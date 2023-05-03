@@ -584,7 +584,6 @@ class NoncontextualSolver:
 
         return COST
 
-    
     def energy_xUSO(self) -> Tuple[float, np.array, np.array]:
         """
         Get energy via either: Polynomial unconstrained spin Optimization (x=P)
