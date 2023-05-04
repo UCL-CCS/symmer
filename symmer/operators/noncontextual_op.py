@@ -4,13 +4,14 @@ import numpy as np
 import networkx as nx
 import multiprocessing as mp
 import qubovert as qv
+from cached_property import cached_property
 from time import time
 from functools import reduce
 from typing import Optional, Union, Tuple, List
 from matplotlib import pyplot as plt
 from scipy.optimize import differential_evolution, shgo
 from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
-from symmer.operators.utils import unit_n_sphere_cartesian_coords, check_adjmat_noncontextual
+from symmer.operators.utils import check_adjmat_noncontextual, binomial_coefficient
 
 class NoncontextualOp(PauliwordOp):
     """ Class for representing noncontextual Hamiltonians
@@ -260,6 +261,31 @@ class NoncontextualOp(PauliwordOp):
         self.pauli_mult_signs = np.array(
             list(map(multiply_indices,jordan_recon_matrix.astype(bool)))
         ).astype(int)
+
+    @ cached_property
+    def symmetrized_operator(self, expansion_order=2):
+        """ Get the symmetrized noncontextual operator S_0 - sqrt(S_1^2 + .. S_M^2).
+        In the infinite limit of expansion_order the ground state of this operator
+        will coincide exactly with the true noncontextual operator. This is used
+        for xUSO solver since this reformulation of the Hamiltonian is polynomial.
+        """
+        Si_list = [self.decomposed['symmetry']]
+        for i in range(self.n_cliques):
+            Ci = self.decomposed[i][0]; Ci.coeff_vec[0]=1
+            Si = Ci*self.decomposed[i]
+            Si_list.append(Si)
+
+        S = sum([Si**2 for Si in Si_list[1:]])
+        norm = np.linalg.norm(S.coeff_vec, ord=2)
+        S *= (1/norm)
+        I = PauliwordOp.from_list(['I'*self.n_qubits])
+        terms = [
+            (I-S)**n * (-1)**n * binomial_coefficient(.5, n) 
+            for n in range(expansion_order+1)
+        ] # power series expansion of the oeprator root
+        S_root = sum(terms) * np.sqrt(norm)
+        
+        return Si_list[0] - S_root
 
     def get_symmetry_contributions(self, nu: np.array) -> float:
         """
@@ -545,17 +571,7 @@ class NoncontextualSolver:
     def get_cost_func(self):
         """ Define the unconstrained spin cost function
         """
-        
-        Si_list = [self.NC_op.decomposed['symmetry']]
-        for i in range(self.NC_op.n_cliques):
-            Ci = self.NC_op.decomposed[i][0]; Ci.coeff_vec[0]=1
-            Si = Ci*self.NC_op.decomposed[i]
-            Si_list.append(Si)
-        
-        poly_op = sum([Si**2 for Si in Si_list]) - Si_list[0] * sum(Si_list[1:]) * 2
-        poly_op *= -1 # maximizing -> minimizing
-        G_indices, _ = poly_op.generator_reconstruction(self.NC_op.symmetry_generators)
-
+        G_indices, _ = self.NC_op.symmetrized_operator.generator_reconstruction(self.NC_op.symmetry_generators)
         # setup spin variables
         fixed_indices = np.where(self.fixed_ev_mask)[0] # bool to indices
         fixed_assignments = dict(zip(fixed_indices, self.fixed_eigvals))
@@ -577,7 +593,7 @@ class NoncontextualSolver:
             # cost function
             COST += (
                 G_term * 
-                poly_op.coeff_vec[P_index].real
+                self.NC_op.symmetrized_operator.coeff_vec[P_index].real
                 #self.NC_op.pauli_mult_signs[P_index]# * 
                 #r_part[P_index].real
             )
