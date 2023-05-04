@@ -290,6 +290,7 @@ class NoncontextualOp(PauliwordOp):
     def get_symmetry_contributions(self, nu: np.array) -> float:
         """
         """
+        nu = np.asarray(nu)
         coeff_mod =  (
             # coefficient vector whose signs we are modifying:
             self.coeff_vec *

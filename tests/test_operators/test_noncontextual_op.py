@@ -227,8 +227,7 @@ def test_noncon_no_symmertry_generators():
 def test_noncontextual_objective_function():
     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
     nu = [-1, -1,  1]
-    r_vec = [0.97466767, 0.22365807]
-    e_noncon = H_noncon.noncontextual_objective_function(nu, r_vec)
+    e_noncon = H_noncon.get_energy(nu)
     assert np.isclose(e_noncon, noncon_problem['E'])
 
 def test_solve_brute_force_discrete_no_ref():
