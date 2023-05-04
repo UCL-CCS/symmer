@@ -375,7 +375,8 @@ class NoncontextualOp(PauliwordOp):
 
         # optimize the clique operator coefficients
         self.symmetry_generators.coeff_vec = nu.astype(int)
-        self.update_clique_representative_operator()
+        if self.n_cliques > 0:
+            self.update_clique_representative_operator()
         
     def get_qaoa(self, ref_state:QuantumState=None, type='qubo') -> dict:
         """
