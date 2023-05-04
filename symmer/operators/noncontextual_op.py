@@ -263,7 +263,7 @@ class NoncontextualOp(PauliwordOp):
         ).astype(int)
 
     @ cached_property
-    def symmetrized_operator(self, expansion_order=2):
+    def symmetrized_operator(self, expansion_order=1):
         """ Get the symmetrized noncontextual operator S_0 - sqrt(S_1^2 + .. S_M^2).
         In the infinite limit of expansion_order the ground state of this operator
         will coincide exactly with the true noncontextual operator. This is used
