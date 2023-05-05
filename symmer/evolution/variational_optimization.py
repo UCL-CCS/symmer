@@ -324,7 +324,7 @@ class ADAPT_VQE(VQE_Driver):
             )
             interim_data[adapt_cycle] = {
                 'output':opt_out, 'history':vqe_hist, 'gmax':gmax, 
-                'excitation': safe_PauliwordOp_to_dict(sum(new_excitation_list))
+                'excitation': [symplectic_to_string(t.symp_matrix[0]) for t in new_excitation_list]
             }
             anew = opt_out['fun']
             interim_data['history'].append(anew)
@@ -337,7 +337,7 @@ class ADAPT_VQE(VQE_Driver):
             'result': opt_out, 
             'interim_data': interim_data,
             'ref_state': safe_QuantumState_to_dict(self.ref_state),
-            'adapt_operator': safe_PauliwordOp_to_dict(self.adapt_operator)
+            'adapt_operator': [symplectic_to_string(t) for t in self.adapt_operator.symp_matrix]
         }
     
 def serialize_opt_data(opt_data):
