@@ -5,7 +5,8 @@ from symmer import QuantumState, PauliwordOp
 from symmer.operators.utils import (
     symplectic_to_string, safe_PauliwordOp_to_dict, safe_QuantumState_to_dict
 )
-from symmer.evolution import PauliwordOp_to_QuantumCircuit
+from symmer.evolution import PauliwordOp_to_QuantumCircuit, get_CNOT_connectivity_graph
+from networkx.algorithms.cycles import cycle_basis
 from scipy.optimize import minimize
 from copy import deepcopy
 import numpy as np
@@ -179,6 +180,7 @@ class ADAPT_VQE(VQE_Driver):
     # that aims to reduce circuit-depth in the ADAPT routine by adding multiple excitation terms
     # per cycle that are supported on distinct qubit positions.
     TETRIS = False
+    linearity_biased = True
     
     def __init__(self,
         observable: PauliwordOp,
@@ -252,6 +254,30 @@ class ADAPT_VQE(VQE_Driver):
         
         return np.asarray(gradient)
     
+    def pool_score(self):
+        """ Score the operator pool with respect to gradients and circuit linearity
+        """
+        scores = abs(self.pool_gradient())
+
+        if self.linearity_biased:
+            # linearity-biased-ADAPT-VQE favours circuits with linear qubit connectivity
+            linearity_scores = []
+            for index in range(self.excitation_pool.n_terms):
+                adapt_op_temp = self.adapt_operator.append(self.excitation_pool[index])
+                circuit_temp = PauliwordOp_to_QuantumCircuit(
+                    PwordOp=adapt_op_temp, ref_state=self.ref_state, bind_params=False)
+                connectivity = get_CNOT_connectivity_graph(circuit_temp)
+                # the presence of cycles in the CNOT connectivity graph is penalised in the score
+                # linear circuits result in a linearity of 1, hence their score is not affected here.
+                linearity_scores.append(
+                    (
+                        circuit_temp.num_qubits - len([a for b in cycle_basis(connectivity) for a in b])
+                    ) / circuit_temp.num_qubits
+                )
+            scores *= np.array(linearity_scores)
+        
+        return scores
+        
     def append_to_adapt_operator(self, excitations_to_append: List[PauliwordOp]):
         """ Append the input term(s) to the expanding adapt_operator
         """
@@ -285,9 +311,9 @@ class ADAPT_VQE(VQE_Driver):
             # save the previous gmax to compare for the gdiff check
             aold = deepcopy(anew)
             # calculate gradient across the pool and select term with the largest derivative
-            pool_grad = abs(self.pool_gradient())
-            grad_rank = list(map(int, np.argsort(pool_grad)[::-1]))
-            gmax = pool_grad[grad_rank[0]]
+            scores = self.pool_score()
+            grad_rank = list(map(int, np.argsort(scores)[::-1]))
+            gmax = scores[grad_rank[0]]
 
             # TETRIS-ADAPT-VQE
             if self.TETRIS:
@@ -299,7 +325,7 @@ class ADAPT_VQE(VQE_Driver):
                     if ~np.any(support_exists):
                         new_excitation_list.append(new_excitation)
                         support_mask = support_mask | (new_excitation.X_block | new_excitation.Z_block)
-                    if np.all(support_mask) or pool_grad[i] < gtol:
+                    if np.all(support_mask) or scores[i] < gtol:
                         break
             else:
                 new_excitation_list = [self.excitation_pool[grad_rank[0]]]
