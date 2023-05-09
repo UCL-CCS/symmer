@@ -181,6 +181,7 @@ class ADAPT_VQE(VQE_Driver):
     # per cycle that are supported on distinct qubit positions.
     TETRIS = False
     linearity_biased = True
+    bias = 1/3
     
     def __init__(self,
         observable: PauliwordOp,
@@ -271,7 +272,7 @@ class ADAPT_VQE(VQE_Driver):
                 # linear circuits result in a linearity of 1, hence their score is not affected here.
                 linearity_scores.append(
                     (
-                        circuit_temp.num_qubits - len([a for b in cycle_basis(connectivity) for a in b])
+                        circuit_temp.num_qubits - len([a for b in cycle_basis(connectivity) for a in b])*self.bias
                     ) / circuit_temp.num_qubits
                 )
             scores *= np.array(linearity_scores)
