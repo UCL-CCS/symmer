@@ -63,6 +63,7 @@ class IndependentOp(PauliwordOp):
     def symmetry_generators(cls, 
             PwordOp: PauliwordOp, 
             commuting_override:bool=False,
+            largest_clique = False
         ) -> "IndependentOp":
         """ Identify a symmetry basis for the supplied Pauli operator with
         symplectic representation  M = [ X | Z ]. We perform columnwise 
@@ -95,7 +96,7 @@ class IndependentOp(PauliwordOp):
             return S
         else:
             # if any of the stabilizers are not mutually commuting, take the largest commuting subset
-            if S.n_terms < 10:
+            if S.n_terms < 10 or largest_clique:
                 # expensive clique cover finding optimal commuting subset
                 S_commuting = S.largest_clique(edge_relation='C')    
             else:

@@ -175,15 +175,19 @@ class NoncontextualOp(PauliwordOp):
         return cls.from_PauliwordOp(operator[noncon_indices])
 
     @classmethod
-    def _from_basis_noncontextual_op(cls, H: PauliwordOp, generators: PauliwordOp) -> "NoncontextualOp":
+    def _from_basis_noncontextual_op(cls, H: PauliwordOp, generators: PauliwordOp, jordan:bool=False) -> "NoncontextualOp":
         """ Construct a noncontextual operator given a noncontextual basis, via the Jordan product ( regular matrix product if the operators commute, and equal to zero if the operators anticommute.)
         """
         assert generators is not None, 'Must specify a noncontextual basis.'
-        #assert generators.is_noncontextual, 'Basis is contextual.'
-
-        _, noncontextual_terms_mask = H.jordan_generator_reconstruction(generators)
+        if jordan:
+            _, noncontextual_terms_mask = H.jordan_generator_reconstruction(generators)
+        else:
+            assert generators.is_noncontextual, 'Basis is contextual.'
+            _, noncontextual_terms_mask = H.generator_reconstruction(generators, override_independence_check=True)
+        
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
-    
+
+        
     def draw_graph_structure(self, 
             clique_lw=1,
             symmetry_lw=.25,
@@ -217,7 +221,7 @@ class NoncontextualOp(PauliwordOp):
         """ Find an independent generating set for the noncontextual operator
         """
         # identify the symmetry generating set
-        self.symmetry_generators = IndependentOp.symmetry_generators(self)#, commuting_override=True)
+        self.symmetry_generators = IndependentOp.symmetry_generators(self, commuting_override=True)
         # mask the symmetry terms within the noncontextual operator
         _, symmetry_mask = self.generator_reconstruction(self.symmetry_generators)
         # identify the reamining commuting cliques
@@ -243,7 +247,7 @@ class NoncontextualOp(PauliwordOp):
         )
         # Cannot simultaneously know eigenvalues of cliques so we peform a generator reconstruction
         # that respects the jordan product A*B = {A, B}/2, i.e. anticommuting elements are zeroed out
-        jordan_recon_matrix, successful = self.jordan_generator_reconstruction(noncon_generators)
+        jordan_recon_matrix, successful = self.generator_reconstruction(noncon_generators, override_independence_check=True)
         assert(np.all(successful)), 'The generating set is not sufficient to reconstruct the noncontextual Hamiltonian'
         self.G_indices = jordan_recon_matrix[:, :self.symmetry_generators.n_terms]
         self.C_indices = jordan_recon_matrix[:, self.symmetry_generators.n_terms:]

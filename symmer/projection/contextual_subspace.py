@@ -129,6 +129,14 @@ class ContextualSubspace(S3_projection):
         # the StabilizeFirst strategy differs from the others in that the noncontextual
         # Hamiltonian is constructed AFTER selecting stabilizers, which is what we do next:
         if self.nc_strategy == 'StabilizeFirst':
+            self._stabilize_first(n_stabilizers_in_clique, n_cliques)
+        
+    def _stabilize_first(self, n_stabilizers_in_clique, n_cliques):
+        if self.stabilize_first_method == 'DFS':
+            S = IndependentOp.symmetry_generators(self.stabilizers,commuting_override=True)
+            NC_generators = NoncontextualOp.from_hamiltonian(S, strategy='DFS_magnitude')
+            self.noncontextual_operator = NoncontextualOp._from_basis_noncontextual_op(H=self.operator, generators=NC_generators, jordan=False)
+        else:
             if self.stabilize_first_method == 'commuting':
                 assert n_stabilizers_in_clique < self.stabilizers.n_terms, 'At least one stabilizer must be assigned to the symmetry generating set.'
                 # move stabilizers into a clique by increasing commutativity with full Hamiltonian
@@ -153,9 +161,10 @@ class ContextualSubspace(S3_projection):
             symgen = IndependentOp.symmetry_generators(sum_clique_reps+self.stabilizers)
             # this forms a noncontextual generating set under the Jordan product
             noncon_basis = symgen*1 + sum_clique_reps
-            self.noncontextual_operator = NoncontextualOp.from_hamiltonian(strategy='basis', H=self.operator, basis=noncon_basis)
-            # finally, solve the noncontextual optimization problem
-            self._noncontextual_update()
+            self.noncontextual_operator = NoncontextualOp._from_basis_noncontextual_op(H=self.operator, generators=noncon_basis, jordan=True)
+        
+        # finally, solve the noncontextual optimization problem
+        self._noncontextual_update()
 
     def _greedy_stabilizer_search(self,
             n_qubits: int, 
