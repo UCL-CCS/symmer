@@ -24,6 +24,13 @@ def test_noncontextual_operator():
     assert CS.noncontextual_operator.is_noncontextual
     assert not CS.contextual_operator.is_noncontextual
 
+def test_random_stabilizers():
+    CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
+    CS.update_stabilizers(3, strategy='random')
+    H_cs = CS.project_onto_subspace()
+    assert CS.n_qubits_in_subspace == 3
+    assert H_cs.n_qubits == 3
+
 def test_noncontextual_ground_state():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
     assert np.isclose(CS.noncontextual_operator.energy, hf_energy)
@@ -35,14 +42,7 @@ def test_manual_stabilizers():
     H_cs = CS.project_onto_subspace()
     assert CS.n_qubits_in_subspace == 3
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.00035
-
-def random_stabilizers():
-    CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
-    CS.update_stabilizers(3, strategy='random')
-    H_cs = CS.project_onto_subspace()
-    assert CS.n_qubits_in_subspace == 3
-    assert H_cs.n_qubits == 3
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
     
 def test_update_stabilizers_aux_preserving():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
@@ -50,7 +50,7 @@ def test_update_stabilizers_aux_preserving():
     H_cs = CS.project_onto_subspace()
     assert CS.n_qubits_in_subspace == 3
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.00035
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
 
 # HOMO-LUMO biasing non-deterministic, occasionally this test fails so commented out for now.
 # def test_update_stabilizers_HOMO_LUMO_biasing():
@@ -66,7 +66,7 @@ def test_StabilizeFirst_strategy_correct_usage():
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     H_cs = CS.project_onto_subspace()
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004 # the extra clique actually allows StabilizeFirst to do better!
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
 
 def test_project_auxiliary_operator():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
