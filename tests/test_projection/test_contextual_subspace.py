@@ -71,7 +71,7 @@ def test_update_stabilizers_HOMO_LUMO_biasing():
         CS.update_stabilizers(3, aux_operator=CC_taper, strategy='HOMO_LUMO_biasing', HF_array=QT.tapered_ref_state.state_matrix)
         return abs(exact_gs_energy(CS.project_onto_subspace().to_sparse_matrix)[0] - fci_energy)
     with mp.Pool(mp.cpu_count()) as pool:
-        samples = pool.map(func, range(mp.cpu_count()))
+        samples = pool.map(func, range(10))
     assert min(samples) < 0.004
 
 def test_StabilizeFirst_strategy_correct_usage():

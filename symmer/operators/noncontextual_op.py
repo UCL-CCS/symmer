@@ -526,7 +526,6 @@ class NoncontextualSolver:
 
         Args:
             NC_op (NoncontextualOp): noncontextual operator
-            r_vec (np.array): array of clique expectation values <r_i>
             fixed_ev_mask (np.array): bool list of where eigenvalues in nu vector are fixed
             fixed_eigvals (np.array): list of nu eigenvalues that are fixed
             method (str): brute force or annealing optimization
