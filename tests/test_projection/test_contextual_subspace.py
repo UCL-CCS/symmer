@@ -5,7 +5,7 @@ import numpy as np
 import multiprocessing as mp
 from symmer.projection.utils import *
 from symmer import QubitTapering, ContextualSubspace, QuantumState
-from symmer.operators import PauliwordOp, IndependentOp
+from symmer.operators import PauliwordOp, IndependentOp, NoncontextualOp
 from symmer.evolution import trotter
 from symmer.utils import exact_gs_energy
 
@@ -81,21 +81,19 @@ def test_StabilizeFirst_strategy_correct_usage():
     assert H_cs.n_qubits == 3
     assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
 
-def test_unitary_partitioning_method_seq_rot():
+@pytest.mark.parametrize("ref_state", [QT.tapered_ref_state, QT.tapered_ref_state.state_matrix[0]])
+def test_reference_state(ref_state):
     CS = ContextualSubspace(
-        H_taper, noncontextual_strategy='StabilizeFirst', 
-        unitary_partitioning_method='seq_rot'
+        H_taper, noncontextual_strategy='StabilizeFirst',
+        reference_state=ref_state
     )
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     H_cs = CS.project_onto_subspace()
     assert H_cs.n_qubits == 3
     assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
 
-def test_unitary_partitioning_method_LCU():
-    CS = ContextualSubspace(
-        H_taper, noncontextual_strategy='StabilizeFirst', 
-        unitary_partitioning_method='LCU'
-    )
+def test_StabilizeFirst_strategy_correct_usage():
+    CS = ContextualSubspace(H_taper, noncontextual_strategy='StabilizeFirst')
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     H_cs = CS.project_onto_subspace()
     assert H_cs.n_qubits == 3
@@ -118,8 +116,27 @@ def test_StabilizeFirst_no_aux_operator_provided():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='StabilizeFirst')
     CS.update_stabilizers(3, aux_operator=None, strategy='aux_preserving')
 
-def test_project_state_onto_subspace():
-    CS = ContextualSubspace(H_taper, noncontextual_strategy='StabilizeFirst')
+def test_operator_already_noncontextual():
+    with pytest.raises(ValueError):
+        CS = ContextualSubspace(NoncontextualOp.from_hamiltonian(H_taper))
+
+@pytest.mark.parametrize("up_method", ['LCU', 'seq_rot'])
+def test_unitary_partitioning_method(up_method):
+    CS = ContextualSubspace(
+        H_taper, noncontextual_strategy='SingleSweep_magnitude', 
+        unitary_partitioning_method=up_method
+    )
+    CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
+    H_cs = CS.project_onto_subspace()
+    assert H_cs.n_qubits == 3
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
+
+@pytest.mark.parametrize("up_method", ['LCU', 'seq_rot'])
+def test_project_state_onto_subspace(up_method):
+    CS = ContextualSubspace(
+        H_taper, noncontextual_strategy='SingleSweep_magnitude',
+        unitary_partitioning_method=up_method
+    )
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     CS.project_onto_subspace()
     projected_state = CS.project_state_onto_subspace(QT.tapered_ref_state)
