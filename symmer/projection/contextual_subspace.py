@@ -64,7 +64,7 @@ class ContextualSubspace(S3_projection):
             S = IndependentOp.from_list(S)
         self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
         self.stabilizers = S
-        self._stabilize_first()
+        self._prepare_stabilizers()
 
     def update_stabilizers(self, 
             n_qubits: int, 
@@ -83,10 +83,6 @@ class ContextualSubspace(S3_projection):
             S = self._aux_operator_preserving_stabilizer_search(
                 n_qubits=n_qubits, aux_operator=aux_operator, use_X_only=use_X_only
             )
-        elif strategy == 'greedy_search':
-            S = self._greedy_stabilizer_search(
-                n_qubits=n_qubits, depth=depth
-            )
         elif strategy == 'random':
             S = self._random_stabilizers(
                 n_qubits=n_qubits
@@ -101,7 +97,7 @@ class ContextualSubspace(S3_projection):
 
         self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
         self.stabilizers = S
-        self._stabilize_first()
+        self._prepare_stabilizers()
 
     def _noncontextual_update(self):
         """ To be executed each time the noncontextual operator is updated.
@@ -118,24 +114,6 @@ class ContextualSubspace(S3_projection):
             )
             self.n_cliques = self.noncontextual_operator.n_cliques
         
-    def _stabilize_first(self):
-        """ the StabilizeFirst strategy differs from the others in that the noncontextual
-        Hamiltonian is constructed AFTER selecting stabilizers, which is what we do here:
-        """
-        if self.nc_strategy == 'StabilizeFirst':
-            self.noncontextual_operator = NoncontextualOp._from_stabilizers_noncontextual_op(
-                H=self.operator, stabilizers=self.stabilizers, use_jordan_product=False
-            )
-            self._noncontextual_update()
-
-    def _greedy_stabilizer_search(self,
-            n_qubits: int, 
-            depth: int=2
-        ) -> IndependentOp:
-        """
-        """
-        raise NotImplementedError
-
     def _aux_operator_preserving_stabilizer_search(self,
             n_qubits: int,
             aux_operator: PauliwordOp,
@@ -205,6 +183,15 @@ class ContextualSubspace(S3_projection):
         This includes eigenvalue assignment (obtained from the solution of the noncontextual Hamiltonian),
         and application of unitary partitioning if enforcing a clique element.
         """
+        self.S3_initialized = False
+        #the StabilizeFirst strategy differs from the others in that the noncontextual
+        #Hamiltonian is constructed AFTER selecting stabilizers, which is what we do here:
+        if self.nc_strategy == 'StabilizeFirst':
+            self.noncontextual_operator = NoncontextualOp._from_stabilizers_noncontextual_op(
+                H=self.operator, stabilizers=self.stabilizers, use_jordan_product=False
+            )
+            self._noncontextual_update()
+
         if self.noncontextual_operator.n_cliques > 0:
             # mask stabilizers that lie within one of the noncontextual cliques
             clique_commutation = self.stabilizers.commutes_termwise(self.noncontextual_operator.clique_operator)
@@ -249,11 +236,9 @@ class ContextualSubspace(S3_projection):
         # if not supplied with an alternative operator for projection, use the internal operator 
         if operator_to_project is None:
             operator_to_project = self.operator.copy()    
-        # first prepare the stabilizers, which is particularly relevant when 
-        # one wishes to enforce stabilizer(s) lying within a noncontextual clique
-        self._prepare_stabilizers()
         # instantiate the parent S3_projection class that handles the subspace projection
         super().__init__(self.stabilizers)
+        self.S3_initialized = True
         # perform unitary partitioning
         if self.perform_unitary_partitioning:
             # the rotation is implemented differently depending on the choice of LCU or seq_rot
@@ -278,6 +263,7 @@ class ContextualSubspace(S3_projection):
         ) -> QuantumState:
         """ Project a QuantumState into the contextual subspace
         """
+        assert self.S3_initialized, 'Must first project an operator into the contextual subspace via the project_onto_subspace method'
         # can provide an auxiliary state to project, although not in general scalable
         if state_to_project is None:
             assert self.ref_state is not None, 'Must provide a state to project into the contextual subspace'
