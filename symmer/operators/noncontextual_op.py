@@ -546,7 +546,6 @@ class NoncontextualSolver:
         if np.all(self.fixed_ev_mask):
             # if no degrees of freedom over nu vector, COST is a number
             nu_vec = self.fixed_eigvals
-            energy = COST 
         else:
             if self.x =='P':
                 spin_problem = COST.to_puso()
