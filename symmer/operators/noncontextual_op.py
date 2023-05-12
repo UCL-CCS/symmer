@@ -209,7 +209,8 @@ class NoncontextualOp(PauliwordOp):
             node_colour='black',
             node_size=20,
             seed=None,
-            axis=None
+            axis=None,
+            include_symmetries=True
         ):
         """ Draw the noncontextual graph structure
         """
@@ -221,7 +222,8 @@ class NoncontextualOp(PauliwordOp):
         G = nx.Graph()
         for i,j in list(zip(*np.where(adjmat))):
             if i in index_symmetries or j in index_symmetries:
-                G.add_edge(i,j,color='grey',weight=symmetry_lw)
+                if include_symmetries:
+                    G.add_edge(i,j,color='grey',weight=symmetry_lw)
             else:
                 G.add_edge(i,j,color='black',weight=clique_lw)
 
