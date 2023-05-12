@@ -51,8 +51,10 @@ class NoncontextualOp(PauliwordOp):
     def from_hamiltonian(cls, 
             H: PauliwordOp, 
             strategy: str = 'diag', 
-            basis: PauliwordOp = None, 
+            generators:  PauliwordOp = None,
+            stabilizers: IndependentOp = None, 
             DFS_runtime: int = 10,
+            use_jordan_product = False,
             override_noncontextuality_check: bool = True
         ) -> "NoncontextualOp":
         """ Given a PauliwordOp, extract from it a noncontextual sub-Hamiltonian by the specified strategy
@@ -64,8 +66,10 @@ class NoncontextualOp(PauliwordOp):
         
         if strategy == 'diag':
             return cls._diag_noncontextual_op(H)
-        elif strategy == 'basis':
-            return cls._from_basis_noncontextual_op(H, basis)
+        elif strategy == 'generators':
+            return cls._from_generators_noncontextual_op(H, generators, use_jordan_product=use_jordan_product)
+        elif strategy == 'stabilizers':
+            return cls._from_stabilizers_noncontextual_op(H, stabilizers, use_jordan_product=use_jordan_product)
         elif strategy.find('DFS') != -1:
             _, strategy = strategy.split('_')
             return cls._dfs_noncontextual_op(H, strategy=strategy, runtime=DFS_runtime)
@@ -175,18 +179,29 @@ class NoncontextualOp(PauliwordOp):
         return cls.from_PauliwordOp(operator[noncon_indices])
 
     @classmethod
-    def _from_basis_noncontextual_op(cls, H: PauliwordOp, generators: PauliwordOp, jordan:bool=False) -> "NoncontextualOp":
-        """ Construct a noncontextual operator given a noncontextual basis, via the Jordan product ( regular matrix product if the operators commute, and equal to zero if the operators anticommute.)
+    def _from_generators_noncontextual_op(cls, 
+            H: PauliwordOp, generators: PauliwordOp, use_jordan_product:bool=False
+        ) -> "NoncontextualOp":
+        """ Construct a noncontextual operator given a noncontextual generating set, via the Jordan product ( regular matrix product if the operators commute, and equal to zero if the operators anticommute.)
         """
-        assert generators is not None, 'Must specify a noncontextual basis.'
-        if jordan:
+        assert generators is not None, 'Must specify a noncontextual generating set.'
+        if use_jordan_product:
             _, noncontextual_terms_mask = H.jordan_generator_reconstruction(generators)
         else:
-            assert generators.is_noncontextual, 'Basis is contextual.'
+            assert generators.is_noncontextual, 'Generating set is contextual.'
             _, noncontextual_terms_mask = H.generator_reconstruction(generators, override_independence_check=True)
         
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
-
+    
+    @classmethod
+    def _from_stabilizers_noncontextual_op(cls, 
+            H:PauliwordOp, stabilizers: IndependentOp, use_jordan_product=False
+        ) -> "NoncontextualOp":
+        """
+        """
+        symmetries = IndependentOp.symmetry_generators(stabilizers, commuting_override=True)
+        generators = NoncontextualOp.from_hamiltonian(symmetries, strategy='DFS_magnitude')
+        return cls._from_generators_noncontextual_op(H=H, generators=generators, use_jordan_product=use_jordan_product)
         
     def draw_graph_structure(self, 
             clique_lw=1,
