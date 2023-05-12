@@ -7,7 +7,7 @@ from symmer.operators.noncontextual_op import NoncontextualSolver
 from symmer.utils import exact_gs_energy
 
 def jordan_generator_reconstruction_check(self, generators):
-    """ Function for jordan basis reconstruction test
+    """ Function for jordan generators reconstruction test
     This builds the noncontextual operator under the Jordan product, but does not give the
     reconstruction matrix. This can be used to check that the function with the reconstruction
     matrix IS correct!
@@ -106,7 +106,7 @@ def test_from_hamiltonian_diag():
     H = PauliwordOp.from_dictionary(H_con_dict)
     H_noncon_diag = NoncontextualOp.from_hamiltonian(H,
             strategy='diag',
-            basis= None,
+            generators= None,
             DFS_runtime=10)
     assert np.all(np.sum(H_noncon_diag.X_block, axis=1)==0), 'some non Z operators present'
     assert H_noncon_diag.is_noncontextual
@@ -119,7 +119,7 @@ def test_from_hamiltonian_DFS_magnitude():
     H = PauliwordOp.from_dictionary(H_con_dict)
     H_noncon_dfs = NoncontextualOp.from_hamiltonian(H,
             strategy='DFS_magnitude',
-            basis= None,
+            generators= None,
             DFS_runtime=10)
 
     assert H_noncon_dfs.is_noncontextual
@@ -132,7 +132,7 @@ def test_from_hamiltonian_DFS_largest():
     H = PauliwordOp.from_dictionary(H_con_dict)
     H_noncon_dfs = NoncontextualOp.from_hamiltonian(H,
             strategy='DFS_largest',
-            basis= None,
+            generators= None,
             DFS_runtime=10)
 
     assert H_noncon_dfs.is_noncontextual
@@ -145,7 +145,7 @@ def test_from_hamiltonian_SingleSweep_magnitude():
     H = PauliwordOp.from_dictionary(H_con_dict)
     H_noncon_dfs = NoncontextualOp.from_hamiltonian(H,
             strategy='SingleSweep_magnitude',
-            basis= None,
+            generators= None,
             DFS_runtime=10)
 
     assert H_noncon_dfs.is_noncontextual
@@ -158,7 +158,7 @@ def test_from_hamiltonian_SingleSweep_random():
     H = PauliwordOp.from_dictionary(H_con_dict)
     H_noncon_dfs = NoncontextualOp.from_hamiltonian(H,
             strategy='SingleSweep_random',
-            basis= None,
+            generators= None,
             DFS_runtime=10)
 
     assert H_noncon_dfs.is_noncontextual
@@ -171,44 +171,44 @@ def test_from_hamiltonian_SingleSweep_CurrentOrder():
     H = PauliwordOp.from_dictionary(H_con_dict)
     H_noncon_dfs = NoncontextualOp.from_hamiltonian(H,
             strategy='SingleSweep_CurrentOrder',
-            basis= None,
+            generators= None,
             DFS_runtime=10)
 
     assert H_noncon_dfs.is_noncontextual
 
 
-def test_from_hamiltonian_basis():
+def test_from_hamiltonian_generators():
     """
-    check noncontextual op via a defined basis
+    check noncontextual op via a defined generators
     """
-    ## COMMUTING BASIS
-    basis1 = PauliwordOp.from_dictionary({'IZ': (1+0j),
+    ## COMMUTING generators
+    generators1 = PauliwordOp.from_dictionary({'IZ': (1+0j),
                                          'ZI': (1+0j)})
     H = PauliwordOp.from_dictionary(H_con_dict)
 
-    H_noncon_basis1 = NoncontextualOp.from_hamiltonian(H,
-            strategy='basis',
-            basis= basis1,
+    H_noncon_generators1 = NoncontextualOp.from_hamiltonian(H,
+            strategy='generators',
+            generators= generators1,
             DFS_runtime=10)
 
-    assert H_noncon_basis1.is_noncontextual
+    assert H_noncon_generators1.is_noncontextual
 
-    ## NON-COMMUTING BASIS
-    basis2 = PauliwordOp.from_dictionary({'IZ': (1 + 0j),
+    ## NON-COMMUTING generators
+    generators2 = PauliwordOp.from_dictionary({'IZ': (1 + 0j),
                                           'ZI': (1 + 0j),
                                           'XI': (1 + 0j)})
 
-    H_noncon_basis2 = NoncontextualOp.from_hamiltonian(H,
-            strategy='basis',
-            basis= basis2,
+    H_noncon_generators2 = NoncontextualOp.from_hamiltonian(H,
+            strategy='generators',
+            generators= generators2,
             DFS_runtime=10)
 
-    assert H_noncon_basis2.is_noncontextual
+    assert H_noncon_generators2.is_noncontextual
 
-    assert H_noncon_basis2.n_terms >= H_noncon_basis1.n_terms
+    assert H_noncon_generators2.n_terms >= H_noncon_generators1.n_terms
 
 
-def test_noncon_no_symmertry_generators():
+def test_noncon_no_symmetry_generators():
     Pwords = PauliwordOp.from_list(['X', 'Y', 'Z'])
     E_ground = -1.7320508075688772
 
