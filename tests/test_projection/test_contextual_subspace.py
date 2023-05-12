@@ -66,12 +66,20 @@ def test_update_stabilizers_HOMO_LUMO_biasing():
     assert H_cs.n_qubits == 3
     samples = []
     # HOMO-LUMO biasing non-deterministic, so run a few instances to make sure the target error is achieved.
-    global func
-    def func(i):
-        CS.update_stabilizers(3, aux_operator=CC_taper, strategy='HOMO_LUMO_biasing', HF_array=QT.tapered_ref_state.state_matrix)
-        return abs(exact_gs_energy(CS.project_onto_subspace().to_sparse_matrix)[0] - fci_energy)
-    with mp.Pool(mp.cpu_count()) as pool:
-        samples = pool.map(func, range(10))
+    #####
+
+    # global func
+    # def func(i):
+    #     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='HOMO_LUMO_biasing', HF_array=QT.tapered_ref_state.state_matrix)
+    #     return abs(exact_gs_energy(CS.project_onto_subspace().to_sparse_matrix)[0] - fci_energy)
+    # with mp.Pool(mp.cpu_count()) as pool:
+    #     samples = pool.map(func, range(10))
+
+    for _ in range(10):
+        CS.update_stabilizers(3, aux_operator=CC_taper, strategy='HOMO_LUMO_biasing',
+                              HF_array=QT.tapered_ref_state.state_matrix)
+        samples.append(abs(exact_gs_energy(CS.project_onto_subspace().to_sparse_matrix)[0] - fci_energy))
+
     assert min(samples) < 0.004
 
 def test_StabilizeFirst_strategy_correct_usage():
