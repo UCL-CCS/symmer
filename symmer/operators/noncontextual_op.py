@@ -281,7 +281,6 @@ class NoncontextualOp(PauliwordOp):
             list(map(multiply_indices,jordan_recon_matrix.astype(bool)))
         ).astype(int)
         
-    @ cached_property
     def symmetrized_operator(self, expansion_order=1):
         """ Get the symmetrized noncontextual operator S_0 - sqrt(S_1^2 + .. S_M^2).
         In the infinite limit of expansion_order the ground state of this operator
@@ -343,7 +342,8 @@ class NoncontextualOp(PauliwordOp):
     def solve(self, 
             strategy: str = 'brute_force', 
             ref_state: np.array = None, 
-            num_anneals:int = 1_000
+            num_anneals:int = 1_000,
+            expansion_order:int = 1
         ) -> None:
         """ Minimize the classical objective function, yielding the noncontextual 
         ground state. This updates the coefficients of the clique representative 
@@ -364,6 +364,7 @@ class NoncontextualOp(PauliwordOp):
             NC_solver = NoncontextualSolver(self)
 
         NC_solver.num_anneals = num_anneals
+        NC_solver.expansion_order = expansion_order
 
         if strategy=='brute_force':
             self.energy, nu = NC_solver.energy_via_brute_force()
@@ -407,7 +408,8 @@ class NoncontextualSolver:
     method:str = 'brute_force'
     x:str = 'P'
     num_anneals:int = 1_000,
-    _nu = None
+    _nu = None,
+    expansion_order=1
 
     def __init__(
         self,
@@ -444,7 +446,6 @@ class NoncontextualSolver:
             nu_list[:,~self.fixed_ev_mask] = np.array(list(itertools.product([-1,1],repeat=np.sum(~self.fixed_ev_mask))))
         
         # # optimize over all discrete value assignments of nu in parallel
-        # nu_chunks = [nu_list[i*n_cpu:(i+1)*n_cpu, :] for i in range(int(np.ceil(nu_list.shape[0] / n_cpu)))]
         with mp.Pool(mp.cpu_count()) as pool:    
             tracker = pool.map(self.NC_op.get_energy, nu_list)
         
@@ -485,7 +486,8 @@ class NoncontextualSolver:
     def get_cost_func(self):
         """ Define the unconstrained spin cost function
         """
-        G_indices, _ = self.NC_op.symmetrized_operator.generator_reconstruction(self.NC_op.symmetry_generators)
+        symmetrized_operator = self.NC_op.symmetrized_operator(expansion_order=self.expansion_order)
+        G_indices, _ = symmetrized_operator.generator_reconstruction(self.NC_op.symmetry_generators)
         # setup spin variables
         fixed_indices = np.where(self.fixed_ev_mask)[0] # bool to indices
         fixed_assignments = dict(zip(fixed_indices, self.fixed_eigvals))
@@ -507,7 +509,7 @@ class NoncontextualSolver:
             # cost function
             COST += (
                 G_term * 
-                self.NC_op.symmetrized_operator.coeff_vec[P_index].real
+                symmetrized_operator.coeff_vec[P_index].real
                 #self.NC_op.pauli_mult_signs[P_index]# * 
                 #r_part[P_index].real
             )

@@ -32,6 +32,7 @@ class ContextualSubspace(S3_projection):
             unitary_partitioning_method: str = 'LCU',
             reference_state: Union[np.array, QuantumState] = None,
             noncontextual_operator: NoncontextualOp = None,
+            noncontextual_expansion_order: int = 1
         ):
         """
         """
@@ -45,6 +46,7 @@ class ContextualSubspace(S3_projection):
         self.nc_strategy = extract_noncon_strat[0]
         self.noncontextual_solver = noncontextual_solver
         self.num_anneals = num_anneals
+        self.noncontextual_expansion_order = noncontextual_expansion_order
         # With the exception of the StabilizeFirst noncontextual strategy, here we build
         # the noncontextual Hamiltonian in line with the specified strategy
         self.operator = operator
@@ -110,7 +112,8 @@ class ContextualSubspace(S3_projection):
             self.noncontextual_operator.solve(
                 strategy=self.noncontextual_solver, 
                 ref_state=self.ref_state, 
-                num_anneals=self.num_anneals
+                num_anneals=self.num_anneals,
+                expansion_order=self.noncontextual_expansion_order
             )
             self.n_cliques = self.noncontextual_operator.n_cliques
         
