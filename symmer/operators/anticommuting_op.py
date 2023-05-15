@@ -151,6 +151,8 @@ class AntiCommutingOp(PauliwordOp):
                 AC_op.symp_matrix[[0, s_index]] = AC_op.symp_matrix[[s_index, 0]]
                 AC_op = AntiCommutingOp(AC_op.symp_matrix, AC_op.coeff_vec) # need to reinit otherwise Z and X blocks wrong
 
+            # assert not np.isclose(AC_op.coeff_vec[0], 0), f's_index cannot have zero coefficent: {AC_op.coeff_vec[0]}'
+            
             if up_method=='seq_rot':
                 if len(self.X_sk_rotations)!=0:
                     self.X_sk_rotations = []
@@ -186,10 +188,12 @@ class AntiCommutingOp(PauliwordOp):
             R_LCU (PauliwordOp): PauliwordOp that is a linear combination of unitaries
             P_s (PauliwordOp): single PauliwordOp that has been reduced too.
         """
+        # need to remove zero coeff terms
+        AC_op = AC_op.cleanup(zero_threshold=1e-15)
 
         if AC_op.n_terms==1:
-            self.R_LCU = None
-            Ps_LCU = None
+            self.R_LCU = PauliwordOp.from_list(['I'*AC_op.n_qubits])
+            Ps_LCU = PauliwordOp(AC_op.symp_matrix, AC_op.coeff_vec)
         else:
             s_index=0
 
