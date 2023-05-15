@@ -26,7 +26,7 @@ def test_lp_norm():
     p = np.random.randint(1, 10)
     assert np.isclose(np.linalg.norm(arr, ord=p),  lp_norm(arr, p=p))
 
-def test_update_eigenvalues_insufficient_basis():
+def test_update_eigenvalues_insufficient_generators():
     G1 = IndependentOp.from_list(['IZ', 'ZI'])
     G2 = IndependentOp.from_list(['ZZ', 'XX'])
     with pytest.raises(ValueError):
@@ -35,7 +35,7 @@ def test_update_eigenvalues_insufficient_basis():
 def test_update_eigenvalues_correct_usage():
     G1 = IndependentOp.from_dictionary({'ZII':-1, 'ZZI':1, 'IZZ':-1})
     G2 = IndependentOp.from_list(['ZZZ', 'IIZ', 'ZIZ'])
-    update_eigenvalues(basis=G1, stabilizers=G2)
+    update_eigenvalues(generators=G1, stabilizers=G2)
     assert np.all(G2.coeff_vec == np.array([+1, +1, -1]))
 
 def test_basis_weighting():

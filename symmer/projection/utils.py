@@ -39,19 +39,19 @@ def basis_score(
     )
 
 def update_eigenvalues(
-        basis: IndependentOp, 
+        generators: IndependentOp, 
         stabilizers: IndependentOp
     ) -> None:
     """ Update the +/-1 eigenvalue assigned to the input stabilizer
     according to the noncontextual ground state configuration
     """
-    reconstruction, successfully_reconstructed = stabilizers.generator_reconstruction(basis)
+    reconstruction, successfully_reconstructed = stabilizers.generator_reconstruction(generators)
     if ~np.all(successfully_reconstructed):
-        raise ValueError('Basis not sufficient to reconstruct symmetry operators')
+        raise ValueError('Generators not sufficient to reconstruct symmetry operators')
     stabilizers.coeff_vec = (-1) ** np.count_nonzero(
         np.bitwise_and(
             reconstruction, 
-            np.asarray(basis.coeff_vec)==-1
+            np.asarray(generators.coeff_vec)==-1
         ),
         axis=1
     )

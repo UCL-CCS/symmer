@@ -301,6 +301,15 @@ def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
     cartesians.append(np.prod(np.sin(angles)))
     return np.array(cartesians)
 
+def binomial_coefficient(n,k):
+    """ Calculate the binomial coefficient n choose k
+    Differs from np.math.comb as this allows non-integer n
+    """
+    prod = 1
+    for r in range(k):
+        prod *= (n-r)/(k-r) 
+    return prod
+
 def check_adjmat_noncontextual(adjmat) -> bool:
     """ Check whether the input boolean square matrix has a noncontextual structure...
     ... see https://doi.org/10.1103/PhysRevLett.123.200501 for details.

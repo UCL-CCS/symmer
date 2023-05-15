@@ -436,15 +436,16 @@ class PauliwordOp:
 
         # first, separate symmetry elements  from anticommuting ones
         mask_symmetries = np.all(generators.adjacency_matrix, axis=1)
-        
+
         if np.all(mask_symmetries):
             # If not anticommuting component, return standard generator recon over symmetries
             return self.generator_reconstruction(generators)
         else:
             # loop over anticommuting elements to enforce Jordan condition (no two anticommuting elements multiplied)
-            for index in np.where(~mask_symmetries)[0]:
+            for _, clq in generators[~mask_symmetries].clique_cover(edge_relation='C').items():
+                clq_indices = [np.where(np.all(generators.symp_matrix == t, axis=1))[0][0] for t in clq.symp_matrix]   
                 mask_symmetries_with_P = mask_symmetries.copy()
-                mask_symmetries_with_P[index] = True
+                mask_symmetries_with_P[np.array(clq_indices)] = True   
                 # reconstruct this PauliwordOp in the augemented symmetry + single anticommuting term generating set
                 augmented_symmetries = generators[mask_symmetries_with_P]
                 recon_mat_P, successful_P = self.generator_reconstruction(augmented_symmetries)
@@ -453,7 +454,7 @@ class PauliwordOp:
                 op_reconstruction[row, col] = recon_mat_P[successful_P]
                 # will have duplicate succesful reconstruction of symmetries, so only sets True once in logical OR
                 successfully_reconstructed = np.logical_or(successfully_reconstructed, successful_P)
-
+            
             return op_reconstruction.astype(int), successfully_reconstructed
 
     @cached_property
