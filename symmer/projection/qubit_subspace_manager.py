@@ -7,6 +7,24 @@ import numpy as np
 import warnings
 
 class QubitSubspaceManager:
+    """ Class for automating the following qubit subspace techqniques:
+
+    *** QubitTapering ***
+    - Maps each Z2-symmetry onto distinct qubits and projects over them
+    - Yields an exact reduction, given that the correct sector is identifed
+
+    *** ContextualSubspace ***
+    - Partitions the Hamiltonian into noncontextual and contextual components
+    - The noncontextual problem may be solved via classical optimization
+    - We then impose noncontextual symmetries over the contextual portion of
+      the Hamiltonian, constrained by the noncontextual solution
+    - Allows one to define a reduced Hamiltonian of any size but incurs error
+    
+    It is recommended that the user should specify a reference state,
+    such as Hartree-Fock. Otherwise, Symmer will try to identify an
+    alternative refernce, either via direct diagonalization  if the 
+    Hamiltonian is sufficiently small, or using a DMRG calculation.
+    """
 
     CS_ready = False
 
@@ -24,8 +42,11 @@ class QubitSubspaceManager:
         self.run_contextual_subspace = run_contextual_subspace
         self.build_subspace_objects()
         
-    def prepare_ref_state(self, ref_state=None):
-        """
+    def prepare_ref_state(self, ref_state=None) -> QuantumState:
+        """ If no reference state is provided, then try to generate one.
+        If the Hamiltonian contains fewer than 12 qubits, we will diagonalise
+        and select the true ground state. Otherwise, a cheap DMRG calculation
+        will be performed to generate an approximate ground state.
         """
         if ref_state is not None:
             if isinstance(ref_state, list):
@@ -46,8 +67,8 @@ class QubitSubspaceManager:
 
         return ref_state.cleanup(zero_threshold=1e-4).normalize
 
-    def build_subspace_objects(self):
-        """
+    def build_subspace_objects(self) -> None:
+        """ Initialize the relevant qubit subspace classes.
         """
         if self.run_qubit_tapering:
             self.QT           = QubitTapering(operator=self.hamiltonian)
@@ -68,7 +89,8 @@ class QubitSubspaceManager:
     def get_reduced_hamiltonian(self, 
             n_qubits:int=None, aux_operator:PauliwordOp=None
         ) -> PauliwordOp:
-        """
+        """ Project the Hamiltonian in line with the desired qubit subspace techqniques
+        and, in the case of ContextualSubspace, the desired number of qubits.
         """
         if self.run_qubit_tapering:
             if not self.run_contextual_subspace and n_qubits is not None:
@@ -86,8 +108,8 @@ class QubitSubspaceManager:
 
         return operator_out
         
-    def project_auxiliary_operator(self, operator):
-        """
+    def project_auxiliary_operator(self, operator: PauliwordOp) -> PauliwordOp:
+        """ Project additional operators consistently with respect to the Hamiltonian.
         """
         if self.run_qubit_tapering:
             operator = self.QT.taper_it(aux_operator=operator)
