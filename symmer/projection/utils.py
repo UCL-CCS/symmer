@@ -17,6 +17,10 @@ def lp_norm(vector: np.array, p:int=2) -> float:
     """
     return np.power(np.sum(np.power(np.abs(vector), p)), 1/p)
 
+def one_qubit_noncontextual_gs(op: PauliwordOp):
+    assert op.n_qubits == 1, 'Operator consists of more than one qubit'
+    op.to
+
 def basis_score(
         weighting_operator: PauliwordOp,
         basis: IndependentOp,
