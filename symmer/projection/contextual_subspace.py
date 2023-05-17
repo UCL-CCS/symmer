@@ -29,7 +29,7 @@ class ContextualSubspace(S3_projection):
             noncontextual_strategy: str = 'diag',
             noncontextual_solver: str = 'brute_force',
             num_anneals:Optional[int] = 1000,
-            unitary_partitioning_method: str = 'LCU',
+            unitary_partitioning_method: str = 'seq_rot',
             reference_state: Union[np.array, QuantumState] = None,
             noncontextual_operator: NoncontextualOp = None,
             noncontextual_expansion_order: int = 1
