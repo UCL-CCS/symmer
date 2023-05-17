@@ -53,6 +53,7 @@ class QubitSubspaceManager:
                 ref_state = np.array(ref_state).reshape(-1)
             if isinstance(ref_state, np.ndarray):
                 ref_state = QuantumState(ref_state, [1])
+            self._aux_operator = None
         else:
             warnings.warn('No reference state supplied - trying to identify one via alternative means.')
             if self.hamiltonian.n_qubits <= 12:
@@ -64,6 +65,7 @@ class QubitSubspaceManager:
                 )
                 mpo = get_MPO(self.hamiltonian, max_bond_dimension=10)
                 ref_state = find_groundstate_quimb(mpo)
+            self._aux_operator = ref_state.state_op
 
         return ref_state.cleanup(zero_threshold=1e-4).normalize
 
@@ -83,7 +85,7 @@ class QubitSubspaceManager:
                 operator=self._hamiltonian,
                 reference_state=self._ref_state,
                 noncontextual_strategy='StabilizeFirst',
-                noncontextual_solver='brute_force'
+                noncontextual_solver  ='brute_force'
             )
 
     def get_reduced_hamiltonian(self, 
@@ -92,6 +94,9 @@ class QubitSubspaceManager:
         """ Project the Hamiltonian in line with the desired qubit subspace techqniques
         and, in the case of ContextualSubspace, the desired number of qubits.
         """
+        if aux_operator is None:
+            aux_operator = self._aux_operator
+
         if self.run_qubit_tapering:
             if not self.run_contextual_subspace and n_qubits is not None:
                 warnings.warn('The n_qubits parameter is redundant when contextual subspace is not run.')
@@ -116,11 +121,21 @@ class QubitSubspaceManager:
         
         if self.run_contextual_subspace:
             assert self.CS_ready, 'Have not yet projected the Hamiltonian into the contextual subspace'
-            operator = self.CS.project_onto_subspace(
-                operator_to_project=operator
-            )
+            operator = self.CS.project_onto_subspace(operator_to_project=operator)
 
         return operator
+    
+    def project_auxiliary_state(self, state: QuantumState) -> QuantumState:
+        """ Project additional operators consistently with respect to the Hamiltonian.
+        """
+        if self.run_qubit_tapering:
+            state = self.QT.project_state(state)
+        
+        if self.run_contextual_subspace:
+            assert self.CS_ready, 'Have not yet projected the Hamiltonian into the contextual subspace'
+            state = self.CS.project_state_onto_subspace(state_to_project=state)
+
+        return state
 
 
 
