@@ -248,7 +248,7 @@ class NoncontextualOp(PauliwordOp):
         )
         # Cannot simultaneously know eigenvalues of cliques so we peform a generator reconstruction
         # that respects the jordan product A*B = {A, B}/2, i.e. anticommuting elements are zeroed out
-        jordan_recon_matrix, successful = self.generator_reconstruction(noncon_generators, override_independence_check=True)
+        jordan_recon_matrix, successful = self.jordan_generator_reconstruction(noncon_generators)#, override_independence_check=True)
         assert(np.all(successful)), 'The generating set is not sufficient to reconstruct the noncontextual Hamiltonian'
         self.G_indices = jordan_recon_matrix[:, :self.symmetry_generators.n_terms]
         self.C_indices = jordan_recon_matrix[:, self.symmetry_generators.n_terms:]
