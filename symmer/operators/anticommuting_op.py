@@ -127,7 +127,7 @@ class AntiCommutingOp(PauliwordOp):
             gamma_l (float): normalization constant of clique (anticommuting operator)
             AC_op (AntiCommutingOp): normalized clique - i.e. self == gamma_l * AC_op
         """
-        assert up_method in ['LCU, seq_rot'], f'unknown unitary partitioning method: {up_method}'
+        assert up_method in ['LCU', 'seq_rot'], f'unknown unitary partitioning method: {up_method}'
         AC_op = self.copy()
 
         if AC_op.n_terms == 1:
@@ -224,7 +224,9 @@ class AntiCommutingOp(PauliwordOp):
             P_s (PauliwordOp): single PauliwordOp that has been reduced too.
         """
         # need to remove zero coeff terms
-        AC_op = AC_op.cleanup(zero_threshold=1e-15)
+        AC_op = AC_op.copy()
+        AC_op = AC_op[np.where(abs(AC_op.coeff_vec)>1e-15)[0]]
+        # AC_op = AC_op.cleanup(zero_threshold=1e-15)  ## cleanup re-orders which is BAD for s_index
 
         if AC_op.n_terms==1:
             if AC_op.coeff_vec[0]<0:
