@@ -11,7 +11,7 @@ from typing import Optional, Union, Tuple, List
 from matplotlib import pyplot as plt
 from scipy.optimize import differential_evolution, shgo
 from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
-from symmer.operators.utils import check_adjmat_noncontextual, binomial_coefficient
+from symmer.operators.utils import binomial_coefficient, perform_noncontextual_sweep
 
 class NoncontextualOp(PauliwordOp):
     """ Class for representing noncontextual Hamiltonians
@@ -111,11 +111,7 @@ class NoncontextualOp(PauliwordOp):
                 symp_matrix=operator.symp_matrix[order],
                 coeff_vec=operator.coeff_vec[order]
             )
-            noncontextual_operator = PauliwordOp.empty(H.n_qubits)
-            for op in ordered_operator:
-                noncon_check = noncontextual_operator + op
-                if noncon_check.is_noncontextual:
-                    noncontextual_operator += op
+            noncontextual_operator = perform_noncontextual_sweep(ordered_operator)
             noncontextual_ops.append(noncontextual_operator)
             n+=1
 
@@ -163,20 +159,8 @@ class NoncontextualOp(PauliwordOp):
         else:
             raise ValueError('Unrecognised strategy, must be one of magnitude, random or CurrentOrder')            
 
-        # initialize noncontextual operator with first element of input operator
-        noncon_indices = np.array([0])
-        adjmat = np.array([[True]], dtype=bool)
-        for index, term in enumerate(operator[1:]):
-            # pad the adjacency matrix term-by-term - avoids full construction each time
-            adjmat_vector = np.append(term.commutes_termwise(operator[noncon_indices]), True)
-            adjmat_padded = np.pad(adjmat, pad_width=((0, 1), (0, 1)), mode='constant')
-            adjmat_padded[-1,:] = adjmat_vector; adjmat_padded[:,-1] = adjmat_vector
-            # check whether the adjacency matrix has a noncontextual structure
-            if check_adjmat_noncontextual(adjmat_padded):
-                noncon_indices = np.append(noncon_indices, index+1)
-                adjmat = adjmat_padded
-
-        return cls.from_PauliwordOp(operator[noncon_indices])
+        nc_operator = perform_noncontextual_sweep(operator)
+        return cls.from_PauliwordOp(nc_operator)
 
     @classmethod
     def _from_generators_noncontextual_op(cls, 
@@ -264,7 +248,7 @@ class NoncontextualOp(PauliwordOp):
         )
         # Cannot simultaneously know eigenvalues of cliques so we peform a generator reconstruction
         # that respects the jordan product A*B = {A, B}/2, i.e. anticommuting elements are zeroed out
-        jordan_recon_matrix, successful = self.jordan_generator_reconstruction(noncon_generators)#, override_independence_check=True)
+        jordan_recon_matrix, successful = self.generator_reconstruction(noncon_generators, override_independence_check=True)
         assert(np.all(successful)), 'The generating set is not sufficient to reconstruct the noncontextual Hamiltonian'
         self.G_indices = jordan_recon_matrix[:, :self.symmetry_generators.n_terms]
         self.C_indices = jordan_recon_matrix[:, self.symmetry_generators.n_terms:]

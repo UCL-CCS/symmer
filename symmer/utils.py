@@ -20,6 +20,10 @@ def exact_gs_energy(
     Specifying a particle number will restrict to eigenvectors |ψ> such that <ψ|N_op|ψ> = n_particles
     where N_op is the given number operator.
     """
+    if number_operator is None:
+        # if no number operator then need not compute any further eigenvalues
+        n_eigs = 1
+
     # Note the eigenvectors are stored column-wise so need to transpose
     if sparse_matrix.shape[0] > 2**5:
         eigvals, eigvecs = sp.sparse.linalg.eigsh(

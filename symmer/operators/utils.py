@@ -194,7 +194,7 @@ def _cref_binary(matrix: np.array) -> np.array:
 def cref_binary(matrix: np.array) -> np.array:
     """ Column-reduced echelon form with ordered columns (used in basis reconstruction)
     """
-    return rref_binary(matrix.T).T         
+    return rref_binary(matrix.T).T        
 
 def QubitOperator_to_dict(op, num_qubits):
     """ OpenFermion
@@ -310,6 +310,23 @@ def binomial_coefficient(n,k):
         prod *= (n-r)/(k-r) 
     return prod
 
+def check_independent(operators):
+    """ Check if the input PauliwordOp contains algebraically dependent terms
+    """
+    check_independent = _rref_binary(operators.symp_matrix)
+    return ~np.any(np.all(~check_independent, axis=1))
+
+def check_jordan_independent(operators):
+    """ Check if the input PauliwordOp contains algebraically dependent terms
+    """
+    mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
+    Symmetries = operators[mask_symmetries]
+    Anticommuting = operators[~mask_symmetries]
+    return (
+        check_independent(Symmetries) & 
+        np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
+    )
+
 def check_adjmat_noncontextual(adjmat) -> bool:
     """ Check whether the input boolean square matrix has a noncontextual structure...
     ... see https://doi.org/10.1103/PhysRevLett.123.200501 for details.
@@ -327,22 +344,24 @@ def check_adjmat_noncontextual(adjmat) -> bool:
     # the resulting vector consists of all ones.
     return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
 
-def check_independent(operators):
-    """ Check if the input PauliwordOp contains algebraically dependent terms
+def perform_noncontextual_sweep(operator):
+    """ Given an ordered operator, sweep over its terms and append 
+    to a list if the newly appended term maintains noncontextuality.
     """
-    check_independent = _rref_binary(operators.symp_matrix)
-    return ~np.any(np.all(~check_independent, axis=1))
+    # initialize noncontextual operator with first element of input operator
+    noncon_indices = np.array([0])
+    adjmat = np.array([[True]], dtype=bool)
+    for index, term in enumerate(operator[1:]):
+        # pad the adjacency matrix term-by-term - avoids full construction each time
+        adjmat_vector = np.append(term.commutes_termwise(operator[noncon_indices]), True)
+        adjmat_padded = np.pad(adjmat, pad_width=((0, 1), (0, 1)), mode='constant')
+        adjmat_padded[-1,:] = adjmat_vector; adjmat_padded[:,-1] = adjmat_vector
+        # check whether the adjacency matrix has a noncontextual structure
+        if check_adjmat_noncontextual(adjmat_padded):
+            noncon_indices = np.append(noncon_indices, index+1)
+            adjmat = adjmat_padded
 
-def check_jordan_independent(operators):
-    """ Check if the input PauliwordOp contains algebraically dependent terms
-    """
-    mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
-    Symmetries = operators[mask_symmetries]
-    Anticommuting = operators[~mask_symmetries]
-    return (
-        check_independent(Symmetries) & 
-        np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
-    )
+    return operator[noncon_indices] 
 
 def binary_array_to_int(bin_arr):
     """
