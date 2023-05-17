@@ -65,6 +65,10 @@ class ContextualSubspace(S3_projection):
         if isinstance(S, list):
             S = IndependentOp.from_list(S)
         self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
+        if self.n_qubits_in_subspace == 0:
+            self.return_NC = True
+        else:
+            self.return_NC = False
         self.stabilizers = S
         self._prepare_stabilizers()
 
