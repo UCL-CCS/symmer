@@ -127,12 +127,47 @@ class AntiCommutingOp(PauliwordOp):
             gamma_l (float): normalization constant of clique (anticommuting operator)
             AC_op (AntiCommutingOp): normalized clique - i.e. self == gamma_l * AC_op
         """
+        assert up_method in ['LCU, seq_rot'], f'unknown unitary partitioning method: {up_method}'
         AC_op = self.copy()
+
         if AC_op.n_terms == 1:
-            rotations = None
             gamma_l = np.linalg.norm(AC_op.coeff_vec)
             AC_op.coeff_vec = AC_op.coeff_vec / gamma_l
-            Ps = AC_op
+
+            if AC_op.coeff_vec[0]<0:
+                # need to fix neg sign (use Pauli multiplication)
+
+                Y_loc = np.logical_and(AC_op.X_block, AC_op.Z_block)[0]
+                X_loc = np.logical_xor(Y_loc, AC_op.X_block)[0]
+                Z_loc = np.logical_xor(Y_loc, AC_op.Z_block)[0]
+
+                char_aray = np.array(list('I' * AC_op.n_qubits), dtype=str)
+
+                char_aray[Y_loc] = 'Y'
+                char_aray[X_loc] = 'X'
+                char_aray[Z_loc] = 'Z'
+
+                ind = np.where(char_aray != 'I')[0][0]
+
+                sign_dict = {'X': 'Z',
+                             'Y': 'X',
+                             'Z': 'Y'}
+                if up_method == 'LCU':
+                    p_op = list('I' * AC_op.n_qubits)
+                    p_op[ind] = sign_dict[char_aray[ind][0]]
+
+                    rotations = PauliwordOp.from_list([''.join(p_op)])
+                else:
+                    p_op = list('I' * AC_op.n_qubits)
+                    p_op[ind] = sign_dict[char_aray[ind][0]]
+
+                    rotations = [(PauliwordOp.from_list([''.join(p_op)]), np.pi / 2)]
+
+                Ps = PauliwordOp(AC_op.symp_matrix, [1])
+            else:
+                rotations = None
+                Ps = PauliwordOp(AC_op.symp_matrix, [1])
+
             return Ps, rotations, gamma_l, AC_op
         else:
 
@@ -192,8 +227,30 @@ class AntiCommutingOp(PauliwordOp):
         AC_op = AC_op.cleanup(zero_threshold=1e-15)
 
         if AC_op.n_terms==1:
-            self.R_LCU = PauliwordOp.from_list(['I'*AC_op.n_qubits])
-            Ps_LCU = PauliwordOp(AC_op.symp_matrix, AC_op.coeff_vec)
+            if AC_op.coeff_vec[0]<0:
+                # need to fix neg sign (use Pauli multiplication)
+
+                Y_loc = np.logical_and(AC_op.X_block, AC_op.Z_block)[0]
+                X_loc = np.logical_xor(Y_loc, AC_op.X_block)[0]
+                Z_loc = np.logical_xor(Y_loc, AC_op.Z_block)[0]
+
+                char_aray = np.array(list('I' * AC_op.n_qubits), dtype=str)
+
+                char_aray[Y_loc] = 'Y'
+                char_aray[X_loc] = 'X'
+                char_aray[Z_loc] = 'Z'
+
+                ind = np.where(char_aray != 'I')[0]
+
+                rotation = {'X': PauliwordOp.from_list(['Z']),
+                            'Y': PauliwordOp.from_list(['Z']),
+                            'Z': PauliwordOp.from_list(['X'])}
+
+                self.R_LCU = rotation[char_aray[ind][0]]
+                Ps_LCU = PauliwordOp(AC_op.symp_matrix, [1])
+            else:
+                self.R_LCU = PauliwordOp.from_list(['I'*AC_op.n_qubits])
+                Ps_LCU = PauliwordOp(AC_op.symp_matrix, AC_op.coeff_vec)
         else:
             s_index=0
 
