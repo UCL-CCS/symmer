@@ -131,47 +131,15 @@ class AntiCommutingOp(PauliwordOp):
         AC_op = self.copy()
 
         if AC_op.n_terms == 1:
+            rotations = None
             gamma_l = np.linalg.norm(AC_op.coeff_vec)
             AC_op.coeff_vec = AC_op.coeff_vec / gamma_l
-
-            if AC_op.coeff_vec[0]<0:
-                # need to fix neg sign (use Pauli multiplication)
-
-                Y_loc = np.logical_and(AC_op.X_block, AC_op.Z_block)[0]
-                X_loc = np.logical_xor(Y_loc, AC_op.X_block)[0]
-                Z_loc = np.logical_xor(Y_loc, AC_op.Z_block)[0]
-
-                char_aray = np.array(list('I' * AC_op.n_qubits), dtype=str)
-
-                char_aray[Y_loc] = 'Y'
-                char_aray[X_loc] = 'X'
-                char_aray[Z_loc] = 'Z'
-
-                ind = np.where(char_aray != 'I')[0][0]
-
-                sign_dict = {'X': 'Z',
-                             'Y': 'X',
-                             'Z': 'Y'}
-                if up_method == 'LCU':
-                    p_op = list('I' * AC_op.n_qubits)
-                    p_op[ind] = sign_dict[char_aray[ind][0]]
-
-                    rotations = PauliwordOp.from_list([''.join(p_op)])
-                else:
-                    p_op = list('I' * AC_op.n_qubits)
-                    p_op[ind] = sign_dict[char_aray[ind][0]]
-
-                    rotations = [(PauliwordOp.from_list([''.join(p_op)]), np.pi / 2)]
-
-                Ps = PauliwordOp(AC_op.symp_matrix, [1])
-            else:
-                rotations = None
-                Ps = PauliwordOp(AC_op.symp_matrix, [1])
-
+            Ps = PauliwordOp(AC_op.symp_matrix, [1])
             return Ps, rotations, gamma_l, AC_op
+
         else:
 
-            assert (np.sum(AC_op.coeff_vec.imag)==0), 'cannot apply unitary partitioning to operator with complex coeffs'
+            assert np.isclose(np.sum(AC_op.coeff_vec.imag), 0), 'cannot apply unitary partitioning to operator with complex coeffs'
 
             gamma_l = np.linalg.norm(AC_op.coeff_vec)
             AC_op.coeff_vec = AC_op.coeff_vec / gamma_l
@@ -224,31 +192,29 @@ class AntiCommutingOp(PauliwordOp):
             P_s (PauliwordOp): single PauliwordOp that has been reduced too.
         """
         # need to remove zero coeff terms
-        AC_op = AC_op.copy()
-        AC_op = AC_op[np.where(abs(AC_op.coeff_vec)>1e-15)[0]]
+        AC_op_cpy = AC_op.copy()
+        before_cleanup = AC_op_cpy.n_terms
+        AC_op = AC_op_cpy[np.where(abs(AC_op.coeff_vec)>1e-15)[0]]
+        post_cleanup = AC_op.n_terms
         # AC_op = AC_op.cleanup(zero_threshold=1e-15)  ## cleanup re-orders which is BAD for s_index
 
-        if AC_op.n_terms==1:
+
+        if (before_cleanup>1 and post_cleanup==1):
             if AC_op.coeff_vec[0]<0:
                 # need to fix neg sign (use Pauli multiplication)
 
-                Y_loc = np.logical_and(AC_op.X_block, AC_op.Z_block)[0]
-                X_loc = np.logical_xor(Y_loc, AC_op.X_block)[0]
-                Z_loc = np.logical_xor(Y_loc, AC_op.Z_block)[0]
+                # as s index defaults to 0, take the next term (in CS-VQE this will commute with symmetries)!
+                if np.isclose(AC_op_cpy[0].coeff_vec, 0):
+                    # need to correct for s_index having zero coeff... then need to swap to nonzero index
+                    non_zero_index = np.argmax(abs(AC_op_cpy.coeff_vec))
 
-                char_aray = np.array(list('I' * AC_op.n_qubits), dtype=str)
+                    AC_op_cpy.coeff_vec[[0, non_zero_index]] = AC_op_cpy.coeff_vec[[non_zero_index, 0]]
+                    AC_op_cpy.symp_matrix[[0, non_zero_index]] = AC_op_cpy.symp_matrix[[non_zero_index, 0]]
 
-                char_aray[Y_loc] = 'Y'
-                char_aray[X_loc] = 'X'
-                char_aray[Z_loc] = 'Z'
 
-                ind = np.where(char_aray != 'I')[0]
+                sign_correction = PauliwordOp(AC_op_cpy.symp_matrix[1],[1])
 
-                rotation = {'X': PauliwordOp.from_list(['Z']),
-                            'Y': PauliwordOp.from_list(['Z']),
-                            'Z': PauliwordOp.from_list(['X'])}
-
-                self.R_LCU = rotation[char_aray[ind][0]]
+                self.R_LCU = sign_correction
                 Ps_LCU = PauliwordOp(AC_op.symp_matrix, [1])
             else:
                 self.R_LCU = PauliwordOp.from_list(['I'*AC_op.n_qubits])
