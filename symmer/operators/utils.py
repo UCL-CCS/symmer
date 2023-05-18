@@ -20,9 +20,9 @@ def symplectic_to_string(symp_vec) -> str:
     X_block = symp_vec[:n_qubits]
     Z_block = symp_vec[n_qubits:]
 
-    Y_loc = np.bitwise_and(X_block, Z_block).astype(bool)
-    X_loc = np.bitwise_xor(Y_loc, X_block).astype(bool)
-    Z_loc = np.bitwise_xor(Y_loc, Z_block).astype(bool)
+    Y_loc = np.logical_and(X_block, Z_block)
+    X_loc = np.logical_xor(Y_loc, X_block)
+    Z_loc = np.logical_xor(Y_loc, Z_block)
 
     char_aray = np.array(list('I' * n_qubits), dtype=str)
 
