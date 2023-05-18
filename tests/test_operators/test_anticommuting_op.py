@@ -191,3 +191,40 @@ def test_recursive_seq_rotations():
     R_AC_op_Rdag = AcOp_normed.perform_rotations(R_seq_rot)
     assert R_AC_op_Rdag.n_terms == 1
     assert R_AC_op_Rdag == Ps_LCU
+
+
+def test_ac_set_with_zero_ceoffs():
+    AcOp_real = AntiCommutingOp.from_list(['YY', 'XI', 'ZI', 'YX'], [0, 0, 1, 0.2])
+
+    Ps_seq_rot, rotations_seq_rot, gamma_l, AC_normed = AcOp_real.unitary_partitioning(s_index=1,
+                                                                        up_method='seq_rot')
+    seq_rot_output = AC_normed.perform_rotations(rotations_seq_rot)
+    assert seq_rot_output.n_terms==1
+    assert np.isclose(seq_rot_output.coeff_vec[0], 1)
+    assert Ps_seq_rot == seq_rot_output
+
+    Ps_LCU, rotations_LCU, gamma_l, AC_normed = AcOp_real.unitary_partitioning(s_index=1,
+                                                                        up_method='LCU')
+
+    LCU_output = (rotations_LCU * AC_normed * rotations_LCU.dagger).cleanup()
+    assert LCU_output.n_terms==1
+    assert np.isclose(LCU_output.coeff_vec[0], 1)
+    assert Ps_LCU == LCU_output
+
+def test_ac_set_with_negative_and_zero_ceoffs():
+    AcOp_real = AntiCommutingOp.from_list(['YY', 'XI', 'ZI'], [-1, 0, 0])
+
+    Ps_seq_rot, rotations_seq_rot, gamma_l, AC_normed = AcOp_real.unitary_partitioning(s_index=0,
+                                                                        up_method='seq_rot')
+    seq_rot_output = AC_normed.perform_rotations(rotations_seq_rot)
+    assert seq_rot_output.n_terms==1
+    assert np.isclose(seq_rot_output.coeff_vec[0], 1)
+    assert Ps_seq_rot == seq_rot_output
+
+    Ps_LCU, rotations_LCU, gamma_l, AC_normed = AcOp_real.unitary_partitioning(s_index=0,
+                                                                        up_method='LCU')
+
+    LCU_output = (rotations_LCU * AC_normed * rotations_LCU.dagger).cleanup()
+    assert LCU_output.n_terms==1
+    assert np.isclose(LCU_output.coeff_vec[0], 1)
+    assert Ps_LCU == LCU_output

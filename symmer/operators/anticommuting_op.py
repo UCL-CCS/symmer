@@ -155,7 +155,12 @@ class AntiCommutingOp(PauliwordOp):
                 AC_op = AntiCommutingOp(AC_op.symp_matrix, AC_op.coeff_vec) # need to reinit otherwise Z and X blocks wrong
 
             # assert not np.isclose(AC_op.coeff_vec[0], 0), f's_index cannot have zero coefficent: {AC_op.coeff_vec[0]}'
-            
+            if np.isclose(AC_op[0].coeff_vec, 0):
+                # need to correct for s_index having zero coeff... then need to swap to nonzero index
+                non_zero_index = np.argmax(abs(AC_op.coeff_vec))
+                AC_op.coeff_vec[[0, non_zero_index]] = AC_op.coeff_vec[[non_zero_index, 0]]
+                AC_op.symp_matrix[[0, non_zero_index]] = AC_op.symp_matrix[[non_zero_index, 0]]
+
             if up_method=='seq_rot':
                 if len(self.X_sk_rotations)!=0:
                     self.X_sk_rotations = []
