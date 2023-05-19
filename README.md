@@ -34,11 +34,13 @@ Qubit reduction techniques such as [tapering](https://arxiv.org/abs/1701.08213) 
 `.projection` contains stabilizer subspace projection classes (in resolution order):
 - [`S3_projection`](https://github.com/UCL-CCS/symmer/tree/main/symmer/projection/base.py) for rotating a StabilizerOp onto some basis of single-qubit Pauli operators via Clifford operations and projecting into the corresponding stabilizer subspace.
 - [`QubitTapering`](https://github.com/UCL-CCS/symmer/tree/main/symmer/projection/qubit_tapering.py) 
-  - Performs the [qubit tapering](https://arxiv.org/abs/1701.08213) technique, exploiting $\mathbb{Z}_2$ symmetries to reduce the number of qubits in the input Hamiltonian while preserving the ground state energy _exactly_.
+  - Performs the [Qubit Tapering](https://arxiv.org/abs/1701.08213) technique, exploiting $\mathbb{Z}_2$ symmetries to reduce the number of qubits in the input Hamiltonian while preserving the ground state energy _exactly_.
   - The stablizers are chosen to be an independent generating set of a Hamiltonian symmetry.
 - [`ContextualSubspace`](https://github.com/UCL-CCS/symmer/tree/main/symmer/projection/contextual_subspace.py) 
-  - Performs [Contextual-Subspace VQE](https://quantum-journal.org/papers/q-2021-05-14-456/), allowing one to specify precisely how many qubits they would like in the output Hamiltonian. Despite this process incurring some systematic error, it is possible to retain sufficient information to permit high precision simulations at a significant reduction in quantum resource. This is the updated approach to [ContextualSubspaceVQE](https://github.com/wmkirby1/ContextualSubspaceVQE).
+  - Implements the [Contextual Subspace](https://quantum-journal.org/papers/q-2021-05-14-456/) methodology, allowing one to specify precisely how many qubits they would like in the output Hamiltonian. Despite this process incurring some systematic error, it is possible to retain sufficient information to permit high precision simulations at a significant reduction in quantum resource. This is the updated approach to [ContextualSubspaceVQE](https://github.com/wmkirby1/ContextualSubspaceVQE).
   - Here, the stabilizers are taken to be an independent generating set of a sub-Hamiltonian symmetry (defined by a noncontextual subset of terms) with an additional contribution encapsulating the remaining anticommuting terms therein.
+- [`QubitSubspaceManager`](https://github.com/UCL-CCS/symmer/blob/main/symmer/projection/qubit_subspace_manager.py)
+  - Automates these qubit subspace methods for ease-of-use. 
 
 ## Performance
 
