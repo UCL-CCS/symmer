@@ -127,16 +127,19 @@ class AntiCommutingOp(PauliwordOp):
             gamma_l (float): normalization constant of clique (anticommuting operator)
             AC_op (AntiCommutingOp): normalized clique - i.e. self == gamma_l * AC_op
         """
+        assert up_method in ['LCU', 'seq_rot'], f'unknown unitary partitioning method: {up_method}'
         AC_op = self.copy()
+
         if AC_op.n_terms == 1:
             rotations = None
             gamma_l = np.linalg.norm(AC_op.coeff_vec)
             AC_op.coeff_vec = AC_op.coeff_vec / gamma_l
-            Ps = AC_op
+            Ps = PauliwordOp(AC_op.symp_matrix, [1])
             return Ps, rotations, gamma_l, AC_op
+
         else:
 
-            assert (np.sum(AC_op.coeff_vec.imag)==0), 'cannot apply unitary partitioning to operator with complex coeffs'
+            assert np.isclose(np.sum(AC_op.coeff_vec.imag), 0), 'cannot apply unitary partitioning to operator with complex coeffs'
 
             gamma_l = np.linalg.norm(AC_op.coeff_vec)
             AC_op.coeff_vec = AC_op.coeff_vec / gamma_l
@@ -152,7 +155,12 @@ class AntiCommutingOp(PauliwordOp):
                 AC_op = AntiCommutingOp(AC_op.symp_matrix, AC_op.coeff_vec) # need to reinit otherwise Z and X blocks wrong
 
             # assert not np.isclose(AC_op.coeff_vec[0], 0), f's_index cannot have zero coefficent: {AC_op.coeff_vec[0]}'
-            
+            if np.isclose(AC_op[0].coeff_vec, 0):
+                # need to correct for s_index having zero coeff... then need to swap to nonzero index
+                non_zero_index = np.argmax(abs(AC_op.coeff_vec))
+                AC_op.coeff_vec[[0, non_zero_index]] = AC_op.coeff_vec[[non_zero_index, 0]]
+                AC_op.symp_matrix[[0, non_zero_index]] = AC_op.symp_matrix[[non_zero_index, 0]]
+
             if up_method=='seq_rot':
                 if len(self.X_sk_rotations)!=0:
                     self.X_sk_rotations = []
@@ -189,11 +197,33 @@ class AntiCommutingOp(PauliwordOp):
             P_s (PauliwordOp): single PauliwordOp that has been reduced too.
         """
         # need to remove zero coeff terms
-        AC_op = AC_op.cleanup(zero_threshold=1e-15)
+        AC_op_cpy = AC_op.copy()
+        before_cleanup = AC_op_cpy.n_terms
+        AC_op = AC_op_cpy[np.where(abs(AC_op.coeff_vec)>1e-15)[0]]
+        post_cleanup = AC_op.n_terms
+        # AC_op = AC_op.cleanup(zero_threshold=1e-15)  ## cleanup re-orders which is BAD for s_index
 
-        if AC_op.n_terms==1:
-            self.R_LCU = PauliwordOp.from_list(['I'*AC_op.n_qubits])
-            Ps_LCU = PauliwordOp(AC_op.symp_matrix, AC_op.coeff_vec)
+
+        if (before_cleanup>1 and post_cleanup==1):
+            if AC_op.coeff_vec[0]<0:
+                # need to fix neg sign (use Pauli multiplication)
+
+                # as s index defaults to 0, take the next term (in CS-VQE this will commute with symmetries)!
+                if np.isclose(AC_op_cpy[0].coeff_vec, 0):
+                    # need to correct for s_index having zero coeff... then need to swap to nonzero index
+                    non_zero_index = np.argmax(abs(AC_op_cpy.coeff_vec))
+
+                    AC_op_cpy.coeff_vec[[0, non_zero_index]] = AC_op_cpy.coeff_vec[[non_zero_index, 0]]
+                    AC_op_cpy.symp_matrix[[0, non_zero_index]] = AC_op_cpy.symp_matrix[[non_zero_index, 0]]
+
+
+                sign_correction = PauliwordOp(AC_op_cpy.symp_matrix[1],[1])
+
+                self.R_LCU = sign_correction
+                Ps_LCU = PauliwordOp(AC_op.symp_matrix, [1])
+            else:
+                self.R_LCU = PauliwordOp.from_list(['I'*AC_op.n_qubits])
+                Ps_LCU = PauliwordOp(AC_op.symp_matrix, AC_op.coeff_vec)
         else:
             s_index=0
 
