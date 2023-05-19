@@ -111,7 +111,7 @@ class AntiCommutingOp(PauliwordOp):
             return self._recursive_seq_rotations(AC_op_rotated)
 
 
-    def unitary_partitioning(self, s_index: int=None, up_method: Optional[str]='LCU') \
+    def unitary_partitioning(self, s_index: int=None, up_method: Optional[str]='seq_rot') \
             -> Tuple[PauliwordOp, Union[PauliwordOp, List[Tuple[PauliwordOp, float]]], float, "AntiCommutingOp"]:
         """
         Apply unitary partitioning on anticommuting operator (self)

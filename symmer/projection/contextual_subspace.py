@@ -29,7 +29,7 @@ class ContextualSubspace(S3_projection):
             noncontextual_strategy: str = 'diag',
             noncontextual_solver: str = 'brute_force',
             num_anneals:Optional[int] = 1000,
-            unitary_partitioning_method: str = 'LCU',
+            unitary_partitioning_method: str = 'seq_rot',
             reference_state: Union[np.array, QuantumState] = None,
             noncontextual_operator: NoncontextualOp = None,
             noncontextual_expansion_order: int = 1
@@ -65,6 +65,10 @@ class ContextualSubspace(S3_projection):
         if isinstance(S, list):
             S = IndependentOp.from_list(S)
         self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
+        if self.n_qubits_in_subspace == 0:
+            self.return_NC = True
+        else:
+            self.return_NC = False
         self.stabilizers = S
         self._prepare_stabilizers()
 
@@ -72,7 +76,6 @@ class ContextualSubspace(S3_projection):
             n_qubits: int, 
             strategy: str = 'aux_preserving',
             aux_operator: PauliwordOp = None,
-            depth: int = 2,
             HF_array: np.array = None,
             use_X_only: bool = True
         ) -> None:
@@ -81,25 +84,34 @@ class ContextualSubspace(S3_projection):
         assert(n_qubits<=self.operator.n_qubits), (
             'Cannot define a contextual subspace larger than the base Hamiltonian'
         )
-        if strategy == 'aux_preserving':
-            S = self._aux_operator_preserving_stabilizer_search(
-                n_qubits=n_qubits, aux_operator=aux_operator, use_X_only=use_X_only
-            )
-        elif strategy == 'random':
-            S = self._random_stabilizers(
-                n_qubits=n_qubits
-            )
-        elif strategy == 'HOMO_LUMO_biasing':
-            S = self._HOMO_LUMO_biasing(
-                n_qubits=n_qubits, HF_array=HF_array, 
-                weighting_operator=aux_operator, use_X_only=use_X_only
-            )
+        if n_qubits == 0:
+            n_qubits = 1
+            self.return_NC = True
         else:
-            raise ValueError('Unrecognised stabilizer search strategy.')
+            self.return_NC = False
 
-        self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
-        self.stabilizers = S
-        self._prepare_stabilizers()
+        if n_qubits == self.operator.n_qubits:
+            self.stabilizers = None
+        else:
+            if strategy == 'aux_preserving':
+                S = self._aux_operator_preserving_stabilizer_search(
+                    n_qubits=n_qubits, aux_operator=aux_operator, use_X_only=use_X_only
+                )
+            elif strategy == 'random':
+                S = self._random_stabilizers(
+                    n_qubits=n_qubits
+                )
+            elif strategy == 'HOMO_LUMO_biasing':
+                S = self._HOMO_LUMO_biasing(
+                    n_qubits=n_qubits, HF_array=HF_array, 
+                    weighting_operator=aux_operator, use_X_only=use_X_only
+                )
+            else:
+                raise ValueError('Unrecognised stabilizer search strategy.')
+
+            self.n_qubits_in_subspace = self.operator.n_qubits - S.n_terms
+            self.stabilizers = S
+            self._prepare_stabilizers()
 
     def _noncontextual_update(self):
         """ To be executed each time the noncontextual operator is updated.
@@ -238,7 +250,10 @@ class ContextualSubspace(S3_projection):
         """
         # if not supplied with an alternative operator for projection, use the internal operator 
         if operator_to_project is None:
-            operator_to_project = self.operator.copy()    
+            operator_to_project = self.operator.copy() 
+        # if there are no stabilizers, return the input operator
+        if self.stabilizers is None:
+            return operator_to_project   
         # instantiate the parent S3_projection class that handles the subspace projection
         super().__init__(self.stabilizers)
         self.S3_initialized = True
@@ -259,13 +274,23 @@ class ContextualSubspace(S3_projection):
         # finally, project the operator before returning
         cs_operator = self.perform_projection(rotated_op)
 
-        return cs_operator
+        if self.return_NC:
+            assert cs_operator.n_qubits == 1, 'Projected operator consists of more than one qubit.'
+            cs_operator = NoncontextualOp.from_PauliwordOp(cs_operator)
+            cs_operator.solve()
+            return cs_operator.energy
+        else:
+            return cs_operator
 
     def project_state_onto_subspace(self, 
             state_to_project: QuantumState = None
         ) -> QuantumState:
         """ Project a QuantumState into the contextual subspace
         """
+        # if there are no stabilizers, return the input QuantumState
+        if self.stabilizers is None:
+            return state_to_project
+        
         assert self.S3_initialized, 'Must first project an operator into the contextual subspace via the project_onto_subspace method'
         # can provide an auxiliary state to project, although not in general scalable
         if state_to_project is None:
