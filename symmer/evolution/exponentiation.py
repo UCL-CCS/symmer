@@ -4,7 +4,16 @@ from functools import reduce
 from symmer.operators import PauliwordOp
 
 def exponentiate_single_Pop(P: PauliwordOp) -> PauliwordOp:
-    """ exponentiate a single Pauli term
+    """
+     Exponentiate a single Pauli term as e^{P}
+
+    If goal is to implement e^{iθP} then coefficient of P must be iθ (note imaginary part must be included in coeff)
+
+    Args:
+        P (PauliwordOp): Pauli operator to exponentiate
+    Returns
+        exp_P (PauliwordOp): PauliwordOp representation of exponentiated operator
+
     """
     assert(P.n_terms == 1), 'Can only exponentiate single Pauli terms'
     P_copy = P.copy()
