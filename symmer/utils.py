@@ -15,10 +15,22 @@ def exact_gs_energy(
         number_operator=None, 
         n_eigs=6
     ) -> Tuple[float, np.array]:
-    """ Return the ground state energy and corresponding ground statevector for the input operator
+    """ 
+    Return the ground state energy and corresponding ground statevector for the input operator
     
     Specifying a particle number will restrict to eigenvectors |ψ> such that <ψ|N_op|ψ> = n_particles
     where N_op is the given number operator.
+
+    Args:
+        sparse_matrix (csr_matrix): The sparse matrix for which we want to compute the eigenvalues and eigenvectors.
+        initial_guess (array): The initial guess for the eigenvectors.
+        n_particles (int):  Particle number to restrict eigenvectors |ψ> such that <ψ|N_op|ψ> = n_particles where N_op is the given number operator.
+        number_operator (array): Number Operator to restrict eigenvectors |ψ> such that <ψ|N_op|ψ> = n_particles.
+        n_eigs (int): The number of eigenvalues and eigenvectors to compute.
+
+    Returns:
+        evl(float): The ground state energy for the input operator
+        QState(QuantumState): Ground statevector for the input operator corresponding to evl.
     """
     if number_operator is None:
         # if no number operator then need not compute any further eigenvalues
@@ -62,10 +74,19 @@ def exact_gs_energy(
 
 
 def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=False, apply_clifford=True):
-    """ Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
-        with normally distributed coefficients. Generates in structured way then uses Clifford rotation (default)
-        to try and make more random (can stop this to allow FAST build, but inherenet structure
-         will be present as operator is formed in specific way!)
+    """ 
+    Generate a anticommuting PauliOperator of size 2n+1 on n qubits (max possible size)
+    with normally distributed coefficients. Generates in structured way then uses Clifford rotation (default)
+    to try and make more random (can stop this to allow FAST build, but inherenet structure
+    will be present as operator is formed in specific way!)
+
+    Args:
+        n_qubits (int): Number of Qubits
+        complex_coeff (bool): Boolean representing whether if we want complex coefficents or not.
+        apply_clifford (bool): Boolean representing whether we want to apply clifford rotations to get rid of structure or not.
+
+    Returns:
+        P_anticomm (csr_matrix): Anticommuting PauliOperator of size 2n+1 on n qubits with normally distributed coefficients.
     """
     # base = 'X' * n_qubits
     # I_term = 'I' * n_qubits
@@ -117,13 +138,27 @@ def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=False, apply_cliffo
 
 
 def tensor_list(factor_list:List[PauliwordOp]) -> PauliwordOp:
-    """ Given a list of PauliwordOps, recursively tensor from the right
+    """ 
+    Given a list of PauliwordOps, recursively tensor from the right
+    
+    Args:
+        factor_list (list): list of PauliwordOps
+    
+    Returns: 
+        Tensor Product of items in factor_list from the right 
     """
     return reduce(lambda x,y:x.tensor(y), factor_list)
 
 
 def product_list(product_list:List[PauliwordOp]) -> PauliwordOp:
-    """ Given a list of PauliwordOps, recursively take product from the right
+    """ 
+    Given a list of PauliwordOps, recursively take product from the right
+
+    Args:
+        product_list (list): list of PauliwordOps
+
+    Returns:
+        Product of items in product_list from the right 
     """
     return reduce(lambda x,y:x*y, product_list)
 
