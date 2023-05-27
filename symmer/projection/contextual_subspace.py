@@ -8,7 +8,8 @@ from symmer.evolution import trotter
 from typing import List, Union, Optional
 
 class ContextualSubspace(S3_projection):
-    """ Class for performing contextual subspace methods as per https://quantum-journal.org/papers/q-2021-05-14-456/.
+    """ 
+    Class for performing contextual subspace methods as per https://quantum-journal.org/papers/q-2021-05-14-456/.
     Reduces the number of qubits in the problem while aiming to control the systematic error incurred along the way.
 
     This class handles the following:
@@ -35,6 +36,15 @@ class ContextualSubspace(S3_projection):
             noncontextual_expansion_order: int = 1
         ):
         """
+        Args: 
+            operator(PauliwordOp): Operator one wishes to enforce as stabilizers over the contextual subspace.
+            noncontextual_strategy (str): Non-Contextual Strategy to be applied. Its default value is'diag'.
+            noncontextual_solver (str): Non-contextual solver to be applied. Its default value is'brute_force'.
+            num_anneals (int): 
+            unitary_partitioning_method (str): Unitary Partitioning Method to be applied. Its default value is'seq_rot'.
+            reference_state (QuantumState): 
+            noncontextual_operator (NoncontextualOp): Non-contextual Operator.
+            noncontextual_expansion_order (int): Non-contextual Expansion Order. Its default value is 1.       
         """
         # noncontextual startegy will have the form x_y, where x is the actual strategy
         # and y is some supplementary method indicating a sorting key such as magnitude
@@ -60,7 +70,11 @@ class ContextualSubspace(S3_projection):
         self._noncontextual_update()
 
     def manual_stabilizers(self, S: Union[List[str], IndependentOp]) -> None:
-        """ Specify a set of operators to enforce manually
+        """ 
+        Specify a set of operators to enforce manually.
+
+        Args:
+            S (IndependentOp): Set of Stablizers
         """
         if isinstance(S, list):
             S = IndependentOp.from_list(S)
@@ -79,7 +93,15 @@ class ContextualSubspace(S3_projection):
             HF_array: np.array = None,
             use_X_only: bool = True
         ) -> None:
-        """ Update the stabilizers that will be used for the subspace projection
+        """ 
+        Update the stabilizers that will be used for the subspace projection.
+
+        Args:
+            n_qubits (int): Number of Qubits
+            strategy (str): Strategy to be applied. It's default value is 'aux_preserving'.
+            aux_operator (PauliwordOp): Auxiliary operator.
+            HF_array (np.array): Hartree-Fock state
+            use_X_only (bool): Default value is 'true'.
         """
         assert(n_qubits<=self.operator.n_qubits), (
             'Cannot define a contextual subspace larger than the base Hamiltonian'
@@ -114,7 +136,8 @@ class ContextualSubspace(S3_projection):
             self._prepare_stabilizers()
 
     def _noncontextual_update(self):
-        """ To be executed each time the noncontextual operator is updated.
+        """ 
+        To be executed each time the noncontextual operator is updated.
         """
         if self.noncontextual_operator is not None:
             self.noncontextual_operator.up_method = self.unitary_partitioning_method
@@ -134,8 +157,17 @@ class ContextualSubspace(S3_projection):
             aux_operator: PauliwordOp,
             use_X_only: bool = True
         ) -> IndependentOp:
-        """ Choose stabilizers that preserve some auxiliary operator.
+        """
+        Choose stabilizers that preserve some auxiliary operator.
         This could be an Ansatz operator such as UCCSD, for example.
+
+        Args:
+            n_qubits (int): Number of Qubits
+            aux_operator (PauliwordOp): Auxiliary operator.
+            use_X_only (bool): Default value is 'true'.
+
+        Returns:
+            S (IndependentOp):  Stablizer that preserves the passed auxiliary operator.
         """
         if aux_operator is None:
             if self.nc_strategy == 'StabilizeFirst':
@@ -154,8 +186,18 @@ class ContextualSubspace(S3_projection):
             weighting_operator: PauliwordOp = None,
             use_X_only:bool = True
         ) -> IndependentOp:
-        """ Bias the Hamiltonian with respect to the HOMO-LUMO gap 
+        """ 
+        Bias the Hamiltonian with respect to the HOMO-LUMO gap 
         and preserve terms in the resulting operator as above.
+
+        Args:
+            n_qubits (int): Number of Qubits
+            HF_array (np.array): Hartree-Fock state
+            weighting_operator (PauliwordOp): Weighting Operator
+            use_X_only (bool): Default value is 'true'.
+
+        Returns:
+            S (IndependentOp): Set of Stablizers
         """
         assert(HF_array is not None), 'Must supply the Hartree-Fock state for this strategy'
         
@@ -174,7 +216,14 @@ class ContextualSubspace(S3_projection):
     def _random_stabilizers(self, 
             n_qubits: int
         )  -> IndependentOp:
-        """ Generate a random set of stabilizers
+        """ 
+        Generate a random set of stabilizers.
+
+        Args:
+            n_qubits (int): Number of Qubits
+        
+        Returns: 
+            S (IndependentOp): Random set of Stablizers
         """
         # TODO better approach that does not rely on this *potentially infinite* while loop!
         found_stabilizers=False
@@ -194,9 +243,9 @@ class ContextualSubspace(S3_projection):
         return S
 
     def _prepare_stabilizers(self) -> None:
-        """ Prepare the chosen stabilizers for projection into the contextual subspace.
-        This includes eigenvalue assignment (obtained from the solution of the noncontextual Hamiltonian),
-        and application of unitary partitioning if enforcing a clique element.
+        """ 
+        Prepare the chosen stabilizers for projection into the contextual subspace.
+        This includes eigenvalue assignment (obtained from the solution of the noncontextual Hamiltonian), and application of unitary partitioning if enforcing a clique element.
         """
         self.S3_initialized = False
         #the StabilizeFirst strategy differs from the others in that the noncontextual
@@ -245,8 +294,15 @@ class ContextualSubspace(S3_projection):
             self.perform_unitary_partitioning = False
 
     def project_onto_subspace(self, operator_to_project:PauliwordOp=None) -> PauliwordOp:
-        """ Projects with respect to the current stabilizers; these are 
+        """ 
+        Projects with respect to the current stabilizers; these are 
         updated using the ContextualSubspace.update_stabilizers method.
+
+        Args:
+            operator_to_project (PauliwordOp): Operator to be projected.
+
+        Returns:
+            Projection of operator passed.
         """
         # if not supplied with an alternative operator for projection, use the internal operator 
         if operator_to_project is None:
@@ -285,7 +341,14 @@ class ContextualSubspace(S3_projection):
     def project_state_onto_subspace(self, 
             state_to_project: QuantumState = None
         ) -> QuantumState:
-        """ Project a QuantumState into the contextual subspace
+        """ 
+        Project a QuantumState into the contextual subspace
+
+        Args:
+            state_to_project (QuantumState): Quantum State to be projected into the contextual subspace
+
+        Reutrns:
+            Projection of passed Quantum State into the contextual subspace.
         """
         # if there are no stabilizers, return the input QuantumState
         if self.stabilizers is None:
