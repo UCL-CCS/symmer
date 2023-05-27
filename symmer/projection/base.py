@@ -23,7 +23,7 @@ class S3_projection:
         to implement unitary partitioning where necessary. 
 
     Attributes:
-        rotated_flag (bool): If true, operator will be rotated. By default, it is set to 'false'.
+        rotated_flag (bool): If true, the operator is rotated. By default it is set to 'false'.
     """
     rotated_flag = False
 
@@ -50,7 +50,10 @@ class S3_projection:
         stabilized by single Pauli operators (obtained via Clifford operations).
 
         Args:
-            operator (PauliwordOp): Operator which has to be projected over fixed qubit positions stabilized by single Pauli operators.
+            operator (PauliwordOp): Operator to be projected over fixed qubit positions stabilized by single Pauli operators.
+
+        Returns:
+            PauliwordOp representing the projection of input operator.
         """
         assert(operator.n_qubits == self.stabilizers.n_qubits), 'The input operator does not have the same number of qubits as the stabilizers'
         assert(self.rotated_flag), 'The operator has not been rotated - intended for use with perform_projection method'
@@ -91,7 +94,13 @@ class S3_projection:
         
         insert_rotation allows one to include supplementary Pauli rotations
         to be performed prior to the stabilizer rotations, for example 
-        unitary partitioning in CS-VQE
+        unitary partitioning in CS-VQE.
+
+        Args: 
+            operator (PauliwordOp): Operator projected over fixed qubit positions stabilized by single Pauli operators.
+
+        Returns:
+            Reduced operator corresponding to the given stabilizers and eigenvalues.
         """
         if sector is None and ref_state is not None:
             #assert(ref_state is not None), 'If no sector is provided then a reference state must be given instead'
@@ -114,7 +123,14 @@ class S3_projection:
         return self._perform_projection(operator=op_rotated)
     
     def project_state(self, state: QuantumState) -> QuantumState:
-        """ Project a state into the stabilizer subspace
+        """ 
+        Project a state into the stabilizer subspace.
+
+        Args:
+            state (QuantumState): The state which has to be projected into the stabilizer subspace.
+
+        Returns: 
+            Projection of input QuantumState into the stabilizer subspace.
         """
         transformation_list = []
         # Hadamards where rotated onto Pauli X operators
