@@ -7,7 +7,8 @@ import numpy as np
 import warnings
 
 class QubitSubspaceManager:
-    """ Class for automating the following qubit subspace techqniques:
+    """ 
+    Class for automating the following qubit subspace techqniques:
 
     *** QubitTapering ***
     - Maps each Z2-symmetry onto distinct qubits and projects over them
@@ -24,6 +25,9 @@ class QubitSubspaceManager:
     such as Hartree-Fock. Otherwise, Symmer will try to identify an
     alternative refernce, either via direct diagonalization  if the 
     Hamiltonian is sufficiently small, or using a DMRG calculation.
+
+    Attributes:
+        _projection_ready (bool): If true, Hamiltonian is ready for projection. By default, it is set to false.
     """
 
     _projection_ready = False
@@ -35,6 +39,11 @@ class QubitSubspaceManager:
             run_contextual_subspace: bool = True
         ) -> None:
         """
+        Args:
+            hamiltonian (PauliwordOp): Hamiltonian which is to be projected.
+            ref_state (QuantumState): Reference State. If no reference state is provided, then try to generate one. By default, it is set to None.
+            run_qubit_tapering (bool): If true, Qubit Tapering is performed. By default, it is set to true. 
+            run_contextual_subspace (bool): If true, Contextual Subspace Method is used to solve the problem. By default, it is set to true.
         """
         self.hamiltonian = hamiltonian
         self.ref_state = self.prepare_ref_state(ref_state)
@@ -43,10 +52,17 @@ class QubitSubspaceManager:
         self.build_subspace_objects()
         
     def prepare_ref_state(self, ref_state=None) -> QuantumState:
-        """ If no reference state is provided, then try to generate one.
+        """ 
+        If no reference state is provided, then try to generate one.
         If the Hamiltonian contains fewer than 12 qubits, we will diagonalise
         and select the true ground state. Otherwise, a cheap DMRG calculation
         will be performed to generate an approximate ground state.
+
+        Args: 
+            ref_state (QuantumState): Reference State. If no reference state is provided, then try to generate one. By default, it is set to None.
+
+        Returns:
+            ref_state (QuantumState): Generated Reference State.
         """
         if ref_state is not None:
             if isinstance(ref_state, list):
@@ -70,7 +86,8 @@ class QubitSubspaceManager:
         return ref_state.cleanup(zero_threshold=1e-4).normalize
 
     def build_subspace_objects(self) -> None:
-        """ Initialize the relevant qubit subspace classes.
+        """ 
+        Initialize the relevant qubit subspace classes.
         """
         if self.run_qubit_tapering:
             self.QT             = QubitTapering(operator=self.hamiltonian)
@@ -93,8 +110,16 @@ class QubitSubspaceManager:
     def get_reduced_hamiltonian(self, 
             n_qubits:int=None, aux_operator:PauliwordOp=None
         ) -> PauliwordOp:
-        """ Project the Hamiltonian in line with the desired qubit subspace techqniques
+        """ 
+        Project the Hamiltonian in line with the desired qubit subspace techqniques
         and, in the case of ContextualSubspace, the desired number of qubits.
+
+        Args:
+            n_qubits (int): Number of Qubits. By default, it is set to None.
+            aux_operator (PauliwordOp): Auxiliary operator. By default, it is set to None.
+
+        Returns:
+            operator_out (PauliwordOp): Projection of Hamiltonian.
         """
         self._projection_ready = True
         self._n_qubits = n_qubits
@@ -139,7 +164,14 @@ class QubitSubspaceManager:
         return operator_out
         
     def project_auxiliary_operator(self, operator: PauliwordOp) -> PauliwordOp:
-        """ Project additional operators consistently with respect to the Hamiltonian.
+        """ 
+        Project additional operators consistently with respect to the Hamiltonian.
+
+        Args:
+            operator (PauliwordOp): Additional operator which has to be projected consistently with respect to the Hamiltonian.
+
+        Returns:
+            operator (PauliwordOp): Projection of additional operator.
         """
         assert self._projection_ready, 'Have not yet projected the Hamiltonian into the contextual subspace'
 
@@ -154,7 +186,14 @@ class QubitSubspaceManager:
         return operator
     
     def project_auxiliary_state(self, state: QuantumState) -> QuantumState:
-        """ Project additional operators consistently with respect to the Hamiltonian.
+        """ 
+        Project additional operators consistently with respect to the Hamiltonian.
+
+        Args:
+            operator (QuantumState): Quantum State which has to be projected consistently with respect to the Hamiltonian.
+        
+        Returns:
+            operator (PauliwordOp): Projection of Quantum State.
         """
         assert self._projection_ready, 'Have not yet projected the Hamiltonian into the contextual subspace'
 
