@@ -23,7 +23,7 @@ class S3_projection:
         to implement unitary partitioning where necessary. 
 
     Attributes:
-        rotated_flag (bool): If true, the operator is rotated. By default it is set to 'false'.
+        rotated_flag (bool): If True, the operator is rotated. By default it is set to 'False'.
     """
     rotated_flag = False
 

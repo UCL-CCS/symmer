@@ -101,7 +101,7 @@ class ContextualSubspace(S3_projection):
             strategy (str): Strategy to be applied. It's default value is 'aux_preserving'.
             aux_operator (PauliwordOp): Auxiliary operator. By default, it is set to None.
             HF_array (np.array): Hartree-Fock state. By default, it is set to None.
-            use_X_only (bool): Default value is 'true'.
+            use_X_only (bool): Default value is 'True'.
         """
         assert(n_qubits<=self.operator.n_qubits), (
             'Cannot define a contextual subspace larger than the base Hamiltonian'
@@ -164,7 +164,7 @@ class ContextualSubspace(S3_projection):
         Args:
             n_qubits (int): Number of Qubits
             aux_operator (PauliwordOp): Auxiliary operator.
-            use_X_only (bool): Default value is 'true'.
+            use_X_only (bool): Default value is 'True'.
 
         Returns:
             S (IndependentOp):  Stablizer that preserves the passed auxiliary operator.
@@ -194,7 +194,7 @@ class ContextualSubspace(S3_projection):
             n_qubits (int): Number of Qubits
             HF_array (np.array): Hartree-Fock state
             weighting_operator (PauliwordOp): Weighting Operator. By default, it is set to None.
-            use_X_only (bool): Default value is 'true'.
+            use_X_only (bool): Default value is 'True'.
 
         Returns:
             S (IndependentOp): Set of Stablizers

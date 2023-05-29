@@ -27,7 +27,7 @@ class QubitSubspaceManager:
     Hamiltonian is sufficiently small, or using a DMRG calculation.
 
     Attributes:
-        _projection_ready (bool): If true, Hamiltonian is ready for projection. By default, it is set to false.
+        _projection_ready (bool): If True, Hamiltonian is ready for projection. By default, it is set to False.
     """
 
     _projection_ready = False
@@ -42,8 +42,8 @@ class QubitSubspaceManager:
         Args:
             hamiltonian (PauliwordOp): Hamiltonian which is to be projected.
             ref_state (QuantumState): Reference State. If no reference state is provided, then try to generate one. By default, it is set to None.
-            run_qubit_tapering (bool): If true, Qubit Tapering is performed. By default, it is set to true. 
-            run_contextual_subspace (bool): If true, Contextual Subspace Method is used to solve the problem. By default, it is set to true.
+            run_qubit_tapering (bool): If True, Qubit Tapering is performed. By default, it is set to True. 
+            run_contextual_subspace (bool): If True, Contextual Subspace Method is used to solve the problem. By default, it is set to True.
         """
         self.hamiltonian = hamiltonian
         self.ref_state = self.prepare_ref_state(ref_state)

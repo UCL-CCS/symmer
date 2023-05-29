@@ -5,6 +5,9 @@ from symmer.operators import PauliwordOp, IndependentOp
 
 def norm(vector: np.array) -> float:
     """
+    Args:
+        vector (np.array): Vector whose 12-norm has to be found.
+
     Returns:
         l2-norm of input vector
     """
@@ -12,6 +15,10 @@ def norm(vector: np.array) -> float:
 
 def lp_norm(vector: np.array, p:int=2) -> float:
     """
+    Args:
+        vector (np.array): Vector whose lp-norm has to be found.
+        p (int): Power.  It is the power to which the absolute value of elements are raised before summation. is a positive real number.
+
     Returns:
         lp-norm of vector
     """
@@ -26,7 +33,8 @@ def basis_score(
         basis: IndependentOp,
         p:int=1
     ) -> float:
-    """ Evaluate the score of an input basis according 
+    """ 
+    Evaluate the score of an input basis according 
     to the basis weighting operator, for example:
         - set Hamiltonian cofficients to 1 for unweighted number of commuting terms
         - specify as the SOR Hamiltonian to weight according to second-order response
@@ -34,6 +42,14 @@ def basis_score(
         - if None given then weights by Hamiltonian coefficient magnitude
     
     p determines which norm is used, i.e. lp --> (\sum_{t} |t|^p)^(1/p)
+
+    Args:
+        weighting_operator (PauliwordOp): Basis weighting operator.
+        basis (IndependentOp): Basis whose basis score has to be determined.
+        p (int): Power which determines which norm is used. Its default value is 1.
+
+    Returns:
+        Basis score (float) of the input basis.
     """
     # mask terms of the weighting operator that are preserved under projection over the basis
     mask_preserved = np.where(np.all(weighting_operator.commutes_termwise(basis),axis=1))[0]
@@ -46,8 +62,12 @@ def update_eigenvalues(
         generators: IndependentOp, 
         stabilizers: IndependentOp
     ) -> None:
-    """ Update the +/-1 eigenvalue assigned to the input stabilizer
-    according to the noncontextual ground state configuration
+    """ 
+    Update the +/-1 eigenvalue assigned to the input stabilizer according to the noncontextual ground state configuration.
+    
+    Args:
+        generators (IndependentOp): Generator
+        stabilizers (IndependentOp): Stabilizer 
     """
     reconstruction, successfully_reconstructed = stabilizers.generator_reconstruction(generators)
     if ~np.all(successfully_reconstructed):
@@ -66,6 +86,9 @@ class StabilizerIdentification:
         use_X_only = False
         ) -> None:
         """
+        Args:
+            weighting_operator (PauliwordOp): Basis weighting operator. By default, it is set to None.
+            use_X_only (bool): Default value is 'False'.
         """
         self.weighting_operator = weighting_operator
         self.use_X_only = use_X_only
@@ -83,8 +106,15 @@ class StabilizerIdentification:
         self.term_region = [0,self.basis_weighting.n_terms]
         
     def symmetry_generators_by_term_significance(self, n_preserved):
-        """ Set the number of terms to be preserved in order of coefficient magnitude
-        Then generate the largest symmetry basis that preserves them
+        """ 
+        Set the number of terms to be preserved in order of coefficient magnitude,
+        Then generate the largest symmetry basis that preserves them.
+
+        Args: 
+            n_preserved (int): Number of terms to be preserved in order of coefficient magnitude.
+        
+        Returns:
+            The largest symmetry basis that preserves order of coefficient magnitude.
         """
         preserve = self.basis_weighting[:n_preserved]
         stabilizers = IndependentOp.symmetry_generators(preserve, commuting_override=True)
@@ -93,6 +123,12 @@ class StabilizerIdentification:
 
     def symmetry_generators_by_subspace_dimension(self, n_sim_qubits, region=None):
         """
+        Args:
+            n_sim_qubits (int): Number of qubits to simulate.
+            region (list[int]): Region
+
+        Returns:
+            Symetry generators by subspace dimension.
         """
         if region is None:
             region = deepcopy(self.term_region)
@@ -116,7 +152,13 @@ class StabilizerIdentification:
         return self.symmetry_generators_by_subspace_dimension(n_sim_qubits, region=region)
 
 class ObservableBiasing:
-    """ Class for re-weighting Hamiltonian terms based on some criteria, such as HOMO-LUMO bias
+    """ 
+    Class for re-weighting Hamiltonian terms based on some criteria, such as HOMO-LUMO bias.
+    
+    Attributes:
+        HOMO_bias (float): HUMO Bias. Its value is in between 0 and 1. By default it's value is set to be 0.2
+        LUMO_bias (float): LUMO Bias. Its value is in between 0 and 1. By default it's value is set to be 0.2
+        seperation (int):  Separation between the two distributions. By default it is set to 1. A value of 1 means each distribution is peaked either side of the HOMO-LUMO gap.
     """
     # HOMO/LUMO bias is a value between 0 and 1 representing how sharply 
     # peaked the Gaussian distributions centred at each point should be
@@ -127,6 +169,11 @@ class ObservableBiasing:
     separation = 1
     
     def __init__(self, base_operator: PauliwordOp, HOMO_LUMO_gap) -> None:
+        """
+        Args:
+            base_operator (PauliwordOp): Base Operator.
+            HOMO_LUMO_gap: HOMO-LUMO gap. It should be specified as the mid-point between the HOMO and LUMO indices.
+        """
         self.base_operator = base_operator
         assert(
             HOMO_LUMO_gap - int(HOMO_LUMO_gap) == 0.5
@@ -136,9 +183,13 @@ class ObservableBiasing:
         self.shifted_q_pos = np.arange(base_operator.n_qubits) - self.HOMO_LUMO_gap
         
     def HOMO_LUMO_bias_curve(self) -> np.array:
-        """ Curve constructed from two gaussians centred either side of the HOMO-LUMO gap
+        """ 
+        Curve constructed from two gaussians centred either side of the HOMO-LUMO gap.
         The standard deviation for each distribution can be tuned independently via
-        the parameters HOMO_sig (lower population), LUMO_sig (upper population) in [0, pi/2]
+        the parameters HOMO_sig (lower population), LUMO_sig (upper population) in [0, pi/2].
+
+        Returns:
+            HOMO LUMO bias curve (np.array).
         """
         shift = self.separation - 1/2
         # standard deviation about the HOMO/LUMO-centred Gaussian distributions:
@@ -164,7 +215,10 @@ class ObservableBiasing:
             (since only interested in where the terms can affect orbital occupation)
         - Second, assigns a weight to each nontrivial qubit position according to the bias curve
             and sums the total HOM-LUMO-biased contribution. This is multiplied by the coefficient
-            vector to re-weight according to how close to the gap each term acts
+            vector to re-weight according to how close to the gap each term acts.
+
+        Returns:
+            reweighted_operator (PauliwordOp): Reweighted Operator.
         """
         reweighted_operator = self.base_operator.copy()
         reweighted_operator.coeff_vec = np.sum(
@@ -181,6 +235,15 @@ def stabilizer_walk(
         use_X_only: bool = False
     ) -> IndependentOp:
     """
+    Args:
+        n_sim_qubits (int): Number of qubits to simulate.
+        biasing_operator (ObservableBiasing): Biasing Operator.
+        weighting_operator (PauliwordOp): Basis weighting operator. By default, it is set to None.
+        print_info (bool): If True, Info about optimal score for HUMO/LUMO bias is printed. By default, it is set to 'False'.
+        use_X_only:  Default value is 'False'.
+
+    Returns:
+        S IndependentOp: Stablizers
     """
     if weighting_operator is None:
         weighting_operator = biasing_operator.base_operator
