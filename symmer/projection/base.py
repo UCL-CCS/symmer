@@ -37,7 +37,7 @@ class S3_projection:
         - fix_qubits: Manually overrides the qubit positions selected in stabilizer_rotations, although the rotation procedure can be a bit unpredictable so take care!
 
         Args:
-        stabilizers (IndependentOp): A list of stabilizers that should be enforced, given as Pauli strings.
+            stabilizers (IndependentOp): A list of stabilizers that should be enforced, given as Pauli strings.
         """
         self.stabilizers = stabilizers
         
@@ -98,7 +98,8 @@ class S3_projection:
 
         Args: 
             operator (PauliwordOp): Operator projected over fixed qubit positions stabilized by single Pauli operators.
-
+            ref_state (np.array): Reference State. By default, it is set to None.
+            sector (np.array): Sector. By default it is set to none. If no sector is provided then a reference state must be given instead.
         Returns:
             Reduced operator corresponding to the given stabilizers and eigenvalues.
         """
