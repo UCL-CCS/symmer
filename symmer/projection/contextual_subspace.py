@@ -40,10 +40,10 @@ class ContextualSubspace(S3_projection):
             operator(PauliwordOp): Operator one wishes to enforce as stabilizers over the contextual subspace.
             noncontextual_strategy (str): Non-Contextual Strategy to be applied. Its default value is'diag'.
             noncontextual_solver (str): Non-contextual solver to be applied. Its default value is'brute_force'.
-            num_anneals (int): 
+            num_anneals (int): By default, it is set to 1000.
             unitary_partitioning_method (str): Unitary Partitioning Method to be applied. Its default value is'seq_rot'.
-            reference_state (QuantumState): 
-            noncontextual_operator (NoncontextualOp): Non-contextual Operator.
+            reference_state (QuantumState): Reference State. By default, it is set to None.
+            noncontextual_operator (NoncontextualOp): Non-contextual Operator. By default, it is set to None.
             noncontextual_expansion_order (int): Non-contextual Expansion Order. Its default value is 1.       
         """
         # noncontextual startegy will have the form x_y, where x is the actual strategy
@@ -99,8 +99,8 @@ class ContextualSubspace(S3_projection):
         Args:
             n_qubits (int): Number of Qubits
             strategy (str): Strategy to be applied. It's default value is 'aux_preserving'.
-            aux_operator (PauliwordOp): Auxiliary operator.
-            HF_array (np.array): Hartree-Fock state
+            aux_operator (PauliwordOp): Auxiliary operator. By default, it is set to None.
+            HF_array (np.array): Hartree-Fock state. By default, it is set to None.
             use_X_only (bool): Default value is 'true'.
         """
         assert(n_qubits<=self.operator.n_qubits), (
@@ -193,7 +193,7 @@ class ContextualSubspace(S3_projection):
         Args:
             n_qubits (int): Number of Qubits
             HF_array (np.array): Hartree-Fock state
-            weighting_operator (PauliwordOp): Weighting Operator
+            weighting_operator (PauliwordOp): Weighting Operator. By default, it is set to None.
             use_X_only (bool): Default value is 'true'.
 
         Returns:
@@ -299,7 +299,7 @@ class ContextualSubspace(S3_projection):
         updated using the ContextualSubspace.update_stabilizers method.
 
         Args:
-            operator_to_project (PauliwordOp): Operator to be projected.
+            operator_to_project (PauliwordOp): Operator to be projected. By default, it is set to None.
 
         Returns:
             Projection of operator passed.
@@ -345,7 +345,7 @@ class ContextualSubspace(S3_projection):
         Project a QuantumState into the contextual subspace
 
         Args:
-            state_to_project (QuantumState): Quantum State to be projected into the contextual subspace
+            state_to_project (QuantumState): Quantum State to be projected into the contextual subspace. By default, it is set to None.
 
         Reutrns:
             Projection of passed Quantum State into the contextual subspace.
