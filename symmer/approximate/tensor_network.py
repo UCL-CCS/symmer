@@ -17,10 +17,17 @@ class MPOOp:
             pauliList: List[str],
             coeffList: List[complex],
             Dmax: int = None) -> None:
-        """Initialize an MPO to represent an operator from Pauli strings and
+        """
+        Initialize an MPO to represent an operator from Pauli strings and
         coefficients. MPO tensors are shapes as (σ, l, i, j) where σ is the
         physical leg, l is the output leg and i and j are the remaining
-        legs."""
+        legs.
+
+        Args:
+            pauliList (List[str]): List of Pauli Strings
+            coeffList (List[complex]): List of complex coefficients
+            Dmax (int): Maximum bond dimension. By default it is set to 'None'.
+        """
         self.mpo = pstrings_to_mpo(pauliList, coeffList, Dmax)
 
     @classmethod
@@ -30,6 +37,13 @@ class MPOOp:
         """
         Initalize MPOApproximator using Pauli terms and coefficients stored in
         a dictionary like {pauli: coeff}
+
+        Args:
+            operator_dict (Dict[str, complex]): Dictionary of Pauli string terms and their coefficients.
+            Dmax (int): Maximum bond dimension. By default it is set to 'None'.
+
+        Returns:
+            Matrix Product Operator (MPO) Approximator
         """
         paulis, coeffs = zip(*operator_dict.items())
         paulis = list(paulis)
@@ -39,7 +53,13 @@ class MPOOp:
     def from_WordOp(cls,
             WordOp: PauliwordOp) -> "MPOApproximator":
         """
-        Initialize MPOApproximator using PauliwordOp
+        Initialize MPOApproximator using PauliwordOp.
+
+        Args:
+            WordOp (PauliwordOp): PauliwordOp to initialize MPO Approximator.
+
+        Returns:
+            Matrix Product Operator (MPO) Approximator
         """
         return cls.from_dictionary(WordOp.to_dictionary())
 
@@ -47,6 +67,9 @@ class MPOOp:
     def to_matrix(self) -> np.ndarray:
         '''
         Contract MPO to produce matrix representation of operator.
+
+        Returns:
+            Matrix Representation(np.ndarray) of operator.
         '''
         mpo = self.mpo
         contr = mpo[0]
@@ -60,8 +83,16 @@ class MPOOp:
         return contr
     
 def get_MPO(operator: PauliwordOp, max_bond_dimension: int) -> MPOOp:
-    """ Return the Matrix Product Operator (MPO) of a PauliwordOp 
-    (linear combination of Paulis) given a maximum bond dimension
+    """ 
+    Return the Matrix Product Operator (MPO) of a PauliwordOp 
+    (linear combination of Paulis) given a maximum bond dimension.
+
+    Args: 
+        operator (PauliwordOp): PauliwordOp (linear combination of Paulis)
+        max_bond_dimension (int): Maximum bond dimension.
+
+    Returns:
+        The Matrix Product Operator (MPO) of a PauliwordOp passed as parameter.
     """
     pstrings, coefflist = zip(*operator.to_dictionary.items())
     mpo = MPOOp(pstrings, coefflist, Dmax=max_bond_dimension)
@@ -72,13 +103,11 @@ def find_groundstate_quimb(MPOOp: MPOOp, dmrg=None, gs_guess=None) -> QuantumSta
     Use quimb's DMRG2 optimiser to approximate groundstate of MPOOp
 
     Args:
-        MPOOp: MPOOp representing operator
-        dmrg: Quimb DMRG solver class
-        gs_guess: Guess for the ground state, used as intialisation for the
-                DMRG optimiser. Represented as a dense array.
+        MPOOp: MPOOp representing operator.
+        dmrg: Quimb DMRG solver class. By default it is set to 'None'.
+        gs_guess: Guess for the ground state, used as intialisation for the DMRG optimiser. Represented as a dense array. By default it is set to 'None'.
     Returns:
-        dmrg_state (QuantumState): Approximated groundstate
-
+        dmrg_state (QuantumState): Approximated groundstate.
     """
     mpo = [np.squeeze(m) for m in MPOOp.mpo]
     MPO = MatrixProductOperator(mpo, 'dulr')
@@ -111,18 +140,32 @@ Paulis = {
 
 def coefflist_to_complex(coefflist):
     '''
-    Convert a list of real + imaginary components into a complex vector
+    Convert a list of real + imaginary components into a complex vector.
+
+    Args:
+        coeffList (List): List of complex coefficients.
+
+    Returns:
+        Array of complex vectors
     '''
     arr = np.array(coefflist, dtype=complex)
 
     return arr[:, 0] + 1j*arr[:, 1]
 
 def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None):
-    ''' Convert a list of Pauli Strings into an MPO. If coeff list is given,
+    ''' 
+    Convert a list of Pauli Strings into an MPO. If coeff list is given,
     rescale each Pauli string by the corresponding element of the coeff list.
     Bond dim specifies the maximum bond dimension, if None, no maximum bond
     dimension.
 
+    Args:
+        pstrings (List[str]): List of Pauli Strings
+        coeffs (List[complex]): List of coefficients. By default it is set to 'None'. If coeff list is given, each Pauli string is rescaled by the corresponding element of the coeff list.
+        Dmax (int): Maximum bond dimension. By default it is set to 'None'.
+
+    Returns:
+        mpo: The Matrix Product Operator (MPO)
     '''
     if coeffs is None:
         coeffs = np.ones(len(pstrings))
@@ -140,7 +183,14 @@ def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None):
     return mpo
 
 def pstring_to_mpo(pstring, scaling=None):
-
+    '''
+    Args:
+        pstring (str): Pauli String
+        scaling (complex): Scale the Pauli string by a factor of 'scaling'. By default it is set to 'None'.
+    
+    Returns:
+        The Matrix Product Operator (MPO)
+    '''
     As = []
     for p in pstring:
         pauli = Paulis[p]
@@ -153,6 +203,14 @@ def pstring_to_mpo(pstring, scaling=None):
 
 
 def truncated_SVD(M, Dmax=None):
+    '''
+    Args:
+        M: (..., P, Q) array_like. A real or complex array with M.ndim >= 2.
+        Dmax (int): Maximum bond dimension. By default it is set to 'None'.
+
+    Returns:
+        U, S, V: Singular Value Decomposition of M
+    '''
     U, S, V = np.linalg.svd(M, full_matrices=False)
 
     if Dmax is not None and len(S) > Dmax:
@@ -163,6 +221,14 @@ def truncated_SVD(M, Dmax=None):
     return U, S, V
 
 def truncate_MPO(mpo, Dmax):
+    '''
+    Args:
+        mpo: Matrix Product Operator (MPO)
+        Dmax (int): Maximum bond dimension.
+
+    Returns:
+        As: Truncated Matrix Product Operator.
+    '''
     As = []
     for n in range(len(mpo) - 1):  # Don't need to run on the last term
         A = mpo[n]
@@ -185,6 +251,14 @@ def truncate_MPO(mpo, Dmax):
     return As
 
 def sum_mpo(mpo1, mpo2):
+    '''
+    Args:
+        mpo1: First Matrix Product Operator (MPO)
+        mpo2: Second Matrix Product Operator (MPO)
+    
+    Returns:
+        summed: Sum of First and Second Matrix Product Operator.
+    '''
     summed = [None] * len(mpo1)
     σ10, l10, i10, j10 = mpo1[0].shape
     σ20, l20, i20, j20 = mpo2[0].shape
@@ -219,4 +293,3 @@ def sum_mpo(mpo1, mpo2):
         summed[i] = new_tensor
 
     return summed
-
