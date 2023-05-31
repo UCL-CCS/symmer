@@ -11,7 +11,7 @@ def exponentiate_single_Pop(P: PauliwordOp) -> PauliwordOp:
 
     Args:
         P (PauliwordOp): Pauli operator to exponentiate
-    Returns
+    Returns:
         exp_P (PauliwordOp): PauliwordOp representation of exponentiated operator
     """
     assert(P.n_terms == 1), 'Can only exponentiate single Pauli terms'
@@ -28,6 +28,10 @@ def trotter(op:PauliwordOp, trotnum:int=1) -> PauliwordOp:
     Computes the exponential exp(op). This is exact only when 
     op is fully commuting, otherwise approximates the exponential
     and increasing trotnum will improve precision.
+
+    Args:
+        op (PauliwordOp): Pauli operator to exponentiate
+        tortnum (int): Increasing trotnum will improve precision when exact exponential is not computed. By default, it is set to 1.
     """
     op_copy = op.copy().multiply_by_constant(1/trotnum)
     factors = [exponentiate_single_Pop(P) for P in op_copy]*trotnum
