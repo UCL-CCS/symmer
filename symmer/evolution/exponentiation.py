@@ -5,7 +5,7 @@ from symmer.operators import PauliwordOp
 
 def exponentiate_single_Pop(P: PauliwordOp) -> PauliwordOp:
     """
-     Exponentiate a single Pauli term as e^{P}
+    Exponentiate a single Pauli term as e^{P}
 
     If goal is to implement e^{iθP} then coefficient of P must be iθ (note imaginary part must be included in coeff)
 
@@ -13,7 +13,6 @@ def exponentiate_single_Pop(P: PauliwordOp) -> PauliwordOp:
         P (PauliwordOp): Pauli operator to exponentiate
     Returns
         exp_P (PauliwordOp): PauliwordOp representation of exponentiated operator
-
     """
     assert(P.n_terms == 1), 'Can only exponentiate single Pauli terms'
     P_copy = P.copy()
@@ -25,7 +24,8 @@ def exponentiate_single_Pop(P: PauliwordOp) -> PauliwordOp:
     return exp_P
 
 def trotter(op:PauliwordOp, trotnum:int=1) -> PauliwordOp:
-    """ Computes the exponential exp(op). This is exact only when 
+    """ 
+    Computes the exponential exp(op). This is exact only when 
     op is fully commuting, otherwise approximates the exponential
     and increasing trotnum will improve precision.
     """

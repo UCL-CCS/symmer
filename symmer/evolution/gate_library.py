@@ -22,7 +22,8 @@ def Z(n_qubits:int, index:int) -> PauliwordOp:
     return PauliwordOp.from_dictionary({''.join(Z_str):1})
 
 def Had(n_qubits:int, index:int) -> PauliwordOp:
-    """ Hadamard gate
+    """ 
+    Hadamard gate
     """
     return (
         Z(n_qubits, index).multiply_by_constant(1/np.sqrt(2))+
@@ -30,7 +31,8 @@ def Had(n_qubits:int, index:int) -> PauliwordOp:
     )
 
 def CZ(n_qubits:int, control:int, target:int) -> PauliwordOp:
-    """ Controlled Z gate
+    """ 
+    Controlled Z gate
     """
     ZI = Z(n_qubits, control)
     IZ = Z(n_qubits, target)
@@ -41,7 +43,8 @@ def CZ(n_qubits:int, control:int, target:int) -> PauliwordOp:
     return CZ
 
 def CX(n_qubits:int, control:int, target:int) -> PauliwordOp:
-    """ Controlled X gate
+    """ 
+    Controlled X gate
     """
     _Had = Had(n_qubits, target)
     return _Had * CZ(n_qubits, control, target) * _Had
