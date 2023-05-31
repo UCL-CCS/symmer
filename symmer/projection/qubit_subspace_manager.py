@@ -187,7 +187,7 @@ class QubitSubspaceManager:
     
     def project_auxiliary_state(self, state: QuantumState) -> QuantumState:
         """ 
-        Project additional operators consistently with respect to the Hamiltonian.
+        Project quantum state consistently with respect to the Hamiltonian.
 
         Args:
             operator (QuantumState): Quantum State which has to be projected consistently with respect to the Hamiltonian.
