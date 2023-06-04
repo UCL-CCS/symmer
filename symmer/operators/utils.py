@@ -237,7 +237,8 @@ def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:
     return dict_out
 
 def safe_QuantumState_to_dict(psi) -> Dict[str, Tuple[float, float]]:
-    """ Stores the real and imaginary parts of the coefficient separately in a tuple
+    """ 
+    Stores the real and imaginary parts of the coefficient separately in a tuple
 
     Args:
         op (QuantumState): Weighted linear combination of N-fold Pauli operators
@@ -255,35 +256,35 @@ def mul_symplectic(
         coeff1: complex,
         symp_vec2: np.array,
         coeff2: complex) -> Tuple[np.array, complex, int]:
-    """ performs Pauli multiplication with phases at the level of the symplectic
-         vector (1D here!). The phase compensation is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
+    """ 
+    Performs Pauli multiplication with phases at the level of the symplectic
+    vector (1D here!). The phase compensation is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
 
-        P1 * P2 is performed
+    P1 * P2 is performed
 
     Args:
         symp_vec1 (np.array) : 1D vector of left Pauli operator
         coeff1 (float): coefficient of left  Pauli operator
-        Y_count1: number of Y terms in left Pauli operator
 
         symp_vec2 (np.array) : 1D vector of right Pauli operator
         coeff2 (float): coefficient of right  Pauli operator
-        Y_count2: number of Y terms in right Pauli operator
 
     Returns:
         output_symplectic_vec (np.array): binary symplectic output (Pauli opertor out)
         coeff_vec (complex): complex coeff with correct phase
-        Y_count_out (int): number of Y terms in output
     """
     X_block1, Z_block1 = np.split(symp_vec1, 2)
     X_block2, Z_block2 = np.split(symp_vec2, 2)
 
+    # number of Y terms in left Pauli operator
     Y_count1 = np.sum(np.bitwise_and(X_block1, Z_block1), axis=0)
+    # number of Y terms in right Pauli operator
     Y_count2 = np.sum(np.bitwise_and(X_block2, Z_block2), axis=0)
 
     # phaseless multiplication is binary addition in symplectic representation
     output_symplectic_vec = np.bitwise_xor(symp_vec1, symp_vec2)
     # phase is determined by Y counts plus additional sign flip
-    Y_count_out = np.sum(np.bitwise_and(*np.split(output_symplectic_vec, 2)), axis=0)
+    Y_count_out = np.sum(np.bitwise_and(*np.split(output_symplectic_vec, 2)), axis=0) # number of Y terms in output
     # X_block of first op and Z_block of second op
     sign_change = (-1) ** (
             np.sum(np.bitwise_and(X_block1, Z_block2), axis=0) % 2
@@ -294,16 +295,31 @@ def mul_symplectic(
     return output_symplectic_vec, coeff_vec #, Y_count_out
 
 def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
-    """ Input an array of angles of length n, returns the n+1 cartesian coordinates 
+    """ 
+    Input an array of angles of length n, returns the n+1 cartesian coordinates 
     of the corresponding unit n-sphere in (n+1)-dimensional Euclidean space.
+
+    Args:
+        angles (np.array): Array of angles of length n of the corresponding unit n-sphere in (n+1)-dimensional Euclidean space.
+
+    Returns:
+        Numpy Array of n+1 cartesian coordinates.
     """
     cartesians = [np.prod(np.sin(angles[:i]))*np.cos(angles[i]) for i in range(len(angles))]
     cartesians.append(np.prod(np.sin(angles)))
     return np.array(cartesians)
 
 def binomial_coefficient(n,k):
-    """ Calculate the binomial coefficient n choose k
-    Differs from np.math.comb as this allows non-integer n
+    """ 
+    Calculate the binomial coefficient "n choose k" or denoted as "C(n, k)," represents the number of ways to choose k objects from a set of n objects without considering their order.
+    Differs from np.math.comb as this allows non-integer n.
+
+    Args: 
+        n: Total number of objects.
+        k: Number of object to choose from a set of n objects.
+
+    Returns:
+        Binomial coefficient "n choose k".
     """
     prod = 1
     for r in range(k):
@@ -311,13 +327,27 @@ def binomial_coefficient(n,k):
     return prod
 
 def check_independent(operators):
-    """ Check if the input PauliwordOp contains algebraically dependent terms
+    """
+    Check if the input PauliwordOp contains algebraically dependent terms.
+    
+    Args:
+        operators (PauliwordOp): Operators.
+
+    Returns:
+        Returns True, if input operators contains algebraically dependent terms.
     """
     check_independent = _rref_binary(operators.symp_matrix)
     return ~np.any(np.all(~check_independent, axis=1))
 
 def check_jordan_independent(operators):
-    """ Check if the input PauliwordOp contains algebraically dependent terms
+    """ 
+    Check if the input PauliwordOp contains algebraically dependent terms.
+
+    Args:
+        operators (PauliwordOp): Operators.
+    
+    Returns:
+        Returns True, if input operators contains algebraically dependent terms.
     """
     mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
     Symmetries = operators[mask_symmetries]
@@ -328,8 +358,15 @@ def check_jordan_independent(operators):
     )
 
 def check_adjmat_noncontextual(adjmat) -> bool:
-    """ Check whether the input boolean square matrix has a noncontextual structure...
+    """
+    Check whether the input boolean square matrix has a noncontextual structure...
     ... see https://doi.org/10.1103/PhysRevLett.123.200501 for details.
+
+    Args:
+        adjmat: Boolean square matrix.
+
+    Returns:
+        Returns True, if input matrix has a noncontextual structure.
     """
     # mask the terms that do not commute universally amongst the operator
     mask_non_universal = np.where(~np.all(adjmat, axis=1))[0]
@@ -345,8 +382,15 @@ def check_adjmat_noncontextual(adjmat) -> bool:
     return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
 
 def perform_noncontextual_sweep(operator):
-    """ Given an ordered operator, sweep over its terms and append 
+    """
+    Given an ordered operator, sweep over its terms and append 
     to a list if the newly appended term maintains noncontextuality.
+
+    Args:
+        operator (PauliwordOp): Ordered operator.
+
+    Returns:
+        List of terms maintaining noncontextuality.
     """
     # initialize noncontextual operator with first element of input operator
     noncon_indices = np.array([0])
@@ -365,13 +409,12 @@ def perform_noncontextual_sweep(operator):
 
 def binary_array_to_int(bin_arr):
     """
-    function to convert an array composed of rows of binary into integars
+    Function to convert an array composed of rows of binary into integers.
 
     Args:
-        bin_arr(np.array): 2D numpy array of binary
+        bin_arr(np.array): 2D numpy array of binary.
     Returns:
-        int_arr (np.array): 1D numpy array of ints
-
+        int_arr (np.array): 1D numpy array of ints.
     """
 
     if bin_arr.shape[1] < 64:
