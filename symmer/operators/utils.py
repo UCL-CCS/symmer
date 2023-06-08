@@ -13,7 +13,6 @@ def symplectic_to_string(symp_vec) -> str:
 
     Returns:
         Pword_string (str): String version of symplectic array
-
     """
     n_qubits = len(symp_vec) // 2
 
@@ -36,6 +35,12 @@ def symplectic_to_string(symp_vec) -> str:
 
 def string_to_symplectic(pauli_str, n_qubits):
     """
+    Args:
+        pauli_str (str): Pauli String to be converted to symplectic array
+        n_qubits (int): Number of qubits
+
+    Returns:
+        symp_vec (array): symplectic Pauliword array
     """
     assert(len(pauli_str) == n_qubits), 'Number of qubits is incompatible with pauli string'
     assert (set(pauli_str).issubset({'I', 'X', 'Y', 'Z'})), 'pauliword must only contain X,Y,Z,I terms'
@@ -59,6 +64,12 @@ def count1_in_int_bitstring(i):
 
     https://stackoverflow.com/questions/109023/how-to-count-the-number-of-set-bits-in-a-32-bit-integer#109025
     https://web.archive.org/web/20151229003112/http://blogs.msdn.com/b/jeuge/archive/2005/06/08/hakmem-bit-count.aspx
+
+    Args:
+        i (int):  Integer
+
+    Returns:
+        Number of "1" bits in the bitstring of integer 'i'.
     """
     i = i - ((i >> 1) & 0x55555555)  # add pairs of bits
     i = (i & 0x33333333) + ((i >> 2) & 0x33333333)  # quads
@@ -77,7 +88,6 @@ def symplectic_to_sparse_matrix(symp_vec, coeff) -> sp.sparse.csr_matrix:
 
     Returns:
         sparse_matrix (csr_matrix): sparse matrix of Pauliword
-
     """
     n_qubits = len(symp_vec) // 2
 
@@ -118,8 +128,17 @@ def symplectic_cleanup(
         coeff_vec:      np.array, 
         zero_threshold: float = None
     ) -> Tuple[np.array, np.array]:
-    """ Remove duplicated rows of symplectic matrix terms, whilst summing
+    """ 
+    Remove duplicated rows of symplectic matrix terms, whilst summing
     the corresponding coefficients of the deleted rows in coeff_vec
+
+    Args:
+        symp_matrix (np.array): Symplectic matrix.
+        coeff_vec (np.array): Coefficient Vector.
+        zero_threshold (float): Zero Threshold Value. By default it is set to 'None'.
+
+    Returns: 
+        Reduced symplectic matrix and reduced coefficient vector.
     """
     # order lexicographically using a fast void view implementation...
     # this scales to large numbers of qubits more favourably than np.lexsort
@@ -146,7 +165,8 @@ def symplectic_cleanup(
     return reduced_symp_matrix, reduced_coeff_vec
 
 def random_symplectic_matrix(n_qubits,n_terms, diagonal=False, density=0.3):
-    """ Generates a random binary matrix of dimension (n_terms) x (2*n_qubits)
+    """ 
+    Generates a random binary matrix of dimension (n_terms) x (2*n_qubits)
     Specifying diagonal=True will set the left hand side (X_block) to all zeros
     """
     if diagonal:
@@ -156,8 +176,15 @@ def random_symplectic_matrix(n_qubits,n_terms, diagonal=False, density=0.3):
         return np.random.choice([True, False], size=[n_terms,2*n_qubits], p=[density, 1-density])
 
 def _rref_binary(matrix: np.array) -> np.array:
-    """ Row-reduced echelon form over the binary field (GF2) - rows are not reordered 
-    here for efficiency (not required in some use cases, e.g. symmetry identification)
+    """ 
+    Row-reduced echelon form over the binary field (GF2) - rows are not reordered 
+    here for efficiency (not required in some use cases, e.g. symmetry identification).
+
+    Args:
+        matrix(np.array): Matrix whose row-reduced echelon form over the binary field has to be found.
+
+    Returns:
+        Row-reduced echelon form over the binary field of input matrix.
     """
     rref_matrix = matrix.copy()
     # iterate over rows of array
@@ -174,7 +201,14 @@ def _rref_binary(matrix: np.array) -> np.array:
     return rref_matrix
 
 def rref_binary(matrix: np.array) -> np.array:
-    """ Full row-reduced echelon form with row reordering
+    """ 
+    Full row-reduced echelon form with row reordering.
+
+    Args:
+        matrix(np.array): Matrix whose row-reduced echelon form with row reordering has to be found.
+
+    Returns:
+        Row-reduced echelon form of input matrix with row reordering of input matrix.
     """
     reduced = _rref_binary(matrix)
     row_order, col_order = zip(
@@ -187,17 +221,39 @@ def rref_binary(matrix: np.array) -> np.array:
     return reduced[row_order]
 
 def _cref_binary(matrix: np.array) -> np.array:
-    """ Column-reduced echelon form with static columns (used in symmetry identification)
+    """ 
+    Column-reduced echelon form with static columns (used in symmetry identification).
+    
+    Args:
+        matrix(np.array): Matrix whose column-reduced echelon form with static columns has to be found.
+
+    Returns:
+        Column-reduced echelon form of input matrix with static columns.
     """
     return _rref_binary(matrix.T).T  
 
 def cref_binary(matrix: np.array) -> np.array:
-    """ Column-reduced echelon form with ordered columns (used in basis reconstruction)
+    """ 
+    Column-reduced echelon form with ordered columns (used in basis reconstruction).
+        
+    Args:
+        matrix(np.array): Matrix whose column-reduced echelon form with ordered columns has to be found.
+
+    Returns:
+        Column-reduced echelon form of input matrix with ordered columns.
     """
     return rref_binary(matrix.T).T        
 
 def QubitOperator_to_dict(op, num_qubits):
-    """ OpenFermion
+    """ 
+    OpenFermion
+
+    Args:
+        op: Qubit Operator
+        num_qubits: Number of qubiits.
+
+    Returns:
+        Dictionary format of Qubit Operator.
     """
     assert(type(op) == of.QubitOperator)
     op_dict = {}
@@ -214,7 +270,14 @@ def QubitOperator_to_dict(op, num_qubits):
     return op_dict
 
 def PauliSumOp_to_dict(op:PauliSumOp) -> dict:
-    """ Qiskit
+    """ 
+    Qiskit
+    
+    Args:
+        op (PauliSumOp): Pauli Sum Operator
+
+    Returns:
+        Dictionary format of Pauli Sum Operator.
     """
     H_dict = {}
     for P_term in op.to_pauli_op():
@@ -223,13 +286,13 @@ def PauliSumOp_to_dict(op:PauliSumOp) -> dict:
     return H_dict
 
 def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:
-    """ Stores the real and imaginary parts of the coefficient separately in a tuple
+    """ 
+    Stores the real and imaginary parts of the coefficient separately in a tuple.
 
     Args:
-        op (PauliwordOp): Weighted linear combination of N-fold Pauli operators
+        op (PauliwordOp): Weighted linear combination of N-fold Pauli operators.
     Returns:
-        dict_out (dict): Dictionary of the form {pstring:(real, imag)}
-
+        dict_out (dict): Dictionary of the form {pstring:(real, imag)}.
     """
     terms, coeffs = zip(*op.to_dictionary.items())
     coeffs = [(n.real, n.imag) for n in coeffs]
@@ -238,13 +301,12 @@ def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:
 
 def safe_QuantumState_to_dict(psi) -> Dict[str, Tuple[float, float]]:
     """ 
-    Stores the real and imaginary parts of the coefficient separately in a tuple
+    Stores the real and imaginary parts of the coefficient separately in a tuple.
 
     Args:
-        op (QuantumState): Weighted linear combination of N-fold Pauli operators
+        op (QuantumState): Weighted linear combination of N-fold Pauli operators.
     Returns:
-        dict_out (dict): Dictionary of the form {pstring:(real, imag)}
-
+        dict_out (dict): Dictionary of the form {pstring:(real, imag)}.
     """
     terms, coeffs = zip(*psi.to_dictionary.items())
     coeffs = [(n.real, n.imag) for n in coeffs]

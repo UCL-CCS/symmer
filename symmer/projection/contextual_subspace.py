@@ -40,7 +40,7 @@ class ContextualSubspace(S3_projection):
             operator(PauliwordOp): Operator one wishes to enforce as stabilizers over the contextual subspace.
             noncontextual_strategy (str): Non-Contextual Strategy to be applied. Its default value is'diag'.
             noncontextual_solver (str): Non-contextual solver to be applied. Its default value is'brute_force'.
-            num_anneals (int): By default, it is set to 1000.
+            num_anneals (int): Number of simulated anneals to do. By default, it is set to 1000.
             unitary_partitioning_method (str): Unitary Partitioning Method to be applied. Its default value is'seq_rot'.
             reference_state (QuantumState): Reference State. By default, it is set to None.
             noncontextual_operator (NoncontextualOp): Non-contextual Operator. By default, it is set to None.

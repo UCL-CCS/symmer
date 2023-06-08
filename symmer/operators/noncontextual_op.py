@@ -14,13 +14,16 @@ from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, Quantu
 from symmer.operators.utils import binomial_coefficient, perform_noncontextual_sweep
 
 class NoncontextualOp(PauliwordOp):
-    """ Class for representing noncontextual Hamiltonians
+    """ 
+    Class for representing noncontextual Hamiltonians
 
     Noncontextual Hamiltonians are precisely those whose terms may be reconstructed 
     under the Jordan product (AB = {A, B}/2) from a generating set of the form 
     G ∪ {C_1, ..., C_M} where {C_i, C_j}=0 for i != j and G commutes universally.
     Refer to https://arxiv.org/abs/1904.02260 for further details. 
     
+    Attributes:
+        up_method (str): 
     """
     up_method = 'seq_rot'
 
@@ -29,6 +32,9 @@ class NoncontextualOp(PauliwordOp):
             coeff_vec
         ):
         """
+        Args:
+            symp_matrix (np.array): Symplectic matrix.
+            coeff_vec (np.array): Coefficient Vector.
         """
         super().__init__(symp_matrix, coeff_vec)
         assert(self.is_noncontextual), 'Specified operator is contextual.'
@@ -39,7 +45,14 @@ class NoncontextualOp(PauliwordOp):
         
     @classmethod
     def from_PauliwordOp(cls, H) -> "NoncontextualOp":
-        """ for convenience, initialize from an existing PauliwordOp
+        """ 
+        For convenience, initialize from an existing PauliwordOp.       
+
+        Args:
+            H: A PauliwordOp object representing the operator.
+
+        Returns:
+            NoncontextualOp: A NoncontextualOp instance initialized from the given PauliwordOp.
         """
         noncontextual_operator = cls(
             H.symp_matrix,
@@ -57,7 +70,20 @@ class NoncontextualOp(PauliwordOp):
             use_jordan_product = False,
             override_noncontextuality_check: bool = True
         ) -> "NoncontextualOp":
-        """ Given a PauliwordOp, extract from it a noncontextual sub-Hamiltonian by the specified strategy
+        """ 
+        Given a PauliwordOp, extract from it a noncontextual sub-Hamiltonian by the specified strategy.
+
+        Args:
+            H (PauliwordOp): PauliwordOp representing the operator.
+            strategy (str, optional): The strategy for constructing the noncontextual operator.
+            generators (PauliwordOp, optional): PauliwordOp representing the generators for the 'generators' strategy.
+            stabilizers (IndependentOp, optional): IndependentOp representing the stabilizers for the 'stabilizers' strategy.
+            DFS_runtime (int, optional): The maximum runtime in seconds for the DFS-based strategies. Default is 10.
+            use_jordan_product (bool, optional): Specifies whether to use the Jordan product for the 'generators' strategy. Default is False.
+            override_noncontextuality_check (bool, optional): Specifies whether to override the noncontextuality check for the input Hamiltonian. Default is True.
+
+        Returns:
+            NoncontextualOp: A NoncontextualOp instance constructed from the given operator using the specified strategy.
         """
         if not override_noncontextuality_check:
             if H.is_noncontextual:
@@ -81,7 +107,14 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _diag_noncontextual_op(cls, H: PauliwordOp) -> "NoncontextualOp":
-        """ Return the diagonal terms of the PauliwordOp - this is the simplest noncontextual operator
+        """ 
+        Return the diagonal terms of the PauliwordOp - this is the simplest noncontextual operator.
+
+        Args:
+            H (PauliwordOp): PauliwordOp representing the operator.
+
+        Returns:
+            NoncontextualOp: A NoncontextualOp instance constructed from the diagonal terms of the given operator.
         """
         mask_diag = np.where(~np.any(H.X_block, axis=1))
         noncontextual_operator = cls(
@@ -92,13 +125,24 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _dfs_noncontextual_op(cls, H: PauliwordOp, runtime=10, strategy='magnitude') -> "NoncontextualOp":
-        """ function orders operator by coeff mag
+        """ 
+        function orders operator by coeff mag
         then going from first term adds ops to a pauliword op ensuring it is noncontextual
         adds to a tracking list and then changes the original ordering so first term is now at the end
         repeats from the start (aka generating a list of possible noncon Hamiltonians)
         from this list one can then choose the noncon op with the most terms OR largest sum of abs coeff weights
         cutoff time ensures if the number of possibilities is large the function will STOP and not take too long
 
+        Args:
+            H (PauliwordOp): PauliwordOp representing the operator.
+            runtime (float, optional): The maximum runtime of the method in seconds. Default is 10.
+            strategy (str, optional): The strategy for selecting the noncontextual operator.
+                - 'magnitude': Chooses the operator with the largest sum of absolute coefficient weights.
+                - 'largest': Chooses the operator with the most terms.
+                Default is 'magnitude'.
+
+        Returns:
+            NoncontextualOp: A NoncontextualOp instance constructed from the given operator.
         """
         operator = H.sort(by='magnitude')
         noncontextual_ops = []
@@ -126,8 +170,15 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _diag_first_noncontextual_op(cls, H: PauliwordOp) -> "NoncontextualOp":
-        """ Start from the diagonal noncontextual form and append additional off-diagonal
+        """ 
+        Start from the diagonal noncontextual form and append additional off-diagonal
         contributions with respect to their coefficient magnitude.
+        
+        Args:
+            H (PauliwordOp): PauliwordOp representing the operator.
+
+        Returns:
+            NoncontextualOp: A NoncontextualOp instance constructed from the given operator.
         """
         noncontextual_operator = cls._diag_noncontextual_op(H)
         # order the remaining terms by coefficient magnitude
@@ -141,9 +192,21 @@ class NoncontextualOp(PauliwordOp):
 
     @classmethod
     def _single_sweep_noncontextual_operator(cls, H, strategy='magnitude') -> "NoncontextualOp":
-        """ Order the operator by some sorting key (magnitude, random or CurrentOrder)
+        """ 
+        Order the operator by some sorting key (magnitude, random or CurrentOrder)
         and then sweep accross the terms, appending to a growing noncontextual operator
         whenever possible.
+
+        Args:
+            H (PauliwordOp): PauliwordOp representing the operator.
+            strategy (str, optional): Sorting strategy for ordering the operator terms.
+                - 'magnitude': Orders the terms by magnitude.
+                - 'random': Randomly shuffles the terms.
+                - 'CurrentOrder': Uses the current order of the terms.
+                Default is 'magnitude'.
+
+        Returns:
+            NoncontextualOp: A NoncontextualOp instance constructed from the given operator using the specified strategy.
         """
         if strategy=='magnitude':
             operator = H.sort(by='magnitude')
@@ -166,7 +229,17 @@ class NoncontextualOp(PauliwordOp):
     def _from_generators_noncontextual_op(cls, 
             H: PauliwordOp, generators: PauliwordOp, use_jordan_product:bool=False
         ) -> "NoncontextualOp":
-        """ Construct a noncontextual operator given a noncontextual generating set, via the Jordan product ( regular matrix product if the operators commute, and equal to zero if the operators anticommute.)
+        """ 
+        Construct a noncontextual operator given a noncontextual generating set, via the Jordan product ( regular matrix product if the operators commute, and equal to zero if the operators anticommute.)
+
+        Args:
+            H (PauliwordOp): PauliwordOp representing the Hamiltonian.
+            generators (PauliwordOp): PauliwordOp representing the noncontextual generating set.
+            use_jordan_product (bool, optional): Determines whether to use the Jordan product for construction. 
+                If True, the Jordan product is used. If False, an alternative strategy is used. Default is False.
+
+        Returns:
+            NoncontextualOp: A NoncontextualOp instance constructed from the given Hamiltonian and generators.
         """
         assert generators is not None, 'Must specify a noncontextual generating set.'
         if use_jordan_product:
@@ -182,6 +255,14 @@ class NoncontextualOp(PauliwordOp):
             H:PauliwordOp, stabilizers: IndependentOp, use_jordan_product=False
         ) -> "NoncontextualOp":
         """
+        Args:
+            H (PauliwordOp): The PauliwordOp representing the Hamiltonian.
+            stabilizers (IndependentOp): The IndependentOp representing the stabilizers.
+            use_jordan_product (bool, optional): Determines whether to use the Jordan product for constructing generators. 
+                If True, the Jordan product is used. If False, an alternative strategy is used. Default is False.
+
+        Returns:
+            NoncontextualOp: A NoncontextualOp instance constructed from the given PauliwordOp and stabilizers.
         """
         symmetries = IndependentOp.symmetry_generators(stabilizers, commuting_override=True)
         generators = NoncontextualOp.from_hamiltonian(symmetries, strategy='DFS_magnitude')
@@ -196,7 +277,17 @@ class NoncontextualOp(PauliwordOp):
             axis=None,
             include_symmetries=True
         ):
-        """ Draw the noncontextual graph structure
+        """ 
+        Draw the noncontextual graph structure.
+
+        Args:
+            clique_lw (int, optional): Line width for non-symmetry edges. Default is 1. 
+            symmetry_lw (float, optional): Line width for symmetry edges. Default is 0.25. 
+            node_colour (str, optional): Color of the nodes. Default is 'black'. 
+            node_size (int, optional): Size of the nodes. Default is 20.
+            seed (int or None, optional): Random seed for layout. Default is None.
+            axis (matplotlib.axes.Axes or None, optional): Matplotlib axis to draw the graph on. Default is None.
+            include_symmetries (bool, optional): Determines whether to include symmetry edges in the visualization. Default is True.
         """
         adjmat = self.adjacency_matrix.copy()
         adjmat = self.adjacency_matrix.copy()
@@ -219,7 +310,8 @@ class NoncontextualOp(PauliwordOp):
                 node_color=node_colour, node_size=node_size, ax=axis)
 
     def noncontextual_generators(self) -> None:
-        """ Find an independent generating set for the noncontextual operator
+        """ 
+        Find an independent generating set for the noncontextual operator.
         """
         # identify the symmetry generating set
         self.symmetry_generators = IndependentOp.symmetry_generators(self, commuting_override=True)
@@ -239,8 +331,9 @@ class NoncontextualOp(PauliwordOp):
         self.decomposed['symmetry'] = self[symmetry_mask]
         
     def noncontextual_reconstruction(self) -> None:
-        """ Reconstruct the noncontextual operator in each independent basis GuCi - one for every clique.
-        This mitigates against dependency between the symmetry generators G and the clique representatives Ci
+        """ 
+        Reconstruct the noncontextual operator in each independent basis GuCi - one for every clique.
+        This mitigates against dependency between the symmetry generators G and the clique representatives Ci.
         """
         noncon_generators = PauliwordOp(
             np.vstack([self.symmetry_generators.symp_matrix, self.clique_operator.symp_matrix]),
@@ -268,10 +361,17 @@ class NoncontextualOp(PauliwordOp):
         ).astype(int)
         
     def symmetrized_operator(self, expansion_order=1):
-        """ Get the symmetrized noncontextual operator S_0 - sqrt(S_1^2 + .. S_M^2).
+        """ 
+        Get the symmetrized noncontextual operator S_0 - sqrt(S_1^2 + .. S_M^2).
         In the infinite limit of expansion_order the ground state of this operator
         will coincide exactly with the true noncontextual operator. This is used
         for xUSO solver since this reformulation of the Hamiltonian is polynomial.
+
+        Args:
+            expansion_order (int): Expansion order. By default, it is set to 1.
+
+        Returns:
+            Symmetrized noncontextual operator.
         """
         Si_list = [self.decomposed['symmetry']]
         for i in range(self.n_cliques):
@@ -308,7 +408,8 @@ class NoncontextualOp(PauliwordOp):
         return s0, si
 
     def get_energy(self, nu: np.array) -> float:
-        """ The classical objective function that encodes the noncontextual energies
+        """ 
+        The classical objective function that encodes the noncontextual energies.
         """
         s0, si = self.get_symmetry_contributions(nu)
         return s0 - np.linalg.norm(si)
@@ -331,12 +432,18 @@ class NoncontextualOp(PauliwordOp):
             num_anneals:int = 1_000,
             expansion_order:int = 1
         ) -> None:
-        """ Minimize the classical objective function, yielding the noncontextual 
+        """ 
+        Minimize the classical objective function, yielding the noncontextual 
         ground state. This updates the coefficients of the clique representative 
         operator C(r) and symmetry generators G with the optimal configuration.
 
-        Note most QUSO functions/methods work faster than their PUSO counterparts.
+        Note: Most QUSO functions/methods work faster than their PUSO counterparts.
 
+        Args:
+            strategy (str): Optimization strategy. By default it is set to 'brute_force'. It can be 'brute_force', 'binary_relaxation', 'brute_force_PUSO', 'brute_force_QUSO', 'annealing_PUSO', or 'annealing_QUSO'.
+            ref_state (np.array): Reference State.
+            num_anneals (int): Number of simulated anneals to do.
+            expansion_order (int): Expansion order. By default, it is set to 1.
         """
         if ref_state is not None:
             # update the symmetry generator G coefficients w.r.t. the reference state
@@ -419,7 +526,8 @@ class NoncontextualSolver:
     #################################################################
 
     def energy_via_brute_force(self) -> Tuple[float, np.array, np.array]:
-        """ Does what is says on the tin! Try every single eigenvalue assignment in parallel
+        """ 
+        Does what is says on the tin! Try every single eigenvalue assignment in parallel
         and return the minimizing noncontextual configuration. This scales exponentially in 
         the number of unassigned symmetry elements.
         """
@@ -446,13 +554,15 @@ class NoncontextualSolver:
     #################################################################
 
     def energy_via_relaxation(self) -> Tuple[float, np.array, np.array]:
-        """ Relax the binary value assignment of symmetry generators to continuous variables
+        """ 
+        Relax the binary value assignment of symmetry generators to continuous variables.
         """
         # optimize discrete value assignments nu by relaxation to continuous variables
         nu_bounds = [(0, np.pi)]*(self.NC_op.symmetry_generators.n_terms-np.sum(self.fixed_ev_mask))
 
         def get_nu(angles):
-            """ Build nu vector given fixed values
+            """ 
+            Build nu vector given fixed values.
             """
             nu = np.ones(self.NC_op.symmetry_generators.n_terms)
             nu[self.fixed_ev_mask] = self.fixed_eigvals
@@ -470,7 +580,8 @@ class NoncontextualSolver:
     #################################################################    
 
     def get_cost_func(self):
-        """ Define the unconstrained spin cost function
+        """ 
+        Define the unconstrained spin cost function.
         """
         symmetrized_operator = self.NC_op.symmetrized_operator(expansion_order=self.expansion_order)
         G_indices, _ = symmetrized_operator.generator_reconstruction(self.NC_op.symmetry_generators)
@@ -513,7 +624,7 @@ class NoncontextualSolver:
         Note in this method the r_vector is fixed upon input! (aka just does binary optimization)
 
         Args:
-            NC_op (NoncontextualOp): noncontextual operator
+            NC_op (NoncontextualOp): Non-contextual operator
             fixed_ev_mask (np.array): bool list of where eigenvalues in nu vector are fixed
             fixed_eigvals (np.array): list of nu eigenvalues that are fixed
             method (str): brute force or annealing optimization
@@ -522,7 +633,6 @@ class NoncontextualSolver:
 
         Returns:
             energy (float): noncontextual energy
-
         """
         assert self.x in ['P', 'Q']
         assert self.method in ['brute_force', 'annealing']
