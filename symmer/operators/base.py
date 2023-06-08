@@ -20,6 +20,9 @@ warnings.simplefilter('always', UserWarning)
 class PauliwordOp:
     """ 
     A class thats represents an operator defined over the Pauli group in the symplectic representation.
+
+    Attributes:
+        sigfig (int): The number of significant figures for printing.
     """
     sigfig = 3 # specifies the number of significant figures for printing
     
@@ -34,6 +37,10 @@ class PauliwordOp:
         dictionary representation. Operating on the level of the symplectic matrix is fastest 
         since it circumvents various conversions required - this is how the methods defined 
         below function.
+
+        Args:
+            symp_matrix (Union[List[str], Dict[str, float], np.array]): The symplectic matrix representing the operator.
+            coeff_vec (Union[List[complex], np.array]): The coefficients of the operator.
         """
         symp_matrix = np.asarray(symp_matrix)
         if symp_matrix.dtype == int:
@@ -61,7 +68,18 @@ class PauliwordOp:
             complex_coeffs: bool = True,
             density: float = 0.3
         ) -> "PauliwordOp":
-        """ Generate a random PauliwordOp with normally distributed coefficients
+        """ 
+        Generate a random PauliwordOp with normally distributed coefficients.
+
+        Args:
+            n_qubits (int): The number of qubits.
+            n_terms (int): The number of terms in the operator.
+            diagonal (bool): Whether to generate a diagonal operator (default: False).
+            complex_coeffs (bool): Whether to generate complex coefficients (default: True).
+            density (float): The density of non-zero elements in the symplectic matrix (default: 0.3).
+
+        Returns:
+            PauliwordOp: A random PauliwordOp object.
         """
         symp_matrix = random_symplectic_matrix(n_qubits, n_terms, diagonal, density=density)
         coeff_vec = np.random.randn(n_terms).astype(complex)
@@ -73,7 +91,8 @@ class PauliwordOp:
     def haar_random(cls,
             n_qubits: int,
         ) -> "PauliwordOp":
-        """ Generate a Haar random U(N) matrix (N^n_qubits) as a linear combination of Pauli operators.
+        """ 
+        Generate a Haar random U(N) matrix (N^n_qubits) as a linear combination of Pauli operators.
         aka generate a uniform random unitary from a Hilbert space.
 
         Args:
@@ -90,7 +109,14 @@ class PauliwordOp:
             pauli_terms :List[str], 
             coeff_vec:   List[complex] = None
         ) -> "PauliwordOp":
-        """ Initialize a PauliwordOp from its Pauli terms and coefficients stored as lists
+        """ 
+        Initialize a PauliwordOp from its Pauli terms and coefficients stored as lists.
+
+        Args:
+            operator_dict (Dict[str, complex]): A dictionary representing the PauliwordOp.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object.
         """
         n_rows = len(pauli_terms)
         if coeff_vec is None:
@@ -116,7 +142,14 @@ class PauliwordOp:
     def from_dictionary(cls,
             operator_dict: Dict[str, complex]
         ) -> "PauliwordOp":
-        """ Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+        """ 
+        Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+
+        Args:
+            operator_dict (Dict[str, complex]): A dictionary representing the PauliwordOp.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object.
         """
         pauli_terms, coeff_vec = zip(*operator_dict.items())
         pauli_terms = list(pauli_terms)
@@ -127,7 +160,16 @@ class PauliwordOp:
             openfermion_op: QubitOperator,
             n_qubits = None
         ) -> "PauliwordOp":
-        """ Initialize a PauliwordOp from OpenFermion's QubitOperator representation
+        """ 
+        Initialize a PauliwordOp from OpenFermion's QubitOperator representation.
+
+        Args:
+            openfermion_op (QubitOperator): The QubitOperator to initialize from.
+            n_qubits (int, optional): The number of qubits. If not provided, it is determined
+                from the QubitOperator. Defaults to None.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object.
         """
         assert(isinstance(openfermion_op, QubitOperator)), 'Must supply a QubitOperator'
         if n_qubits is None:
@@ -142,7 +184,14 @@ class PauliwordOp:
     def from_qiskit(cls,
             qiskit_op: ibm_PauliSumOp
         ) -> "PauliwordOp":
-        """ Initialize a PauliwordOp from Qiskit's PauliSumOp representation
+        """ 
+        Initialize a PauliwordOp from Qiskit's PauliSumOp representation.
+
+        Args:
+            qiskit_op (ibm_PauliSumOp): The PauliSumOp to initialize from.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object.
         """
         assert(isinstance(qiskit_op, ibm_PauliSumOp)), 'Must supply a PauliSumOp'
         operator_dict = PauliSumOp_to_dict(
@@ -154,7 +203,14 @@ class PauliwordOp:
     def empty(cls, 
             n_qubits: int
         ) -> "PauliwordOp":
-        """ Initialize an empty PauliwordOp of the form 0 * I...I
+        """ 
+        Initialize an empty PauliwordOp of the form 0 * I...I
+
+        Args:
+            n_qubits (int): The number of qubits.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object.
         """
         return cls.from_dictionary({'I'*n_qubits:0})
 
@@ -164,6 +220,14 @@ class PauliwordOp:
             n_qubits: int,
             operator_basis: "PauliwordOp" = None
         ) -> "PauliwordOp":
+        """
+        Args:
+            n_qubits (int): The number of qubits.
+            operator_basis (PauliwordOp, optional): The operator basis to use. Default is 'None'.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object.
+        """
         if operator_basis is None:
             # fast method to build all binary assignments
             int_list = np.arange(4 ** (n_qubits))
@@ -216,6 +280,12 @@ class PauliwordOp:
             n_qubits: int
         ) -> "PauliwordOp":
         """
+        Args:
+            matrix (Union[np.array, csr_matrix]): The matrix to decompose.
+            n_qubits (int): The number of qubits.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object representing the decomposition of the matrix using projectors.
         """
         assert n_qubits <= 32, 'cannot decompose matrices above 32 qubits'
 
@@ -283,6 +353,14 @@ class PauliwordOp:
         - projector
 
         Scales as O(M*2^N) where M the number of nonzero elements in the matrix.
+
+        Args:
+            matrix (Union[np.array, csr_matrix]): The matrix to construct the PauliwordOp from.
+            operator_basis (PauliwordOp, optional): The operator basis to use for decomposition. Defaults to None.
+            strategy (str, optional): The decomposition strategy. Options are 'full_basis' and 'projector'. Defaults to 'projector'.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object representing the matrix.
         """
         if isinstance(matrix, np.matrix):
             # summing over numpy matrices does not function correctly
@@ -346,6 +424,13 @@ class PauliwordOp:
         ) -> "PauliwordOp":
         """
         Sort the terms either by magnitude, weight X, Y or Z
+
+        Args:
+            by (str, optional): The criterion for sorting. Options are 'magnitude', 'weight', 'support', 'X', 'Y', 'Z'. Defaults to 'magnitude'.
+            key (str, optional): The sorting order. Options are 'increasing' and 'decreasing'. Defaults to 'decreasing'.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object with sorted terms.    
         """
         if by == 'magnitude':
             sort_order = np.argsort(-abs(self.coeff_vec))
@@ -372,9 +457,17 @@ class PauliwordOp:
         return PauliwordOp(self.symp_matrix[sort_order], self.coeff_vec[sort_order])
 
     def reindex(self, qubit_map: Union[List[int], Dict[int, int]]):
-        """ Re-index qubit labels
+        """ 
+        Re-index qubit labels
         For example, can specify a dictionary {0:2, 2:3, 3:0} mapping qubits 
         to their new positions or a list [2,3,0] will achieve the same result.
+
+        Args:
+            qubit_map (Union[List[int], Dict[int, int]]): A mapping of qubit indices to their new positions. 
+                It can be specified as a list [2, 3, 0] or a dictionary {0: 2, 2: 3, 3: 0}.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object with re-indexed qubit labels.
         """
         if isinstance(qubit_map, list):
             old_indices, new_indices = sorted(qubit_map), qubit_map
@@ -397,7 +490,8 @@ class PauliwordOp:
             generators: "PauliwordOp",
             override_independence_check: bool = False
         ) -> np.array:
-        """ Simultaneously reconstruct every operator term in the supplied basis.
+        """ 
+        Simultaneously reconstruct every operator term in the supplied basis.
         With B and M the symplectic form of the supplied basis and the internal 
         Pauli operator, respectively, we perform columnwise Gaussian elimination 
         to yield the matrix
@@ -414,6 +508,13 @@ class PauliwordOp:
 
         Since we only need to reduce columns, the algorithm scales with the number of
         qubits N, not the number of terms M, and is therefore at worst O(N^2).
+
+        Args:
+            generators (PauliwordOp): The basis operators for reconstruction.
+            override_independence_check (bool): Whether to override the algebraic independence check of the generators.
+
+        Returns:
+            Tuple[np.array, np.array]: A tuple containing the reconstruction matrix and a mask indicating which terms were successfully reconstructed.
         """
         if not override_independence_check:
             assert check_independent(generators), 'Supplied generators are algebraically dependent'
@@ -425,8 +526,15 @@ class PauliwordOp:
         return op_reconstruction.astype(int), mask_successfully_reconstructed
 
     def jordan_generator_reconstruction(self, generators: "PauliwordOp"):
-        """ Reconstruct this PauliwordOp under the Jordan product PQ = {P,Q}/2
+        """ 
+        Reconstruct this PauliwordOp under the Jordan product PQ = {P,Q}/2
         with respect to the supplied generators
+
+        Args:
+            generators (PauliwordOp): The basis operators for reconstruction.
+
+        Returns:
+            Tuple[np.array, np.array]: A tuple containing the reconstruction matrix and a mask indicating which terms were successfully reconstructed.
         """
         assert check_jordan_independent(generators), 'The non-symmetry elements do not pairwise anticommute.'
 
@@ -473,7 +581,14 @@ class PauliwordOp:
     def cleanup(self, 
             zero_threshold:float=1e-15
         ) -> "PauliwordOp":
-        """ Apply symplectic_cleanup and delete terms with negligible coefficients
+        """ 
+        Apply symplectic_cleanup and delete terms with negligible coefficients.
+
+        Args:
+            zero_threshold (float): Threshold below which coefficients are considered negligible.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object after cleanup.
         """
         if self.n_qubits == 0:
             return PauliwordOp([], [np.sum(self.coeff_vec)])
@@ -489,9 +604,16 @@ class PauliwordOp:
     def __eq__(self,
             Pword: "PauliwordOp"
         ) -> bool:
-        """ In theory should use logical XNOR to check symplectic matrix match, however
+        """ 
+        In theory should use logical XNOR to check symplectic matrix match, however
         can use standard logical XOR and look for False indices instead (implementation
         skips an additional NOT operation)
+
+        Args:
+            Pword (PauliwordOp): The PauliwordOp object to compare with.
+
+        Returns:
+            bool: True if the two PauliwordOp objects are equal, False otherwise.
         """
         check_1 = self.cleanup()
         check_2 = Pword.cleanup()
@@ -507,7 +629,12 @@ class PauliwordOp:
             # return eq_flag
 
     def __hash__(self) -> int:
-        """ build unique hash from dictionary of PauliwordOp"""
+        """ 
+        Build unique hash from dictionary of PauliwordOp.
+
+        Returns:
+            int: The hash value of the PauliwordOp object.
+        """
 
         self.cleanup()  # self.cleanup(zero_threshold=1e-15)
 
@@ -519,7 +646,14 @@ class PauliwordOp:
     def append(self, 
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
-        """ Append another PauliwordOp onto this one - duplicates allowed
+        """ 
+        Append another PauliwordOp onto this one - duplicates allowed.
+
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp object to append.
+
+        Returns:
+            PauliwordOp: The new PauliwordOp object after appending.
         """
         assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
         P_symp_mat_new = np.vstack((self.symp_matrix, PwordOp.symp_matrix))
@@ -529,8 +663,15 @@ class PauliwordOp:
     def __add__(self, 
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
-        """ Add to this PauliwordOp another PauliwordOp by stacking the
-        respective symplectic matrices and cleaning any resulting duplicates
+        """ 
+        Add to this PauliwordOp another PauliwordOp by stacking the
+        respective symplectic matrices and cleaning any resulting duplicates.
+
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp object to add.
+
+        Returns:
+            PauliwordOp: The result of adding the two PauliwordOp objects.
         """
         # cleanup run to remove duplicate rows (Pauliwords)
         return self.append(PwordOp).cleanup()
@@ -538,7 +679,14 @@ class PauliwordOp:
     def __radd__(self, 
             add_obj: Union[int, "PauliwordOp"]
         ) -> "PauliwordOp":
-        """ Allows use of sum() over a list of PauliwordOps
+        """ 
+        Allows use of sum() over a list of PauliwordOps.
+
+        Args:
+            add_obj (Union[int, PauliwordOp]): The object to add to this PauliwordOp.
+
+        Returns:
+            PauliwordOp: The result of adding the object to this PauliwordOp.
         """
         if add_obj == 0:
             return self
@@ -548,8 +696,15 @@ class PauliwordOp:
     def __sub__(self,
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
-        """ Subtract from this PauliwordOp another PauliwordOp 
-        by negating the coefficients and summing
+        """ 
+        Subtract from this PauliwordOp another PauliwordOp 
+        by negating the coefficients and summing.
+
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp object to subtract.
+
+        Returns:
+            PauliwordOp: The result of subtracting the PauliwordOp object from this PauliwordOp object.
         """     
         op_copy = PwordOp.copy()
         op_copy.coeff_vec*=-1
@@ -560,7 +715,13 @@ class PauliwordOp:
             const: complex
         ) -> "PauliwordOp":
         """
-        Multiply the PauliwordOp by a complex coefficient
+        Multiply the PauliwordOp by a complex coefficient.
+
+        Args:
+            const (complex): The complex constant to multiply by.
+
+        Returns:
+            PauliwordOp: The result of multiplying the PauliwordOp by the constant.
         """
         return PauliwordOp(self.symp_matrix, self.coeff_vec*const)
 
@@ -569,9 +730,18 @@ class PauliwordOp:
             coeff: complex, 
             Y_count_in: np.array
         ) -> Tuple[np.array, np.array]:
-        """ performs Pauli multiplication with phases at the level of the symplectic 
+        """ 
+        Performs Pauli multiplication with phases at the level of the symplectic 
         matrices to avoid superfluous PauliwordOp initializations. The phase compensation 
         is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
+
+        Args:
+            symp_vec (np.array): The symplectic vector representing the Pauli operator to be multiplied with.
+            coeff (complex): The complex coefficient of the Pauli operator.
+            Y_count_in (np.array): The Y-counts of the input Pauli operator.
+
+        Returns:
+            Tuple[np.array, np.array]: The resulting symplectic vector and coefficient vector after multiplication.
         """
         # phaseless multiplication is binary addition in symplectic representation
         phaseless_prod = np.bitwise_xor(self.symp_matrix, symp_vec)
@@ -589,7 +759,15 @@ class PauliwordOp:
             PwordOp: Union["PauliwordOp", "QuantumState", complex],
             zero_threshold: float = 1e-15
         ) -> "PauliwordOp":
-        """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
+        """ 
+        Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
+
+        Args:
+            PwordOp (Union["PauliwordOp", "QuantumState", complex]): The operator or ket to multiply by.
+            zero_threshold (float): The threshold below which coefficients are considered negligible.
+
+        Returns:
+            PauliwordOp: The resulting PauliwordOp after multiplication.
         """
         assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
 
@@ -615,8 +793,15 @@ class PauliwordOp:
         return pauli_mult_out
     
     def expval(self, psi: "QuantumState") -> complex:
-        """ Efficient (linear) expectation value calculation using projectors
+        """ 
+        Efficient (linear) expectation value calculation using projectors
         See single_term_expval function below for further details.
+
+        Args:
+            psi (QuantumState): The quantum state for which to calculate the expectation value.
+
+        Returns:
+            complex: The expectation value.
         """
         if self.n_terms > 1:
             # parallelize if number of terms greater than one
@@ -631,7 +816,15 @@ class PauliwordOp:
             mul_obj: Union["PauliwordOp", "QuantumState", complex],
             zero_threshold: float = 1e-15
         ) -> "PauliwordOp":
-        """ Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
+        """ 
+        Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
+
+        Args:
+            mul_obj (Union["PauliwordOp", "QuantumState", complex]): The object to multiply with.
+            zero_threshold (float, optional): Threshold for cleaning up resulting PauliwordOp. Defaults to 1e-15.
+
+        Returns:
+            PauliwordOp: The result of the multiplication.
         """
         if isinstance(mul_obj, Number):
             return self.multiply_by_constant(mul_obj)
@@ -662,13 +855,29 @@ class PauliwordOp:
     def __imul__(self, 
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
-        """ in-place multiplication behaviour
+        """ 
+        In-place multiplication behaviour.
+
+        Args:
+            PwordOp (PauliwordOp): The `PauliwordOp` object to right-multiply with.
+
+        Returns:
+            PauliwordOp: The result of the in-place multiplication.
         """
         return self.__mul__(PwordOp)
 
     def __pow__(self, 
             exponent:int
         ) -> "PauliwordOp":
+        """
+        Exponentiation behavior.
+
+        Args:
+            exponent (int): The exponent to raise the `PauliwordOp` to.
+
+        Returns:
+            PauliwordOp: The result of the exponentiation.
+        """
         assert(isinstance(exponent, int)), 'the exponent is not an integer'
         if exponent == 0:
             return PauliwordOp.from_list(['I'*self.n_qubits],[1])
@@ -679,8 +888,15 @@ class PauliwordOp:
     def __getitem__(self, 
             key: Union[slice, int]
         ) -> "PauliwordOp":
-        """ Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
-        from the indexed row and coefficient from the symplectic matrix 
+        """ 
+        Makes the PauliwordOp subscriptable - returns a PauliwordOp constructed
+        from the indexed row and coefficient from the symplectic matrix .
+
+        Args:
+            key (Union[slice, int]): The index or slice to select the rows.
+
+        Returns:
+            PauliwordOp: A new PauliwordOp object constructed from the selected rows and coefficients.
         """
         if isinstance(key, int):
             if key<0:
@@ -705,7 +921,11 @@ class PauliwordOp:
         return PauliwordOp(symp_items, coeff_items)
 
     def __iter__(self):
-        """ Makes a PauliwordOp instance iterable
+        """ 
+        Makes a PauliwordOp instance iterable.
+
+        Returns:
+            Iterator: An iterator that generates each term of the PauliwordOp.
         """
         return iter([self[i] for i in range(self.n_terms)])
 
@@ -723,6 +943,12 @@ class PauliwordOp:
                 [ True,  True,  True],
                 [ True, False,  True]]
                 )
+
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp to check for term-wise commutation.
+
+        Returns:
+            np.array: A Boolean array indicating the term-wise commutation.
         """
         assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
         Omega_PwordOp_symp = np.hstack((PwordOp.Z_block,  PwordOp.X_block)).astype(int)
@@ -731,18 +957,29 @@ class PauliwordOp:
     def anticommutes_termwise(self,
             PwordOp: "PauliwordOp"
         ) -> np.array:
+        """
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp to check for term-wise anticommutation.
+
+        Returns:
+            np.array: A Boolean array indicating the term-wise anticommutation.
+        """
         return ~self.commutes_termwise(PwordOp)
 
     def qubitwise_commutes_termwise(self,
             PwordOp: "PauliwordOp"
         ) -> np.array:
-        """ Given the symplectic representation of a single Pauli operator,
+        """ 
+        Given the symplectic representation of a single Pauli operator,
         determines which operator terms of the internal PauliwordOp qubitwise commute
+
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp to check for qubitwise term-wise commutation.
 
         Returns:  
             QWC_matrix (np.array): 
-                an array whose elements are True if the corresponding term
-                qubitwise commutes with the input PwordOp
+                An array whose elements are True if the corresponding term
+                qubitwise commutes with the input PwordOp.
         """
         QWC_matrix = []
         for X_term, Z_term in zip(PwordOp.X_block, PwordOp.Z_block):
@@ -758,41 +995,74 @@ class PauliwordOp:
     def commutator(self, 
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
-        """ Computes the commutator [A, B] = AB - BA
+        """ 
+        Computes the commutator [A, B] = AB - BA.
+
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp to compute the commutator with.
+
+        Returns:
+            PauliwordOp: The commutator [A, B] = AB - BA.
         """
         return self * PwordOp - PwordOp * self
 
     def anticommutator(self, 
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
-        """ Computes the anticommutator {A, B} = AB + BA
+        """ 
+        Computes the anticommutator {A, B} = AB + BA.
+
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp to compute the anticommutator with.
+
+        Returns:
+            PauliwordOp: The anticommutator {A, B} = AB + BA.
         """
         return self * PwordOp + PwordOp * self
 
     def commutes(self, 
             PwordOp: "PauliwordOp"
         ) -> bool:
-        """ Checks if every term of self commutes with every term of PwordOp
+        """ 
+        Checks if every term of self commutes with every term of PwordOp.
+
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp to check for commutation.
+
+        Returns:
+            bool: True if all terms commute, False otherwise.
         """
         return self.commutator(PwordOp).n_terms == 0
     
     @cached_property
     def adjacency_matrix(self) -> np.array:
-        """ Checks which terms of self commute within itself
+        """ 
+        Checks which terms of self commute within itself.
+
+        Returns:
+            np.array: Adjacency matrix.
         """
         return self.commutes_termwise(self)
 
     @cached_property
     def adjacency_matrix_qwc(self) -> np.array:
-        """ Checks which terms of self qubitwise commute within itself
+        """ 
+        Checks which terms of self qubitwise commute within itself.
+
+        Returns:
+            np.array: Adjacency matrix.
         """
         return self.qubitwise_commutes_termwise(self)
 
     @cached_property
     def is_noncontextual(self) -> bool:
-        """ Returns True if the operator is noncontextual, False if contextual
+        """ 
+        Returns True if the operator is noncontextual, False if contextual
         Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
         Constructing the adjacency matrix is by far the most expensive part - very fast once that has been built.
+
+        Returns:
+            bool: True if the operator is noncontextual, False if contextual.
         """
         return check_adjmat_noncontextual(self.adjacency_matrix)
 
@@ -810,6 +1080,13 @@ class PauliwordOp:
         
         <!> Please note the definition of the angle in R(t)...
             different implementations could be out by a factor of 2!
+
+        Args:
+            Pword (PauliwordOp): The Pauliword to rotate by.
+            angle (float): The rotation angle in radians. If None, a Clifford rotation (angle=pi/2) is assumed.
+
+        Returns:
+            PauliwordOp: The rotated operator.
         """
         assert(Pword.n_terms==1), 'Only rotation by single Pauliword allowed here'
         if Pword.coeff_vec[0] != 1:
@@ -852,7 +1129,14 @@ class PauliwordOp:
         either as strings or in the symplectic representation. This method does not allow coefficients 
         to be specified as rotation in this setting is ill-defined.
 
-        If no angles are given then rotations are assumed to be pi/2 (Clifford)
+        If no angles are given then rotations are assumed to be pi/2 (Clifford).
+
+        Args:
+            rotations (List[Tuple[PauliwordOp, float]]): A list of tuples, where each tuple contains a Pauliword
+                to rotate by and the rotation angle in radians. If no angle is given, a Clifford rotation (angle=pi/2) is assumed.
+
+        Returns:
+            PauliwordOp: The operator after performing the rotations.
         """
         op_copy = self.copy()
         for pauli_rotation, angle in rotations:
@@ -860,7 +1144,14 @@ class PauliwordOp:
         return op_copy
 
     def tensor(self, right_op: "PauliwordOp") -> "PauliwordOp":
-        """ Tensor current Pauli operator with another on the right (cannot interlace currently)
+        """ 
+        Tensor current Pauli operator with another on the right (cannot interlace currently).
+
+        Args:
+            right_op (PauliwordOp): The Pauli operator to tensor with.
+
+        Returns:
+            PauliwordOp: The resulting Pauli operator after the tensor product.
         """
         identity_block_right = np.zeros([right_op.n_terms, self.n_qubits]).astype(int)
         identity_block_left  = np.zeros([self.n_terms,  right_op.n_qubits]).astype(int)
@@ -873,8 +1164,15 @@ class PauliwordOp:
     def get_graph(self, 
             edge_relation = 'C'
         ) -> nx.graph:
-        """ Build a graph based on edge relation C (commuting), 
+        """ 
+        Build a graph based on edge relation C (commuting), 
         AC (anticommuting) or QWC (qubitwise commuting).
+
+        Args:
+            edge_relation (str): The edge relation to consider. Options are 'C' for commuting, 'AC' for anticommuting, and 'QWC' for qubitwise commuting. Defaults to 'C'.
+
+        Returns:
+            nx.Graph: The graph representing the edge relation.
         """
         # build the adjacency matrix for the chosen edge relation
         if edge_relation == 'AC':
@@ -893,7 +1191,14 @@ class PauliwordOp:
     def largest_clique(self,
             edge_relation='C'
         ) -> "PauliwordOp":
-        """ Return the largest clique w.r.t. the specified edge relation
+        """ 
+        Return the largest clique w.r.t. the specified edge relation.
+
+        Args:
+            edge_relation (str): The edge relation to consider. Options are 'C' for commuting, 'AC' for anticommuting, and 'QWC' for qubitwise commuting. Defaults to 'C'.
+
+        Returns:
+            PauliwordOp: The PauliwordOp representing the largest clique.
         """
         # build graph
         graph = self.get_graph(edge_relation=edge_relation)
@@ -905,7 +1210,8 @@ class PauliwordOp:
             strategy='largest_first',
             colouring_interchange=False
         ) -> Dict[int, "PauliwordOp"]:
-        """ Perform a graph colouring to identify a clique partition
+        """ 
+        Perform a graph colouring to identify a clique partition.
 
         ------------------------
         | colouring strategies |
@@ -925,6 +1231,36 @@ class PauliwordOp:
         ------------------------
         'sorted_insertion' https://quantum-journal.org/papers/q-2021-01-20-385/pdf/
 
+        Args:
+            edge_relation (str, optional): The edge relation used for building the graph. 
+                Must be one of the following:
+                - 'C': Commuting relation.
+                - 'AC': Anticommuting relation.
+                - 'QWC': Qubitwise commuting relation.
+                Defaults to 'C'.
+
+            strategy (str, optional): The coloring strategy to be used. Must be one of the following:
+                - 'largest_first': Nodes are colored by the number of their colored neighbors in decreasing order.
+                - 'random_sequential': Nodes are colored in a random order.
+                - 'smallest_last': Nodes are colored starting from the smallest degree.
+                - 'independent_set': Independent set coloring strategy.
+                - 'connected_sequential_bfs': Nodes are colored in a connected order using BFS.
+                - 'connected_sequential_dfs': Nodes are colored in a connected order using DFS.
+                - 'connected_sequential': Alias for 'connected_sequential_bfs'.
+                - 'saturation_largest_first': Nodes are colored by their saturation degree in decreasing order.
+                - 'DSATUR': Alias for 'saturation_largest_first'.
+                Defaults to 'largest_first'.
+
+            colouring_interchange (bool, optional): Specifies whether to use interchange optimization 
+                during coloring. This can improve the quality of the coloring but may take more time.
+                Defaults to False.
+
+        Returns:
+            Dict[int, "PauliwordOp"]: A dictionary where the keys represent the clique index and 
+            the values represent the PauliwordOp objects corresponding to each clique.
+
+        Raises:
+            TypeError: If the edge_relation argument is not one of 'C', 'AC', or 'QWC'.
         """
         if strategy == 'sorted_insertion':
             ### not a graph approach
@@ -970,7 +1306,7 @@ class PauliwordOp:
     def dagger(self) -> "PauliwordOp":
         """
         Returns:
-            Pword_conj (PauliwordOp): The Hermitian conjugated operator
+            Pword_conj (PauliwordOp): The Hermitian conjugated operator.
         """
         Pword_conj = PauliwordOp(
             symp_matrix = self.symp_matrix, 
@@ -980,7 +1316,11 @@ class PauliwordOp:
 
     @cached_property
     def to_openfermion(self) -> QubitOperator:
-        """ convert to OpenFermion Pauli operator representation
+        """ 
+        Convert to OpenFermion Pauli operator representation.
+
+        Returns:
+            QubitOperator: The QubitOperator representation of the PauliwordOp.
         """
         pauli_terms = []
         for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
@@ -995,7 +1335,11 @@ class PauliwordOp:
 
     @cached_property
     def to_qiskit(self) -> ibm_PauliSumOp:
-        """ convert to Qiskit Pauli operator representation
+        """ 
+        Convert to Qiskit Pauli operator representation.
+
+        Returns:
+            PauliSumOp: The PauliSumOp representation of the PauliwordOp.
         """
         return ibm_PauliSumOp.from_list(self.to_dictionary.items())
 
@@ -1004,6 +1348,9 @@ class PauliwordOp:
         """
         Method for converting the operator from the symplectic representation 
         to a dictionary of the form {P_string:coeff, ...}
+
+        Returns:
+            dict: The dictionary representation of the operator in the form {P_string: coeff, ...}.
         """
         # clean the operator since duplicated terms will be overwritten in the conversion to a dictionary
         op_to_convert = self.cleanup()
@@ -1013,7 +1360,11 @@ class PauliwordOp:
 
     @cached_property
     def to_dataframe(self) -> pd.DataFrame:
-        """ Convert operator to pd.DataFrame for easy conversion to LaTeX
+        """ 
+        Convert operator to pd.DataFrame for easy conversion to LaTeX.
+
+        Returns:
+            pd.DataFrame: The DataFrame representation of the operator.
         """
         paulis = list(self.to_dictionary.keys())
         DF_out = pd.DataFrame.from_dict({
@@ -1034,7 +1385,7 @@ class PauliwordOp:
         one nonzero entry in each row and column
 
         Returns:
-            sparse_matrix (csr_matrix): sparse matrix of PauliOp
+            sparse_matrix (csr_matrix): Sparse matrix of PauliOp.
         """
         if self.n_qubits == 0:
             return csr_matrix(self.coeff_vec)
@@ -1116,8 +1467,6 @@ class PauliwordOp:
 
         = ∑_{a}∑_{i=j} (-1)^{C_{ia}} (ci ca ci^{*}) Pa
          + ∑_{a}∑_{i}∑_{j>i} (ci ca cj^{*} + (-1)^{C_{ia}+A_{ij}+C_{ja}}(cj ca ci^{*})) Pi  Pa Pj
-
-
         """
 
         # see from symmer.operators.anticommuting_op import conjugate_Pop_with_R
@@ -1125,7 +1474,8 @@ class PauliwordOp:
 
 
 class QuantumState:
-    """ Class to represent quantum states.
+    """ 
+    Class to represent quantum states.
     
     This is achieved by identifying the state with a 
     state_op (PauliwordOp), namely |0> --> Z, |1> --> X. 
@@ -1138,7 +1488,10 @@ class QuantumState:
     This ensures correct phases when multiplying the quantum state by a PauliwordOp.
 
     QuantumState is defined in base.py to avoid circular imports since multiplication
-    behaviour is defined between QuantumState and PauliwordOp
+    behaviour is defined between QuantumState and PauliwordOp.
+
+     Attributes:
+        sigfig (int): The number of significant figures for printing.
     """
     sigfig = 3 # specifies the number of significant figures for printing
     
@@ -1147,11 +1500,17 @@ class QuantumState:
             coeff_vector: Union[List[complex], np.array] = None,
             vec_type: str = 'ket'
         ) -> None:
-        """ The state is not normalized by default, since this would result
+        """ 
+        The state is not normalized by default, since this would result
         in incorrect behaviour when perfoming non-unitary multiplications,
         e.g. for evaluating expectation values of Hamiltonians. However, if
         one wishes to normalize the state, it is stored as a cached propoerty
         as QuantumState.normalize.
+
+        Args:
+            state_matrix (Union[List[List[int]], np.array]): The state matrix representing the quantum state.
+            coeff_vector (Union[List[complex], np.array], optional): The coefficient vector for the quantum state. Defaults to None.
+            vec_type (str, optional): The type of vector representation (e.g., 'ket', 'bra'). Defaults to 'ket'.
         """
         if isinstance(state_matrix, list):
             state_matrix = np.array(state_matrix)
@@ -1173,7 +1532,10 @@ class QuantumState:
 
     def copy(self) -> "QuantumState":
         """ 
-        Create a carbon copy of the class instance
+        Create a carbon copy of the class instance.
+
+        Returns:
+            QuantumState: A copy of the class instance.
         """
         return deepcopy(self)
 
@@ -1190,7 +1552,6 @@ class QuantumState:
 
         Returns:
             qstate_random (QuantumState): Haar random quantum state
-
         """
         if vec_type=='ket':
             haar_vec = (unitary_group.rvs(2**n_qubits)[:,0]).reshape([-1, 1])
@@ -1204,7 +1565,16 @@ class QuantumState:
     
     @classmethod
     def random(cls, num_qubits: int, num_terms: int, vec_type: str='ket') -> "QuantumState":
-        """ Generates a random normalized QuantumState, but not from Haar distribution
+        """ 
+        Generates a random normalized QuantumState, but not from Haar distribution.
+
+        Args:
+            num_qubits (int): The number of qubits.
+            num_terms (int): The number of terms.
+            vec_type (str, optional): The vector type. Defaults to 'ket'.
+
+        Returns:
+            QuantumState: A random normalized QuantumState instance.
         """
         # random binary array with N columns, M rows
         random_state = np.random.randint(0,2,(num_terms,num_qubits))
@@ -1228,7 +1598,6 @@ class QuantumState:
 
         Returns:
             q_zero_state (QuantumState): zero ket or bra quantum state
-
         """
         binary_zero = np.zeros(n_qubits).reshape(1,-1)
         q_zero_state = QuantumState(binary_zero, coeff_vector=np.array([1]), vec_type=vec_type)
@@ -1253,18 +1622,37 @@ class QuantumState:
         return out_string[:-3]
 
     def __repr__(self):
+        """
+        Returns a string representation of the QuantumState object.
+        """
         return str(self)
 
     def __eq__(self, 
             Qstate: "QuantumState"
         ) -> bool:
+        """
+        Check if the current QuantumState object is equal to another QuantumState object.
+
+        Args:
+            Qstate (QuantumState): The QuantumState object to compare with.
+
+        Returns:
+            bool: True if the QuantumState objects are equal, False otherwise.
+        """
         return self.state_op == Qstate.state_op
     
     def __add__(self, 
             Qstate: "QuantumState"
         ) -> "QuantumState":
-        """ Add to this QuantumState another QuantumState by summing 
-        the respective state_op (PauliwordOp representing the state)
+        """ 
+        Add to this QuantumState another QuantumState by summing 
+        the respective state_op (PauliwordOp representing the state).
+
+        Args:
+            Qstate (QuantumState): The QuantumState object to add.
+
+        Returns:
+            QuantumState: A new QuantumState object representing the sum of the two QuantumStates.
         """
         new_state = self.state_op + Qstate.state_op
         return QuantumState(new_state.X_block, new_state.coeff_vec)
@@ -1272,7 +1660,14 @@ class QuantumState:
     def __radd__(self, 
             add_obj: Union[int, "QuantumState"]
         ) -> "QuantumState":
-        """ Allows use of sum() over a list of PauliwordOps
+        """ 
+        Allows use of sum() over a list of PauliwordOps.
+
+        Args:
+            add_obj (Union[int, QuantumState]): The object to add.
+
+        Returns:
+            QuantumState: A new QuantumState object representing the sum.
         """
         if add_obj == 0:
             return self
@@ -1282,8 +1677,15 @@ class QuantumState:
     def __sub__(self, 
             Qstate: "QuantumState"
         ) -> "QuantumState":
-        """ Subtract from this QuantumState another QuantumState by subtracting 
-        the respective state_op (PauliwordOp representing the state)
+        """ 
+        Subtract from this QuantumState another QuantumState by subtracting 
+        the respective state_op (PauliwordOp representing the state).
+
+        Args:
+            Qstate (QuantumState): The QuantumState object to subtract.
+
+        Returns:
+            QuantumState: A new QuantumState object representing the difference.
         """
         new_state_op = self.state_op - Qstate.state_op
         return QuantumState(new_state_op.X_block, new_state_op.coeff_vec)
@@ -1292,8 +1694,11 @@ class QuantumState:
         mul_obj: Union["QuantumState", PauliwordOp]
         ) -> Union["QuantumState", complex]:
         """
-        Right multiplication of a bra QuantumState by either a ket QuantumState or PauliwordOp
+        Right multiplication of a bra QuantumState by either a ket QuantumState or PauliwordOp.
         
+        Args:
+            mul_obj (Union["QuantumState", PauliwordOp]): The object to multiply with.
+
         Returns:
             - inner_product (complex): when mul_obj is a ket state
             - new_bra_state (QuantumState): when mul_obj is a PauliwordOp
@@ -1337,8 +1742,15 @@ class QuantumState:
             raise ValueError('Trying to multiply QuantumState by unrecognised object - must be another Quantum state or PauliwordOp')   
     
     def __getitem__(self, key: Union[slice, int]) -> "QuantumState":
-        """ Makes the QuantumState subscriptable - returns a QuantumState 
-        constructed from the indexed rows and coefficients of the state matrix 
+        """ 
+        Makes the QuantumState subscriptable - returns a QuantumState 
+        constructed from the indexed rows and coefficients of the state matrix.
+
+        Args:
+            key (Union[slice, int]): The index or slice object used for subscripting.
+
+        Returns:
+            QuantumState: The QuantumState object constructed from the indexed rows and coefficients.
         """
         if isinstance(key, int):
             if key<0:
@@ -1359,12 +1771,23 @@ class QuantumState:
         return QuantumState(state_items, coeff_items)
 
     def __iter__(self):
-        """ Makes a QuantumState instance iterable
+        """ 
+        Makes a QuantumState instance iterable.
+
+        Returns:
+            iter: An iterator that generates elements by iterating over the QuantumState object.
         """
         return iter([self[i] for i in range(self.n_terms)])
 
     def cleanup(self, zero_threshold=1e-15) -> "QuantumState":
-        """ Combines duplicate basis states, summing their coefficients
+        """ 
+        Combines duplicate basis states, summing their coefficients.
+
+        Args:
+            zero_threshold (float): Threshold below which coefficients are considered zero.
+
+        Returns:
+            QuantumState: A new QuantumState object with combined duplicate basis states.
         """
         clean_state_op = self.state_op.cleanup(zero_threshold=zero_threshold)
         return QuantumState(
@@ -1375,7 +1798,14 @@ class QuantumState:
 
     def sort(self, by='decreasing', key='magnitude') -> "QuantumState":
         """
-        Sort the terms by some key, either magnitude, weight X, Y or Z
+        Sort the terms by some key, either magnitude, weight X, Y or Z.
+
+        Args:
+            by (str): Sort order, either 'increasing' or 'decreasing'.
+            key (str): Sort key, either 'magnitude' or 'support'.
+
+        Returns:
+            QuantumState: A new QuantumState object with sorted terms.
         """
         if key=='magnitude':
             sort_order = np.argsort(-abs(self.state_op.coeff_vec))
@@ -1390,9 +1820,17 @@ class QuantumState:
         return QuantumState(self.state_matrix[sort_order], self.state_op.coeff_vec[sort_order])
 
     def reindex(self, qubit_map: Union[List[int], Dict[int, int]]):
-        """ Re-index qubit labels
+        """ 
+        Re-index qubit labels.
         For example, can specify a dictionary {0:2, 2:3, 3:0} mapping qubits 
         to their new positions or a list [2,3,0] will achieve the same result.
+
+        Args:
+            qubit_map (Union[List[int], Dict[int, int]]): A mapping of qubits to their new positions. It can be specified
+                as a list [2, 3, 0] or a dictionary {0: 2, 2: 3, 3: 0}.
+
+        Returns:
+            QuantumState: A new QuantumState object with re-indexed qubit labels.
         """
         if isinstance(qubit_map, list):
             old_indices, new_indices = sorted(qubit_map), qubit_map
@@ -1410,7 +1848,14 @@ class QuantumState:
         return QuantumState(new_state_matrix, self.state_op.coeff_vec, vec_type=self.vec_type)
 
     def sectors_present(self, symmetry):
-        """ return the sectors present within the QuantumState w.r.t. a IndependentOp
+        """ 
+        Return the sectors present within the QuantumState w.r.t. a IndependentOp.
+
+        Args:
+            symmetry (IndependentOp): The IndependentOp object representing the symmetry.
+
+        Returns:
+            numpy.ndarray: An array representing the sectors present within the QuantumState.
         """
         symmetry_copy = symmetry.copy()
         symmetry_copy.coeff_vec = np.ones(symmetry.n_terms)
@@ -1419,22 +1864,24 @@ class QuantumState:
 
     @cached_property
     def normalize(self):
-        """ Normalize a state by dividing through its norm.
+        """ 
+        Normalize a state by dividing through its norm.
 
         Returns:
-            self (QuantumState)
+            self (QuantumState): The normalized QuantumState.
         """
         coeff_vector = self.state_op.coeff_vec/np.linalg.norm(self.state_op.coeff_vec)
         return QuantumState(self.state_matrix, coeff_vector, vec_type=self.vec_type)
 
     @cached_property
     def normalize_counts(self):
-        """ Normalize a state by dividing through by the sum of coefficients and taking its square 
+        """ 
+        Normalize a state by dividing through by the sum of coefficients and taking its square 
         root. This normalization is faithful to the probability distribution one might obtain from
         quantum circuit sampling. A subtle difference, but important!
 
         Returns:
-            self (QuantumState)
+            self (QuantumState): The normalized QuantumState.
         """
         coeff_vector = np.sqrt(self.state_op.coeff_vec/np.sum(self.state_op.coeff_vec))
         return QuantumState(self.state_matrix, coeff_vector, vec_type=self.vec_type)
@@ -1443,7 +1890,7 @@ class QuantumState:
     def dagger(self) -> "QuantumState":
         """
         Returns:
-            conj_state (QuantumState): The Hermitian conjugated state i.e. bra -> ket, ket -> bra
+            conj_state (QuantumState): The Hermitian conjugated state i.e. bra -> ket, ket -> bra.
         """
         if self.vec_type == 'ket':
             new_type = 'bra'
@@ -1460,7 +1907,7 @@ class QuantumState:
     def to_sparse_matrix(self):
         """
         Returns:
-            sparse_Qstate (csr_matrix): sparse matrix representation of the statevector
+            sparse_Qstate (csr_matrix): sparse matrix representation of the statevector.
         """
         # nonzero_indices = [int(''.join([str(i) for i in row]),2) for row in self.state_matrix]
         # if self.n_qubits<64:
@@ -1481,10 +1928,10 @@ class QuantumState:
 
     def _is_normalized(self) -> bool:
         """
-        check if state is normalized
+        Check if state is normalized.
 
         Returns:
-            True or False depending on if state is normalized
+            bool: True or False depending on if state is normalized.
 
         """
 
@@ -1523,7 +1970,9 @@ class QuantumState:
 
     @cached_property
     def to_dictionary(self) -> Dict[str, complex]:
-        """ Return the QuantumState as a dictionary
+        """ 
+        Returns:
+            dict: The QuantumState represented as a dictionary.
         """
         state_to_convert = self.cleanup()
         state_dict = dict(
@@ -1538,8 +1987,15 @@ class QuantumState:
     def from_dictionary(cls, 
             state_dict: Dict[str, Union[complex, Tuple[float, float]]]
         ) -> "QuantumState":
-        """ Initialize a QuantumState from a dictionary of the form {'1101':a, '0110':b, '1010':c, ...}. This is useful for
+        """ 
+        Initialize a QuantumState from a dictionary of the form {'1101':a, '0110':b, '1010':c, ...}. This is useful for
         converting the measurement output of a quantum circuit to a QuantumState object for further manipulation/bootstrapping.
+
+        Args:
+            state_dict (Dict[str, Union[complex, Tuple[float, float]]]): The dictionary representation of the QuantumState.
+
+        Returns:
+            QuantumState: The initialized QuantumState object.
         """
         bin_strings, coeff_vector = zip(*state_dict.items())
 
@@ -1558,10 +2014,13 @@ class QuantumState:
             statevector: np.array,
             threshold: float =1e-15,
         ) -> "QuantumState":
-        """ Initialize a QubitState from a vector of 2^N elements over N qubits
+        """ 
+        Initialize a QubitState from a vector of 2^N elements over N qubits
+        
         Args:
             statevector (np.array): numpy array of quantum state (size 2^N by 1)
             threshold (float): threshold to determine zero amplitudes (absolute value)
+       
         Returns:
             Qstate (QuantumState): a QuantumState object
 
@@ -1605,7 +2064,18 @@ class QuantumState:
             binary_xlabels = False,
             dpi:int=100
         ):
+        """
+        Plot the probabilities of the quantum state.
 
+        Args:
+            logscale (bool): Whether to use a logarithmic scale for the y-axis.
+            probability_threshold (float): Threshold for considering probabilities as zero.
+            binary_xlabels (bool): Whether to use binary strings as x-axis labels.
+            dpi (int): Dots per inch of the plot.
+
+        Returns:
+            matplotlib.axes.Axes: The plot axes.
+        """
         assert self._is_normalized(), 'should only plot normalized quantum states'
 
         # clean duplicate states and set amplitdue threshold
@@ -1741,7 +2211,9 @@ def get_ij_operator(i:int, j:int, n_qubits:int,
         n_qubits (int): number of qubits
         binary_vec (optional): bool array of all bitstrings on n_qubits
         return_operator (bool): whether to return PauliWordOp or a the symplectic matrix and coeff_vec
-
+    
+    Returns:
+        Union["PauliwordOp", Tuple[np.ndarray, np.ndarray]]: Pauli operator or the symplectic matrix and coeff_vec
     """
     if n_qubits > 30:
         raise ValueError('Too many qubits, might run into memory limitations.')
@@ -1786,12 +2258,23 @@ def get_ij_operator(i:int, j:int, n_qubits:int,
 
 
 def single_term_expval(P_op: PauliwordOp, psi: QuantumState) -> float:
-    """ Expectation value calculation for a single Pauli operator given a QuantumState psi
+    """ 
+    Expectation value calculation for a single Pauli operator given a QuantumState psi
 
     Scales linearly in the number of basis states of psi, versus the quadratic cost of
     evaluating <psi|P|psi> directly, taking into consideration all of the cross-terms.
 
     Works by decomposing P = P(+) - P(-) where P(±) = (I±P)/2 projects onto the ±1-eigensapce of P. 
+
+    Args:
+        P_op (PauliwordOp): The Pauli operator for which to calculate the expectation value.
+        psi (QuantumState): The quantum state on which to calculate the expectation value.
+
+    Returns:
+        float: The expectation value of the Pauli operator.
+
+    Raises:
+        AssertionError: If the supplied Pauli operator has multiple terms.
     """
     assert P_op.n_terms == 1, 'Supplied multiple Pauli terms.'
     
