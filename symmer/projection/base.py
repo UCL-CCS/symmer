@@ -5,7 +5,8 @@ from symmer.evolution import trotter, Had
 from functools import reduce
 
 class S3_projection:
-    """ Base class for enabling qubit reduction techniques derived from
+    """ 
+    Base class for enabling qubit reduction techniques derived from
     the Stabilizer SubSpace (S3) projection framework, such as tapering
     and Contextual-Subspace VQE. The methods defined herein serve the 
     following purposes:
@@ -20,6 +21,9 @@ class S3_projection:
         This method wraps _perform_projection but provides the facility to insert
         auxiliary rotations (that need not be Clifford). This is used in CS-VQE
         to implement unitary partitioning where necessary. 
+
+    Attributes:
+        rotated_flag (bool): If True, the operator is rotated. By default it is set to 'False'.
     """
     rotated_flag = False
 
@@ -27,15 +31,13 @@ class S3_projection:
                 stabilizers: IndependentOp
                 ) -> None:
         """
-        - stabilizers
-            a list of stabilizers that should be enforced, given as Pauli strings
-        - eigenvalues
-            the list of eigenvalue assignments to complement the stabilizers
-        - target_sqp
-            the target single-qubit Pauli (X or Z) that we wish to rotate onto
-        - fix_qubits
-            Manually overrides the qubit positions selected in stabilizer_rotations, 
-            although the rotation procedure can be a bit unpredictable so take care!
+        - eigenvalues: The list of eigenvalue assignments to complement the stabilizers.
+        
+        - target_sqp: The target single-qubit Pauli (X or Z) that we wish to rotate onto.
+        - fix_qubits: Manually overrides the qubit positions selected in stabilizer_rotations, although the rotation procedure can be a bit unpredictable so take care!
+
+        Args:
+            stabilizers (IndependentOp): A list of stabilizers that should be enforced, given as Pauli strings.
         """
         self.stabilizers = stabilizers
         
@@ -43,8 +45,15 @@ class S3_projection:
             operator: PauliwordOp,
             #sym_sector: Union[List[int], np.array]
         ) -> PauliwordOp:
-        """ method for projecting an operator over fixed qubit positions 
-        stabilized by single Pauli operators (obtained via Clifford operations)
+        """ 
+        Method for projecting an operator over fixed qubit positions 
+        stabilized by single Pauli operators (obtained via Clifford operations).
+
+        Args:
+            operator (PauliwordOp): Operator to be projected over fixed qubit positions stabilized by single Pauli operators.
+
+        Returns:
+            PauliwordOp representing the projection of input operator.
         """
         assert(operator.n_qubits == self.stabilizers.n_qubits), 'The input operator does not have the same number of qubits as the stabilizers'
         assert(self.rotated_flag), 'The operator has not been rotated - intended for use with perform_projection method'
@@ -79,12 +88,20 @@ class S3_projection:
             ref_state: Union[List[int], np.array]=None,
             sector: Union[List[int], np.array]=None
         ) -> PauliwordOp:
-        """ Input a PauliwordOp and returns the reduced operator corresponding 
+        """ 
+        Input a PauliwordOp and returns the reduced operator corresponding 
         with the specified stabilizers and eigenvalues.
         
         insert_rotation allows one to include supplementary Pauli rotations
         to be performed prior to the stabilizer rotations, for example 
-        unitary partitioning in CS-VQE
+        unitary partitioning in CS-VQE.
+
+        Args: 
+            operator (PauliwordOp): Operator projected over fixed qubit positions stabilized by single Pauli operators.
+            ref_state (np.array): Reference State. By default, it is set to None.
+            sector (np.array): Sector. By default it is set to none. If no sector is provided then a reference state must be given instead.
+        Returns:
+            Reduced operator corresponding to the given stabilizers and eigenvalues.
         """
         if sector is None and ref_state is not None:
             #assert(ref_state is not None), 'If no sector is provided then a reference state must be given instead'
@@ -107,7 +124,14 @@ class S3_projection:
         return self._perform_projection(operator=op_rotated)
     
     def project_state(self, state: QuantumState) -> QuantumState:
-        """ Project a state into the stabilizer subspace
+        """ 
+        Project a state into the stabilizer subspace.
+
+        Args:
+            state (QuantumState): The state which has to be projected into the stabilizer subspace.
+
+        Returns: 
+            Projection of input QuantumState into the stabilizer subspace.
         """
         transformation_list = []
         # Hadamards where rotated onto Pauli X operators

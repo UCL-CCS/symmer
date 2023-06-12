@@ -37,12 +37,11 @@ def check_path_to_file(potential_path: str) -> str:
 
 
 def command_interface():
-    """Parse arguments from command line interface.
+    """
+    Parse arguments from command line interface.
 
     test:
     python command_line.py taper --config ~/Documents/PhD/SymRed/tests/yaml_input/H2_JW_real.yaml
-
-
     """
 
     parser = argparse.ArgumentParser(description="Output directory.")
@@ -131,7 +130,9 @@ def command_interface():
 
 
 def cli() -> None:
-    """command line interface"""
+    """
+    command line interface
+    """
     args = command_interface()
 
     output_data = {}

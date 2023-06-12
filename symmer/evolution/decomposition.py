@@ -12,8 +12,17 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 ##############################################
 
 def qasm_to_PauliwordOp(qasm: str, reverse=False, combine=True) -> PauliwordOp:
-    """ Decompose an QASM circuit into a linear combination of Pauli 
+    """ 
+    Decompose an QASM circuit into a linear combination of Pauli 
     operators via the gate definitions in evolution.gate_library.
+
+    Args:
+        qasm (str): QASM circuit which you want to convert into  a linear combination of Pauli operators.
+        reverse (bool): If 'True' then flip qubit ordering and negate angles (for consistency with Qiskit). By default it's set to 'False'.
+        combine (bool): If 'True' then take product over gateset - obscures gate contributions in resulting PauliwordOp. By default it's set to 'True'.
+
+    Returns:
+        A linear combination of Pauli operators representing QASM circuit.
     """
     gate_map = {
         'x':X, 'y':Y, 'z':Z, 'h':Had, 'rx':RX, 'ry':RY, 
@@ -74,8 +83,15 @@ def qasm_to_PauliwordOp(qasm: str, reverse=False, combine=True) -> PauliwordOp:
 ####################################################
 
 def PauliwordOp_to_instructions(PwordOp) -> Dict[int, Dict[str, List[int]]]:
-        """ Stores a dictionary of gate instructions at each step, where each value
-        is a dictionary indicating the indices on which to apply each H,S,CNOT and RZ gate
+        """ 
+        Stores a dictionary of gate instructions at each step, where each value
+        is a dictionary indicating the indices on which to apply each H,S,CNOT and RZ gate.
+
+        Args:
+            PwordOp (PauliWordOp): PauliwordOp which has to be converted into Trotterized circuit instructions.
+
+        Returns:
+            circuit_instructions (dict): Trotterized circuit
         """
         circuit_instructions = {}
         for step, (X,Z) in enumerate(zip(PwordOp.X_block, PwordOp.Z_block)):
@@ -101,16 +117,30 @@ def PauliwordOp_to_QuantumCircuit(
     ) -> QuantumCircuit:
     """
     Convert the operator to a QASM circuit string for input 
-    into quantum computing packages such as Qiskit and Cirq
+    into quantum computing packages such as Qiskit and Cirq.
 
-    basis_change_indices in form [X_indices, Y_indices]
+    Args:
+        PwordOp (PauliwordOp): PauliwordOp which has to be converted into Quantum Circuit.
+        ref_state (np.array): Reference State. By default, it is set to None.
+        basis_change_indices (Dict[str, List[int]]): Basis change indices in form [X_indices, Y_indices].
+        trotter_number (int): Trotter Number. By default, it's set to 1.
+        bind_params (bool): If 'True', parameters are binded. By default it's set to 'True'.
+        include_barriers (bool): If 'True', the quantum circuit includes barriers. By default it's set to 'True'.
+        parameter_label (str): Parameter label. By default it's set to 'P'.
+
+    Returns:
+        Quantum Circuit representation of Operator
     """
     if isinstance(ref_state, QuantumState):
         assert ref_state.n_terms == 1
         ref_state = ref_state.state_matrix[0]
 
     def qiskit_ordering(indices):
-        """ we index from left to right - in Qiskit this ordering is reversed
+        """ 
+        We index from left to right - in Qiskit this ordering is reversed.
+
+        Args:
+            indices (int): Indices
         """
         return PwordOp.n_qubits - 1 - indices
 
@@ -172,9 +202,14 @@ def PauliwordOp_to_QuantumCircuit(
     return qc
 
 def get_CNOT_connectivity_graph(evolution_obj: Union[PauliwordOp, QuantumCircuit], print_graph=False):
-    """ Get the graph whoss edges denote nonlocal interaction between two qubits.
+    """ 
+    Get the graph whoss edges denote nonlocal interaction between two qubits.
     This is useful for device-aware ansatz construction to ensure the circuit connectiviy
     may be accomodated by the topology of the target quantum processor. 
+
+    Args:
+        evolution_obj (Union[PauliwordOp, QuantumCircuit]): Evolution Object
+        print_graph (bool): If True, the graph is drawn. By default, it's set to False.
     """
     if isinstance(evolution_obj, PauliwordOp):
         qc = PauliwordOp_to_QuantumCircuit(evolution_obj)

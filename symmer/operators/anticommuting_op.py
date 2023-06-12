@@ -9,6 +9,14 @@ class AntiCommutingOp(PauliwordOp):
     def __init__(self,
                  AC_op_symp_matrix: np.array,
                  coeff_list: np.array):
+        """
+        Args:
+            AC_op_symp_matrix (np.array): The symmetric matrix representation of the anti-commuting operator.
+            coeff_list (np.array): The coefficient list associated with the anti-commuting operator.
+
+        Raises:
+            AssertionError: If the operators do not anticommute.
+        """
         super().__init__(AC_op_symp_matrix, coeff_list)
 
         # check all operators anticommute
@@ -23,6 +31,15 @@ class AntiCommutingOp(PauliwordOp):
             pauli_terms :List[str],
             coeff_vec:   List[complex] = None
         ) -> "AntiCommutingOp":
+        """
+        Args:
+            pauli_terms (List[str]): A list of Pauli terms represented as strings.
+            coeff_vec (List[complex], optional): A list of complex coefficients associated with the Pauli terms.
+                If not provided, the default coefficients are assumed to be 1.0 for each term.
+
+        Returns:
+            AntiCommutingOp: An AntiCommutingOp instance initialized from the list of Pauli terms.
+        """
         PwordOp = super().from_list(pauli_terms, coeff_vec)
         return cls.from_PauliwordOp(PwordOp)
 
@@ -30,7 +47,15 @@ class AntiCommutingOp(PauliwordOp):
     def from_dictionary(cls,
             operator_dict: Dict[str, complex]
         ) -> "AntiCommutingOp":
-        """ Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+        """ 
+        Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+
+        Args:
+            operator_dict (Dict[str, complex]): A dictionary representing the operator, where the keys are Pauli strings
+                and the values are complex coefficients.
+
+        Returns:
+            AntiCommutingOp: An AntiCommutingOp instance initialized from the dictionary representation.
         """
         PwordOp = super().from_dictionary(operator_dict)
         return cls.from_PauliwordOp(PwordOp)
@@ -39,6 +64,13 @@ class AntiCommutingOp(PauliwordOp):
     def from_PauliwordOp(cls,
             PwordOp: PauliwordOp
         ) -> 'AntiCommutingOp':
+        """
+        Args:
+            PwordOp (PauliwordOp): The PauliwordOp instance to initialize the AntiCommutingOp from.
+
+        Returns:
+            AntiCommutingOp: An AntiCommutingOp instance initialized from the given PauliwordOp.
+        """
         return cls(PwordOp.symp_matrix, PwordOp.coeff_vec)
 
 
@@ -50,7 +82,7 @@ class AntiCommutingOp(PauliwordOp):
         Note one needs to re-run this function if ordering changed (e.g. if lexicographical_sort is run)
 
         Returns:
-            s_index (int): index of least dense term in objects symp_matrix and coeff_vec
+            s_index (int): index of least dense term in objects symp_matrix and coeff_vec.
         """
         ### np.logical_or(X_block, Z_block)
         # pos_terms_occur = np.logical_or(self.symp_matrix[:, :self.n_qubits], self.symp_matrix[:, self.n_qubits:])
@@ -68,6 +100,13 @@ class AntiCommutingOp(PauliwordOp):
 
 
     def _recursive_seq_rotations(self, AC_op: PauliwordOp) -> "PauliwordOp":
+        """
+        Args:
+            AC_op (PauliwordOp): The AntiCommutingOp to apply sequence rotations to.
+
+        Returns:
+            PauliwordOp: The AntiCommutingOp after applying sequence rotations.
+        """
         if AC_op.n_terms == 1:
             return AC_op
         else:
@@ -109,7 +148,6 @@ class AntiCommutingOp(PauliwordOp):
             ## know how operator acts therefore don't need to actually do rotations
 
             return self._recursive_seq_rotations(AC_op_rotated)
-
 
     def unitary_partitioning(self, s_index: int=None, up_method: Optional[str]='seq_rot') \
             -> Tuple[PauliwordOp, Union[PauliwordOp, List[Tuple[PauliwordOp, float]]], float, "AntiCommutingOp"]:

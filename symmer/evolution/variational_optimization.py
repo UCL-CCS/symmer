@@ -14,13 +14,18 @@ import multiprocessing as mp
 from typing import *
 
 class VQE_Driver:
+    """
+    expectation value method one of the following choices:
+        - symbolic_direct: uses symmer to compute <psi|H|psi> directly using the QuantumState class
+        - symbolic_projector: computes expval by projecting onto +-1 eigenspaces of observable terms
+        - observable_rotation: implements the circuit as rotations applied to the observable
+        - sparse_array: direct calcaultion by converting observable/state to sparse array
+        - dense_array: direct calcaultion by converting observable/state to dense array
     
-    # expectation value method one of the following choices:
-    # symbolic_direct: uses symmer to compute <psi|H|psi> directly using the QuantumState class
-    # symbolic_projector: computes expval by projecting onto +-1 eigenspaces of observable terms
-    # observable_rotation: implements the circuit as rotations applied to the observable
-    # sparse_array: direct calcaultion by converting observable/state to sparse array
-    # dense_array: direct calcaultion by converting observable/state to dense array
+    Attributes:
+        expectation_eval (str): expectation value method. Its default value is 'symbolic_direct'.
+        verbose (bool): If True, prints out useful information during computation. By default it is set to 'True'.
+    """
     expectation_eval = 'symbolic_direct'
     # prints out useful information during computation:
     verbose = True
@@ -31,6 +36,13 @@ class VQE_Driver:
         excitation_ops: PauliwordOp = None,
         ref_state: QuantumState = None
         ) -> None:
+        """
+        Args:
+            observable (PauliwordOp): Observables
+            ansatz_circuit (QuantumCircuit): Ansatz Circuit. By default, it's set to 'None'.
+            excitation_ops (PauliwordOp): Excitation Operators. By default, it's set to 'None'.
+            ref_state (QuantumState): Reference State. By default, it's set to 'None'.
+        """
         self.observable = observable
         self.ref_state = ref_state
         # observables must have real coefficients over the Pauli group:
@@ -42,7 +54,11 @@ class VQE_Driver:
             self.circuit = ansatz_circuit
 
     def prepare_for_evolution(self, excitation_ops: PauliwordOp) -> None:
-        """ Save the excitation generators and construct corresponding ansatz circuit
+        """ 
+        Save the excitation generators and construct corresponding ansatz circuit.
+
+        Args:
+            excitation_ops (PauliwordOp): Excitation Operators.
         """
         self.excitation_generators = PauliwordOp(
             excitation_ops.symp_matrix, np.ones(excitation_ops.n_terms)
@@ -55,11 +71,15 @@ class VQE_Driver:
             evolution_obj: Union[QuantumCircuit, PauliwordOp], 
             x: np.array
         ) -> Union[np.array, QuantumState, List[Tuple[PauliwordOp, float]]]:
-        """ Given a quantum circuit or excitation generating set, return the relevant state-type object:
-        - Array of the QuantumCircuit (for sparse/dense array methods)
-        - QuantumState representation of the QuantumCircuit (for symbolic methods)
-        - Rotations of the form [(generator, angle)] for the observable_rotation expectation_eval method
-        
+        """ 
+        Args:
+            evolution_obj (Union[QuantumCircuit, PauliwordOp]): Evoluation object is either a Quantum Circuit (QuantumCircuit) or a Excitation Generating Set(PauliwordOp).
+
+        Returns:
+            Given a quantum circuit or excitation generating set, return the relevant state-type object:
+            - Array (np.array) of the QuantumCircuit (for sparse/dense array methods).
+            - Quantum State (QuantumState) representation of the QuantumCircuit (for symbolic methods).
+            - Rotations of the form [(generator, angle)] for the observable_rotation expectation_eval method.
         """
         if self.expectation_eval == 'observable_rotation':
             return list(zip(evolution_obj, -2*x))
@@ -76,8 +96,19 @@ class VQE_Driver:
            observable: PauliwordOp, 
            state: Union[np.array, QuantumState, List[Tuple[PauliwordOp, float]]]
         ) -> float:
-        """ Given an observable and state in the relevant form for the
-        expectation value method, calculate the expectation value and return
+        """ 
+        Given an observable and state in the relevant form for the
+        expectation value method, calculate the expectation value and return.
+
+        Args:
+            observable (PauliwordOp): Observable
+            state: State-type object. It can be:
+                - Array (np.array) of the QuantumCircuit (for sparse/dense array methods).
+                - Quantum State (QuantumState) representation of the QuantumCircuit (for symbolic methods).
+                - Rotations of the form [(generator, angle)] for the observable_rotation expectation_eval method.
+        
+        Returns:
+            Expectation Value (float)
         """
         if self.expectation_eval == 'dense_array':
             return (state.conjugate().T @ observable.to_sparse_matrix.toarray() @ state)[0,0].real
@@ -91,7 +122,14 @@ class VQE_Driver:
             return (self.ref_state.dagger * observable.perform_rotations(state) * self.ref_state).real
         
     def f(self, x: np.array) -> float:
-        """ Given a parameter vector, bind to the circuit and retrieve expectation value
+        """ 
+        Given a parameter vector, bind to the circuit and retrieve expectation value.
+
+        Args:
+            x (np.array): Parameter vector
+
+        Returns:
+            Expectation Value (float)
         """
         if self.expectation_eval == 'observable_rotation':
             state = self.get_state(self.excitation_generators, x)
@@ -100,15 +138,30 @@ class VQE_Driver:
         return self._f(self.observable, state)
         
     def partial_derivative(self, x: np.array, param_index: int) -> float:
-        """ Get the partial derivative with respect to an ansatz parameter
+        """ 
+        Get the partial derivative with respect to an ansatz parameter
         by the parameter shift rule.
+
+        Args:
+            x (np.array): Parameter vector
+            param_index (int): Prarameter index
+        
+        Returns:
+            Partial derivative(float) with respect to an ansatz parameter.
         """
         x_upper = x.copy(); x_upper[param_index]+=np.pi/4
         x_lower = x.copy(); x_lower[param_index]-=np.pi/4
         return self.f(x_upper) - self.f(x_lower)
     
     def gradient(self, x: np.array) -> np.array:
-        """ Get the ansatz parameter gradient, i.e. the vector of partial derivatives.
+        """ 
+        Get the ansatz parameter gradient, i.e. the vector of partial derivatives.
+
+        Args:
+            x (np.array): Parameter vector
+        
+        Returns:
+            Ansatz parameter gradient (np.array)
         """
         if self.expectation_eval.find('projector') == -1:
             with mp.Pool(mp.cpu_count()) as pool:
@@ -122,7 +175,11 @@ class VQE_Driver:
         return np.asarray(grad_vec)
     
     def run(self, x0:np.array=None, **kwargs):
-        """ Run the VQE routine
+        """ 
+        Run the VQE routine.
+        
+        Args:
+            x0 (np.array): Parameter vector
         """
         if x0 is None:
             x0 = np.random.random(self.circuit.num_parameters)
@@ -167,10 +224,17 @@ class VQE_Driver:
         return serialize_opt_data(opt_out), vqe_history
 
 class ADAPT_VQE(VQE_Driver):
-    """ Performs qubit-ADAPT-VQE (https://doi.org/10.1103/PRXQuantum.2.020310), a 
+    """ 
+    Performs qubit-ADAPT-VQE (https://doi.org/10.1103/PRXQuantum.2.020310), a 
     variant of ADAPT-VQE (https://doi.org/10.1038/s41467-019-10988-2) that takes 
     its excitation pool as Pauli operators (mapped via some transformation such 
     as Jordan-Wigner) instead of the originating fermionic operators.
+
+    Attributes:
+        derivative_eval (str): Method which is to be used to calculate the operator pool derivatives.
+        TETRIS (bool): If True, TETRIS-ADAPT-VQE is performed. By default it is set to False.
+        linearity_biased (bool): If True, linearity-biased-ADAPT-VQE is performed. By default it is set to True.
+        bias (float): Bias value used in linearity-biased-ADAPT-VQE. It's default value is 1/3.
     """
     # method by which to calculate the operator pool derivatives, either
     # commutators: compute the commutator of the observable with each pool element
@@ -188,6 +252,12 @@ class ADAPT_VQE(VQE_Driver):
         excitation_pool: PauliwordOp = None,
         ref_state: QuantumState = None
         ) -> None:
+        """
+        Args:
+            observable (PauliwordOp): Observable
+            excitation_pool (PauliwordOp): Excitation pool as Pauli operators. By default, it's set to 'None'.
+            ref_state (QuantumState): Reference State. By default, it's set to 'None'.
+        """
         super().__init__(
             observable     = observable,
             excitation_ops = PauliwordOp.empty(observable.n_qubits),
@@ -202,20 +272,38 @@ class ADAPT_VQE(VQE_Driver):
       
     @cached_property
     def commutators(self) -> List[PauliwordOp]:
-        """ List of commutators [H, P] where P is some operator pool element
+        """ 
+        List of commutators [H, P] where P is some operator pool element.
+
+        Returns:
+            List of commutators [H, P]
         """
         with mp.Pool(mp.cpu_count()) as pool:
             commutators = pool.map(self.observable.commutator, self.excitation_pool)
         return list(map(lambda x:x*1j, commutators))
         
     def _derivative_from_commutators(self, index: int) -> float:
-        """ Calculate derivative using the commutator method
+        """ 
+        Calculate derivative using the commutator method.
+
+        Args:
+            index (int): Index
+
+        Returns:
+            Derivative (float) using the commutator method.
         """
         assert self.current_state is not None
         return self._f(observable=self.commutators[index], state=self.current_state) 
     
     def _derivative_from_param_shift(self, index):
-        """ Calculate the derivative using the parameter shift rule
+        """ 
+        Calculate the derivative using the parameter shift rule.
+
+         Args:
+            index (int): Index
+
+        Returns:
+            Derivative (float) using the parameter shift rule.
         """
         adapt_op_temp = self.adapt_operator.append(self.excitation_pool[index])
         circuit_temp = PauliwordOp_to_QuantumCircuit(
@@ -225,10 +313,14 @@ class ADAPT_VQE(VQE_Driver):
         return self._f(self.observable,upper_state) - self._f(self.observable,lower_state)
 
     def pool_gradient(self):
-        """ Get the operator pool gradient by calculating the derivative with respect to
+        """ 
+        Get the operator pool gradient by calculating the derivative with respect to
         each element of the pool. This is parallelized for all but the symbolic_projector
         expectation value calculation method as that is already multiprocessed and therefore
         would result in nested daemonic processes.
+
+        Returns:
+            Operator pool gradient (np.array)
         """
         if self.derivative_eval == 'commutators':
             self.commutators # to ensure this has been cached, else nested daemonic process occurs            
@@ -256,7 +348,8 @@ class ADAPT_VQE(VQE_Driver):
         return np.asarray(gradient)
     
     def pool_score(self):
-        """ Score the operator pool with respect to gradients and circuit linearity
+        """ 
+        Score the operator pool with respect to gradients and circuit linearity.
         """
         scores = abs(self.pool_gradient())
 
@@ -280,7 +373,8 @@ class ADAPT_VQE(VQE_Driver):
         return scores
         
     def append_to_adapt_operator(self, excitations_to_append: List[PauliwordOp]):
-        """ Append the input term(s) to the expanding adapt_operator
+        """ 
+        Append the input term(s) to the expanding adapt_operator.
         """
         for excitation in excitations_to_append:
             if ~np.any(self.adapt_operator.symp_matrix):
@@ -292,12 +386,15 @@ class ADAPT_VQE(VQE_Driver):
             max_cycles:int=10, gtol:float=1e-3, atol:float=1e-10, 
             target:float=0, target_error:float=1e-3
         ):
-        """ Perform the ADAPT-VQE optimization
-        gtol: gradient throeshold below which optimization will terminate
-        atol: if the difference between successive expectation values is below this threshold, terminate
-        max_cycles: maximum number of ADAPT cycles to perform
-        target: if a target energy is known, this may be specified here
-        target_error: the absoluate error threshold with respect to the target energy 
+        """ 
+        Perform the ADAPT-VQE optimization
+
+        Args:
+            gtol: gradient throeshold below which optimization will terminate
+            atol: if the difference between successive expectation values is below this threshold, terminate
+            max_cycles: maximum number of ADAPT cycles to perform
+            target: if a target energy is known, this may be specified here
+            target_error: the absoluate error threshold with respect to the target energy 
         """
         interim_data = {'history':[]}
         adapt_cycle=1

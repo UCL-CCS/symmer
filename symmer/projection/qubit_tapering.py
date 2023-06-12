@@ -7,7 +7,8 @@ from symmer.projection import S3_projection
 from symmer.operators import PauliwordOp, IndependentOp, QuantumState
 
 class QubitTapering(S3_projection):
-    """ Class for performing qubit tapering as per https://arxiv.org/abs/1701.08213.
+    """ 
+    Class for performing qubit tapering as per https://arxiv.org/abs/1701.08213.
     Reduces the number of qubits in the problem whilst preserving its energy spectrum by:
 
     1. identifying a symmetry of the Hamiltonian,
@@ -17,15 +18,19 @@ class QubitTapering(S3_projection):
     5. fixing the +/-1 eigenvalues
 
     Steps 1-2 are handled in this class whereas we defer to the parent S3_projection for 3-5.
-
     """
     def __init__(self,
             operator: PauliwordOp, 
             target_sqp: str = 'X'
         ) -> None:
-        """ Input the PauliwordOp we wish to taper.
+        """ 
+        Input the PauliwordOp we wish to taper.
         There is freedom over the choice of single-qubit Pauli operator we wish to rotate onto, 
         however this is set to X by default (in line with the original tapering paper).
+
+        Args: 
+            operator (PauliwordOp): The Operator you want to tapper.
+            target_sqp (str): The single-qubit Pauli operator we wish to rotate onto. By default, it is set to 'X'.
         """
         self.operator = operator
         self.target_sqp = target_sqp
@@ -34,7 +39,11 @@ class QubitTapering(S3_projection):
         
     @cached_property
     def symmetry_generators(self) -> IndependentOp:
-        """ Find an independent basis for the input operator symmetry
+        """ 
+        Find an independent basis for the input operator symmetry.
+
+        Returns:
+            stabilizers (IndependentOp): Set of stablizers.
         """
         stabilizers = IndependentOp.symmetry_generators(self.operator)
         stabilizers.target_sqp = self.target_sqp
@@ -45,7 +54,8 @@ class QubitTapering(S3_projection):
             sector: Union[List[int], np.array]=None,
             aux_operator: PauliwordOp = None
         ) -> PauliwordOp:
-        """ Finally, once the symmetry generators and sector have been identified, 
+        """ 
+        Finally, once the symmetry generators and sector have been identified, 
         we may perform a projection onto the corresponding stabilizer subspace via 
         the parent S3_projection class.
 
@@ -54,6 +64,14 @@ class QubitTapering(S3_projection):
         especially useful when considering an Ansatz defined over the full system that 
         one wishes to restrict to the same stabilizer subspace as the Hamiltonian for 
         use in VQE, for example.
+
+        Args:
+            ref_state (np.array): Reference State. By default, it is set to None.
+            sector (np.array): Sector. By default it is set to none.
+            aux_operator (PauliwordOp): Auxiliary operator. By default, it is set to None.
+
+        Returns:
+            tapered_operator (PauliwordOp): Tappered Operator
         """
         if ref_state is not None:
             if not isinstance(ref_state, QuantumState):

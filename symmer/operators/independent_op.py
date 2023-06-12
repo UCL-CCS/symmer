@@ -6,7 +6,8 @@ from symmer.operators.utils import _rref_binary, _cref_binary, check_independent
 from symmer.operators import PauliwordOp, QuantumState, symplectic_to_string, single_term_expval
 
 class IndependentOp(PauliwordOp):
-    """ Special case of PauliwordOp, in which the operator terms must
+    """ 
+    Special case of PauliwordOp, in which the operator terms must
     by algebraically independent, with all coefficients set to integers +/-1.
 
     - stabilizer_rotations
@@ -14,13 +15,17 @@ class IndependentOp(PauliwordOp):
         provided stabilizers onto single-qubit Paulis (sqp), either X or Z
 
     <!> Note the target_sqp must be chosen BEFORE generating 
-        the stabilizer rotations, since these will be cached
+        the stabilizer rotations, since these will be cached.
     """
     def __init__(self,
             symp_matrix:   np.array,
             coeff_vec:  Union[List[complex], np.array] = None,
             target_sqp: str = 'Z'):
         """
+        Args:
+            symp_matrix (np.array): Symplectic matrix.
+            coeff_vec (np.array): Coefficient Vector. By default, it's set to 'None'.
+            target_sqp (str): Target SQP (Single-Qubit Pauli). By default it is to 'Z'.
         """
         if coeff_vec is None:
             coeff_vec = np.ones(symp_matrix.shape[0])
@@ -40,6 +45,13 @@ class IndependentOp(PauliwordOp):
     def from_PauliwordOp(cls,
             PwordOp: PauliwordOp
         ) -> "IndependentOp":
+        """
+        Args:
+            PwordOp (PauliwordOp): Pauli operator to be used to form the Independent Operator.
+
+        Return:
+            Independent Operator
+        """
         return cls(PwordOp.symp_matrix, PwordOp.coeff_vec)
 
     @classmethod
@@ -47,6 +59,14 @@ class IndependentOp(PauliwordOp):
             pauli_terms :List[str], 
             coeff_vec:   List[complex] = None
         ) -> "IndependentOp":
+        """
+        Args:
+            pauli_terms (List[str]): List of Pauli Terms.
+            coeff_vec (List[complex]): List of complex coeffecients.
+
+        Return:
+            Independent Operator
+        """
         PwordOp = super().from_list(pauli_terms, coeff_vec)
         return cls.from_PauliwordOp(PwordOp)
 
@@ -54,7 +74,14 @@ class IndependentOp(PauliwordOp):
     def from_dictionary(cls,
             operator_dict: Dict[str, complex]
         ) -> "IndependentOp":
-        """ Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+        """ 
+        Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
+
+        Args:
+            operator_dict (Dict[str, complex]): Dictionary representation of IndependentOp
+                    
+        Return:
+            Independent Operator
         """
         PwordOp = super().from_dictionary(operator_dict)
         return cls.from_PauliwordOp(PwordOp)
@@ -65,7 +92,8 @@ class IndependentOp(PauliwordOp):
             commuting_override:bool=False,
             largest_clique = False
         ) -> "IndependentOp":
-        """ Identify a symmetry basis for the supplied Pauli operator with
+        """ 
+        Identify a symmetry basis for the supplied Pauli operator with
         symplectic representation  M = [ X | Z ]. We perform columnwise 
         Gaussian elimination to yield the matrix
 
@@ -82,6 +110,14 @@ class IndependentOp(PauliwordOp):
 
         Since we only need to reduce columns, the algorithm scales with the number of
         qubits N, not the number of terms M, and is therefore at worst O(N^2).
+
+        Args:
+            PwordOp (PauliwordOp): Pauli operator.
+            commuting_override (bool): If 'True', the check for commuting symmetries is overriden. By default, it's set to 'False'.
+            largest_clique (bool): If 'True', the largest commuting subset is determined using clique cover or a greedy method. By default, it's set to 'False'.
+
+        Returns:
+            Symplectic representation of the symmetry basis.
         """
         # swap order of XZ blocks in symplectic matrix to ZX
         to_reduce = np.vstack([np.hstack([PwordOp.Z_block, PwordOp.X_block]), np.eye(2*PwordOp.n_qubits, dtype=bool)])
@@ -107,13 +143,15 @@ class IndependentOp(PauliwordOp):
             return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms))
 
     def _check_stab(self) -> None:
-        """ Checks the stabilizer coefficients are +/-1
+        """ 
+        Checks the stabilizer coefficients are +/-1
         """
         if not set(self.coeff_vec).issubset({0, +1,-1}):
             raise ValueError(f'Stabilizer coefficients not +/-1: {self.coeff_vec}')
         
     def _check_independent(self) -> None:
-        """ Check the supplied stabilizers are algebraically independent
+        """ 
+        Check the supplied stabilizers are algebraically independent
         """
         if not check_independent(self):
             # there is a dependent row
@@ -150,15 +188,26 @@ class IndependentOp(PauliwordOp):
     def perform_rotations(self, 
         rotations: List[Tuple["PauliwordOp", float]]
         ) -> "PauliwordOp":
-        """ Overwrite PauliwordOp.perform_rotations to return a IndependentOp
+        """ 
+        Overwrite PauliwordOp.perform_rotations to return a IndependentOp.
+
+        Args:
+            rotations (List[Tuple["PauliwordOp", float]]): List of (PauliwordOp, rotation).
+
+        Returns:
+            Rotated Stabilizers of PauliwordOp Instance.
         """
         rotated_stabilizers = super().perform_rotations(rotations)
         return self.from_PauliwordOp(rotated_stabilizers)
 
     def _recursive_rotations(self, basis: "IndependentOp") -> None:
-        """ Recursively rotate terms of the IndependentOp to single-qubit Pauli operators.
+        """ 
+        Recursively rotate terms of the IndependentOp to single-qubit Pauli operators.
         This is only possible when the basis is mutually commuting! Else, such rotations do
         not exist (there is a check for this in generate_stabilizer_rotations, that wraps this method).
+
+        Args:
+            basis (IndependentOp): Basis
         """
         # drop any term(s) that are single-qubit Pauli operators
         non_sqp = np.where(np.sum(basis.symp_matrix, axis=1)!=1)
@@ -191,7 +240,8 @@ class IndependentOp(PauliwordOp):
             return self._recursive_rotations(rotated_basis)
         
     def generate_stabilizer_rotations(self) -> None:
-        """ Find the full list of pi/2 Pauli rotations (Clifford operations) mapping this IndependentOp 
+        """ 
+        Find the full list of pi/2 Pauli rotations (Clifford operations) mapping this IndependentOp 
         to single-qubit Pauli operators, for use in stabilizer subsapce projection schemes.
         """
         assert(self.n_terms <= self.n_qubits), 'Too many terms in basis to reduce to single-qubit Paulis'
@@ -225,11 +275,16 @@ class IndependentOp(PauliwordOp):
             ref_state: Union[List[int], np.array, QuantumState],
             threshold: float = 0.5
         ) -> None:
-        """ Given the specified reference state, e.g. Hartree-Fock |1...10...0>, 
+        """ 
+        Given the specified reference state, e.g. Hartree-Fock |1...10...0>, 
         determine the corresponding sector by measuring the stabilizers.
         will also accept a superposition of basis states, in which case it will 
         identify the dominant sector therein, but note it will ascribe a zero
         assignment if there is not sufficient evidence to fix a +-1 eigenvalue.
+
+        Args:
+             ref_state (Union[List[int], np.array, QuantumState]): Reference State.
+             threshold (float): Threshold Value for  expectation value. It's default value is 0.5
         """
         if not isinstance(ref_state, QuantumState):
             ref_state = QuantumState(ref_state)
@@ -248,7 +303,11 @@ class IndependentOp(PauliwordOp):
             warnings.warn(f'The stabilizers {S_zero} were assigned zero values - bad reference state.')
         
     def rotate_onto_single_qubit_paulis(self) -> "IndependentOp":
-        """ Returns the rotated single-qubit Pauli stabilizers
+        """ 
+        Returns the rotated single-qubit Pauli stabilizers.
+
+        Returns: 
+            Rotated single-qubit Pauli stabilizers.
         """
         self.generate_stabilizer_rotations()
         if self.stabilizer_rotations != []:
@@ -259,8 +318,15 @@ class IndependentOp(PauliwordOp):
     def __getitem__(self,
                     key: Union[slice, int]
                     ) -> "IndependentOp":
-        """ Makes the IndependentOp subscriptable - returns a IndependentOp constructed
-        from the indexed row and coefficient from the symplectic matrix
+        """ 
+        Makes the IndependentOp subscriptable - returns a IndependentOp constructed
+        from the indexed row and coefficient from the symplectic matrix.
+
+        Args:
+            key (Union[slice, int]): Key.
+
+        Returns:
+            IndependentOp constructed from the indexed row and coefficient from the symplectic matrix.
         """
         if isinstance(key, int):
             if key < 0:
@@ -285,13 +351,25 @@ class IndependentOp(PauliwordOp):
         return IndependentOp(symp_items, coeff_items)
 
     def __iter__(self):
-        """ Makes a PauliwordOp instance iterable
+        """ 
+        Makes a PauliwordOp instance iterable.
+
+        Returns:
+            Iterator of PauliwordOp instance.
         """
         return iter([self[i] for i in range(self.n_terms)])
 
 
 def assign_value(S: PauliwordOp, ref_state: QuantumState, threshold: float) -> int:
-    """ Measure expectation value of stabilizer on input reference state
+    """
+    Measure expectation value of stabilizer on input reference state.
+    Args: 
+        S (PauliwordOp): Stabilizer.
+        ref_state (QuantumState): Reference State.
+        threshold (float): Threshold Value of expectation value.
+
+    Returns:
+        Expectation Value (int) of stabilizer on input reference state.
     """
     expval = single_term_expval(S, ref_state)
     # if this expval exceeds some predefined threshold then assign the corresponding 

@@ -13,7 +13,6 @@ def symplectic_to_string(symp_vec) -> str:
 
     Returns:
         Pword_string (str): String version of symplectic array
-
     """
     n_qubits = len(symp_vec) // 2
 
@@ -36,6 +35,12 @@ def symplectic_to_string(symp_vec) -> str:
 
 def string_to_symplectic(pauli_str, n_qubits):
     """
+    Args:
+        pauli_str (str): Pauli String to be converted to symplectic array
+        n_qubits (int): Number of qubits
+
+    Returns:
+        symp_vec (array): symplectic Pauliword array
     """
     assert(len(pauli_str) == n_qubits), 'Number of qubits is incompatible with pauli string'
     assert (set(pauli_str).issubset({'I', 'X', 'Y', 'Z'})), 'pauliword must only contain X,Y,Z,I terms'
@@ -59,6 +64,12 @@ def count1_in_int_bitstring(i):
 
     https://stackoverflow.com/questions/109023/how-to-count-the-number-of-set-bits-in-a-32-bit-integer#109025
     https://web.archive.org/web/20151229003112/http://blogs.msdn.com/b/jeuge/archive/2005/06/08/hakmem-bit-count.aspx
+
+    Args:
+        i (int):  Integer
+
+    Returns:
+        Number of "1" bits in the bitstring of integer 'i'.
     """
     i = i - ((i >> 1) & 0x55555555)  # add pairs of bits
     i = (i & 0x33333333) + ((i >> 2) & 0x33333333)  # quads
@@ -77,7 +88,6 @@ def symplectic_to_sparse_matrix(symp_vec, coeff) -> sp.sparse.csr_matrix:
 
     Returns:
         sparse_matrix (csr_matrix): sparse matrix of Pauliword
-
     """
     n_qubits = len(symp_vec) // 2
 
@@ -118,8 +128,17 @@ def symplectic_cleanup(
         coeff_vec:      np.array, 
         zero_threshold: float = None
     ) -> Tuple[np.array, np.array]:
-    """ Remove duplicated rows of symplectic matrix terms, whilst summing
+    """ 
+    Remove duplicated rows of symplectic matrix terms, whilst summing
     the corresponding coefficients of the deleted rows in coeff_vec
+
+    Args:
+        symp_matrix (np.array): Symplectic matrix.
+        coeff_vec (np.array): Coefficient Vector.
+        zero_threshold (float): Zero Threshold Value. By default it is set to 'None'.
+
+    Returns: 
+        Reduced symplectic matrix and reduced coefficient vector.
     """
     # order lexicographically using a fast void view implementation...
     # this scales to large numbers of qubits more favourably than np.lexsort
@@ -146,7 +165,8 @@ def symplectic_cleanup(
     return reduced_symp_matrix, reduced_coeff_vec
 
 def random_symplectic_matrix(n_qubits,n_terms, diagonal=False, density=0.3):
-    """ Generates a random binary matrix of dimension (n_terms) x (2*n_qubits)
+    """ 
+    Generates a random binary matrix of dimension (n_terms) x (2*n_qubits)
     Specifying diagonal=True will set the left hand side (X_block) to all zeros
     """
     if diagonal:
@@ -156,8 +176,15 @@ def random_symplectic_matrix(n_qubits,n_terms, diagonal=False, density=0.3):
         return np.random.choice([True, False], size=[n_terms,2*n_qubits], p=[density, 1-density])
 
 def _rref_binary(matrix: np.array) -> np.array:
-    """ Row-reduced echelon form over the binary field (GF2) - rows are not reordered 
-    here for efficiency (not required in some use cases, e.g. symmetry identification)
+    """ 
+    Row-reduced echelon form over the binary field (GF2) - rows are not reordered 
+    here for efficiency (not required in some use cases, e.g. symmetry identification).
+
+    Args:
+        matrix(np.array): Matrix whose row-reduced echelon form over the binary field has to be found.
+
+    Returns:
+        Row-reduced echelon form over the binary field of input matrix.
     """
     rref_matrix = matrix.copy()
     # iterate over rows of array
@@ -174,7 +201,14 @@ def _rref_binary(matrix: np.array) -> np.array:
     return rref_matrix
 
 def rref_binary(matrix: np.array) -> np.array:
-    """ Full row-reduced echelon form with row reordering
+    """ 
+    Full row-reduced echelon form with row reordering.
+
+    Args:
+        matrix(np.array): Matrix whose row-reduced echelon form with row reordering has to be found.
+
+    Returns:
+        Row-reduced echelon form of input matrix with row reordering of input matrix.
     """
     reduced = _rref_binary(matrix)
     row_order, col_order = zip(
@@ -187,17 +221,39 @@ def rref_binary(matrix: np.array) -> np.array:
     return reduced[row_order]
 
 def _cref_binary(matrix: np.array) -> np.array:
-    """ Column-reduced echelon form with static columns (used in symmetry identification)
+    """ 
+    Column-reduced echelon form with static columns (used in symmetry identification).
+    
+    Args:
+        matrix(np.array): Matrix whose column-reduced echelon form with static columns has to be found.
+
+    Returns:
+        Column-reduced echelon form of input matrix with static columns.
     """
     return _rref_binary(matrix.T).T  
 
 def cref_binary(matrix: np.array) -> np.array:
-    """ Column-reduced echelon form with ordered columns (used in basis reconstruction)
+    """ 
+    Column-reduced echelon form with ordered columns (used in basis reconstruction).
+        
+    Args:
+        matrix(np.array): Matrix whose column-reduced echelon form with ordered columns has to be found.
+
+    Returns:
+        Column-reduced echelon form of input matrix with ordered columns.
     """
     return rref_binary(matrix.T).T        
 
 def QubitOperator_to_dict(op, num_qubits):
-    """ OpenFermion
+    """ 
+    OpenFermion
+
+    Args:
+        op: Qubit Operator
+        num_qubits: Number of qubiits.
+
+    Returns:
+        Dictionary format of Qubit Operator.
     """
     assert(type(op) == of.QubitOperator)
     op_dict = {}
@@ -214,7 +270,14 @@ def QubitOperator_to_dict(op, num_qubits):
     return op_dict
 
 def PauliSumOp_to_dict(op:PauliSumOp) -> dict:
-    """ Qiskit
+    """ 
+    Qiskit
+    
+    Args:
+        op (PauliSumOp): Pauli Sum Operator
+
+    Returns:
+        Dictionary format of Pauli Sum Operator.
     """
     H_dict = {}
     for P_term in op.to_pauli_op():
@@ -223,13 +286,13 @@ def PauliSumOp_to_dict(op:PauliSumOp) -> dict:
     return H_dict
 
 def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:
-    """ Stores the real and imaginary parts of the coefficient separately in a tuple
+    """ 
+    Stores the real and imaginary parts of the coefficient separately in a tuple.
 
     Args:
-        op (PauliwordOp): Weighted linear combination of N-fold Pauli operators
+        op (PauliwordOp): Weighted linear combination of N-fold Pauli operators.
     Returns:
-        dict_out (dict): Dictionary of the form {pstring:(real, imag)}
-
+        dict_out (dict): Dictionary of the form {pstring:(real, imag)}.
     """
     terms, coeffs = zip(*op.to_dictionary.items())
     coeffs = [(n.real, n.imag) for n in coeffs]
@@ -237,13 +300,13 @@ def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:
     return dict_out
 
 def safe_QuantumState_to_dict(psi) -> Dict[str, Tuple[float, float]]:
-    """ Stores the real and imaginary parts of the coefficient separately in a tuple
+    """ 
+    Stores the real and imaginary parts of the coefficient separately in a tuple.
 
     Args:
-        op (QuantumState): Weighted linear combination of N-fold Pauli operators
+        op (QuantumState): Weighted linear combination of N-fold Pauli operators.
     Returns:
-        dict_out (dict): Dictionary of the form {pstring:(real, imag)}
-
+        dict_out (dict): Dictionary of the form {pstring:(real, imag)}.
     """
     terms, coeffs = zip(*psi.to_dictionary.items())
     coeffs = [(n.real, n.imag) for n in coeffs]
@@ -255,35 +318,35 @@ def mul_symplectic(
         coeff1: complex,
         symp_vec2: np.array,
         coeff2: complex) -> Tuple[np.array, complex, int]:
-    """ performs Pauli multiplication with phases at the level of the symplectic
-         vector (1D here!). The phase compensation is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
+    """ 
+    Performs Pauli multiplication with phases at the level of the symplectic
+    vector (1D here!). The phase compensation is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
 
-        P1 * P2 is performed
+    P1 * P2 is performed
 
     Args:
         symp_vec1 (np.array) : 1D vector of left Pauli operator
         coeff1 (float): coefficient of left  Pauli operator
-        Y_count1: number of Y terms in left Pauli operator
 
         symp_vec2 (np.array) : 1D vector of right Pauli operator
         coeff2 (float): coefficient of right  Pauli operator
-        Y_count2: number of Y terms in right Pauli operator
 
     Returns:
         output_symplectic_vec (np.array): binary symplectic output (Pauli opertor out)
         coeff_vec (complex): complex coeff with correct phase
-        Y_count_out (int): number of Y terms in output
     """
     X_block1, Z_block1 = np.split(symp_vec1, 2)
     X_block2, Z_block2 = np.split(symp_vec2, 2)
 
+    # number of Y terms in left Pauli operator
     Y_count1 = np.sum(np.bitwise_and(X_block1, Z_block1), axis=0)
+    # number of Y terms in right Pauli operator
     Y_count2 = np.sum(np.bitwise_and(X_block2, Z_block2), axis=0)
 
     # phaseless multiplication is binary addition in symplectic representation
     output_symplectic_vec = np.bitwise_xor(symp_vec1, symp_vec2)
     # phase is determined by Y counts plus additional sign flip
-    Y_count_out = np.sum(np.bitwise_and(*np.split(output_symplectic_vec, 2)), axis=0)
+    Y_count_out = np.sum(np.bitwise_and(*np.split(output_symplectic_vec, 2)), axis=0) # number of Y terms in output
     # X_block of first op and Z_block of second op
     sign_change = (-1) ** (
             np.sum(np.bitwise_and(X_block1, Z_block2), axis=0) % 2
@@ -294,16 +357,31 @@ def mul_symplectic(
     return output_symplectic_vec, coeff_vec #, Y_count_out
 
 def unit_n_sphere_cartesian_coords(angles: np.array) -> np.array:
-    """ Input an array of angles of length n, returns the n+1 cartesian coordinates 
+    """ 
+    Input an array of angles of length n, returns the n+1 cartesian coordinates 
     of the corresponding unit n-sphere in (n+1)-dimensional Euclidean space.
+
+    Args:
+        angles (np.array): Array of angles of length n of the corresponding unit n-sphere in (n+1)-dimensional Euclidean space.
+
+    Returns:
+        Numpy Array of n+1 cartesian coordinates.
     """
     cartesians = [np.prod(np.sin(angles[:i]))*np.cos(angles[i]) for i in range(len(angles))]
     cartesians.append(np.prod(np.sin(angles)))
     return np.array(cartesians)
 
 def binomial_coefficient(n,k):
-    """ Calculate the binomial coefficient n choose k
-    Differs from np.math.comb as this allows non-integer n
+    """ 
+    Calculate the binomial coefficient "n choose k" or denoted as "C(n, k)," represents the number of ways to choose k objects from a set of n objects without considering their order.
+    Differs from np.math.comb as this allows non-integer n.
+
+    Args: 
+        n: Total number of objects.
+        k: Number of object to choose from a set of n objects.
+
+    Returns:
+        Binomial coefficient "n choose k".
     """
     prod = 1
     for r in range(k):
@@ -311,13 +389,27 @@ def binomial_coefficient(n,k):
     return prod
 
 def check_independent(operators):
-    """ Check if the input PauliwordOp contains algebraically dependent terms
+    """
+    Check if the input PauliwordOp contains algebraically dependent terms.
+    
+    Args:
+        operators (PauliwordOp): Operators.
+
+    Returns:
+        Returns True, if input operators contains algebraically dependent terms.
     """
     check_independent = _rref_binary(operators.symp_matrix)
     return ~np.any(np.all(~check_independent, axis=1))
 
 def check_jordan_independent(operators):
-    """ Check if the input PauliwordOp contains algebraically dependent terms
+    """ 
+    Check if the input PauliwordOp contains algebraically dependent terms.
+
+    Args:
+        operators (PauliwordOp): Operators.
+    
+    Returns:
+        Returns True, if input operators contains algebraically dependent terms.
     """
     mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
     Symmetries = operators[mask_symmetries]
@@ -328,8 +420,15 @@ def check_jordan_independent(operators):
     )
 
 def check_adjmat_noncontextual(adjmat) -> bool:
-    """ Check whether the input boolean square matrix has a noncontextual structure...
+    """
+    Check whether the input boolean square matrix has a noncontextual structure...
     ... see https://doi.org/10.1103/PhysRevLett.123.200501 for details.
+
+    Args:
+        adjmat: Boolean square matrix.
+
+    Returns:
+        Returns True, if input matrix has a noncontextual structure.
     """
     # mask the terms that do not commute universally amongst the operator
     mask_non_universal = np.where(~np.all(adjmat, axis=1))[0]
@@ -345,8 +444,15 @@ def check_adjmat_noncontextual(adjmat) -> bool:
     return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
 
 def perform_noncontextual_sweep(operator):
-    """ Given an ordered operator, sweep over its terms and append 
+    """
+    Given an ordered operator, sweep over its terms and append 
     to a list if the newly appended term maintains noncontextuality.
+
+    Args:
+        operator (PauliwordOp): Ordered operator.
+
+    Returns:
+        List of terms maintaining noncontextuality.
     """
     # initialize noncontextual operator with first element of input operator
     noncon_indices = np.array([0])
@@ -365,13 +471,12 @@ def perform_noncontextual_sweep(operator):
 
 def binary_array_to_int(bin_arr):
     """
-    function to convert an array composed of rows of binary into integars
+    Function to convert an array composed of rows of binary into integers.
 
     Args:
-        bin_arr(np.array): 2D numpy array of binary
+        bin_arr(np.array): 2D numpy array of binary.
     Returns:
-        int_arr (np.array): 1D numpy array of ints
-
+        int_arr (np.array): 1D numpy array of ints.
     """
 
     if bin_arr.shape[1] < 64:
