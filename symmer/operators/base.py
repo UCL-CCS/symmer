@@ -1925,6 +1925,45 @@ class QuantumState:
             # conjugate has already taken place, just need to make into row vector
             sparse_Qstate= sparse_Qstate.reshape([1,-1])
         return sparse_Qstate
+    
+    @cached_property
+    def to_dense_matrix(self):
+        """
+        Returns:
+            dense_Qstate (ndarray): dense matrix representation of the statevector
+        """
+        return self.to_sparse_matrix.toarray()
+    
+    def partial_trace_over_qubits(self, qubits: List[int] = []) -> np.ndarray:
+        """
+        Perform a partial trace over the specified qubit positions, 
+        yielding the reduced density matrix of the remaining subsystem.
+
+        Args:
+            qubits (List[int]): qubit indicies to trace over
+
+        Returns:
+            rho_reduced (ndarray): Reduced density matrix over the remaining subsystem
+        """
+        rho_reduced = self.to_dense_matrix.reshape([2]*self.n_qubits)
+        rho_reduced = np.tensordot(rho_reduced, rho_reduced.conj(), axes=(qubits, qubits))
+        d = int(np.sqrt(np.product(rho_reduced.shape)))
+        return rho_reduced.reshape(d, d)
+
+    def get_rdm(self, qubits: List[int] = []) -> np.ndarray:
+        """
+        Return the reduced density matrix of the specified qubit positions, 
+        corresponding with a partial trace over the complementary qubit indices
+        
+        Args:
+            qubits (List[int]): qubit indicies to preserve
+
+        Returns:
+            rho_reduced (ndarray): Reduced density matrix over the chosen subsystem
+        """
+        trace_over_indices = list(set(range(self.n_qubits)).difference(set(qubits)))
+        rho_reduced = self.partial_trace_over_qubits(trace_over_indices)
+        return rho_reduced
 
     def _is_normalized(self) -> bool:
         """
