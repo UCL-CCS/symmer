@@ -1032,8 +1032,9 @@ class PauliwordOp:
         Returns:
             bool: True if all terms commute, False otherwise.
         """
-        return self.commutator(PwordOp).cleanup().n_terms == 0
-    
+        commutator = self.commutator(PwordOp).cleanup()
+        return (commutator.n_terms == 0 or np.all(commutator.coeff_vec[0] == 0))
+        
     @cached_property
     def adjacency_matrix(self) -> np.array:
         """ 
