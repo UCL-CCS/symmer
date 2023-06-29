@@ -407,12 +407,12 @@ class NoncontextualOp(PauliwordOp):
         si = np.array([np.sum(coeff_mod[mask]).real for mask in self.mask_Ci])
         return s0, si
 
-    def get_energy(self, nu: np.array) -> float:
+    def get_energy(self, nu: np.array, AC_ev: int = -1) -> float:
         """ 
         The classical objective function that encodes the noncontextual energies.
         """
         s0, si = self.get_symmetry_contributions(nu)
-        return s0 - np.linalg.norm(si)
+        return s0 + AC_ev * np.linalg.norm(si, ord=2)
     
     def update_clique_representative_operator(self, clique_index:int = None) -> List[Tuple[PauliwordOp, float]]:
         _, si = self.get_symmetry_contributions(self.symmetry_generators.coeff_vec)
