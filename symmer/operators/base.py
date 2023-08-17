@@ -1073,7 +1073,7 @@ class PauliwordOp:
         Returns:
             bool: True if the operator is noncontextual, False if contextual.
         """
-        return check_adjmat_noncontextual(self.adjacency_matrix)
+        return check_adjmat_noncontextual(self.generators.adjacency_matrix)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 
@@ -1384,6 +1384,24 @@ class PauliwordOp:
         if np.any(self.coeff_vec.imag):
             DF_out['Coefficients (imaginary)'] = self.coeff_vec.imag
         return DF_out
+
+    @cached_property
+    def generators(self) -> "PauliwordOp":
+    """ Find an independent generating set for input Pauli operator
+
+    Args:
+        op (PauliwordOp): operator to find symmetry basis for
+
+    Returns:
+        generators (PauliwordOp): independet generating set for op
+    """
+    row_red = _rref_binary(self.symp_matrix)
+    non_zero_rows = row_red[np.sum(row_red, axis=1).astype(bool)]
+    generators = cls(non_zero_rows,
+                      np.ones(non_zero_rows.shape[0]))
+
+    assert generators.n_terms <= 2*self.n_qubits, 'cannot have an independent generating set of size greaterthan 2 time num qubits'
+    return generators
 
     @cached_property
     def to_sparse_matrix(self) -> csr_matrix:
@@ -2090,7 +2108,7 @@ class QuantumState:
         U = change_of_basis_XY_to_Z(P_op)
         Z_new = U * P_op * U.dagger
         psi_new_basis = U*self
-        
+
         return psi_new_basis, Z_new
 
     def plot_state(self, 
