@@ -410,14 +410,46 @@ def check_jordan_independent(operators):
     
     Returns:
         Returns True, if input operators contains algebraically dependent terms.
+
+    
+    test with : H ={
+                     'IIIZ': (1+0j),
+                     'IIZI': (1+0j),
+                     'ZIII': (1+0j),
+                     'IXII': (1+0j),
+                     'XIIX': (1+0j)
+                     }
+    # clique =  [IIIZ, XIIX]
+    # Z2     =  [IIZI, ZIIZ, IXII]
+
     """
-    mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
-    Symmetries = operators[mask_symmetries]
-    Anticommuting = operators[~mask_symmetries]
-    return (
-        check_independent(Symmetries) & 
-        np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
-    )
+    # mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
+    # Symmetries = operators[mask_symmetries]
+    # Anticommuting = operators[~mask_symmetries]
+    # return (
+    #     check_independent(Symmetries) & 
+    #     np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
+    # )
+
+    symmetry_mask = np.all(operators.commutes_termwise(operators), axis=1)
+    Z2_terms = operators[symmetry_mask]
+    ac_terms = operators[~symmetry_mask]
+
+    if ac_terms.n_terms > 0:
+        decomposed = ac_terms.clique_cover(edge_relation='C')
+        clique_rep_list = [C.sort()[0] for C in decomposed.values()]
+        ac_op = sum(clique_rep_list)
+        assert (np.sum(ac_op.adjacency_matrix.astype(int)
+                       - np.eye(ac_op.adjacency_matrix.shape[0])) == 0), 'ac_op is not anticommuting'
+        del ac_op
+
+        Z2_from_cliques = sum((decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+                              decomposed[n].n_terms > 1)
+        if Z2_from_cliques:
+            Z2_terms += Z2_from_cliques
+
+    return check_independent(Z2_terms)
+
 
 def check_adjmat_noncontextual(adjmat) -> bool:
     """

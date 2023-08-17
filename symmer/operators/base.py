@@ -1400,7 +1400,9 @@ class PauliwordOp:
     generators = cls(non_zero_rows,
                       np.ones(non_zero_rows.shape[0]))
 
+    assert check_independent(generators), 'generators are not independent'
     assert generators.n_terms <= 2*self.n_qubits, 'cannot have an independent generating set of size greaterthan 2 time num qubits'
+    
     return generators
 
     @cached_property

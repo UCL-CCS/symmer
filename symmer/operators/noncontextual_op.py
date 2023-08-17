@@ -313,22 +313,37 @@ class NoncontextualOp(PauliwordOp):
         """ 
         Find an independent generating set for the noncontextual operator.
         """
-        # identify the symmetry generating set
-        self.symmetry_generators = IndependentOp.symmetry_generators(self, commuting_override=True)
-        # mask the symmetry terms within the noncontextual operator
-        _, symmetry_mask = self.generator_reconstruction(self.symmetry_generators)
-        # identify the reamining commuting cliques
-        self.decomposed = self[~symmetry_mask].clique_cover(edge_relation='C')
+
+        ## rather than searching over self (operator iteself) use generators instead ==> much faster
+        generators = self.generators
+
+        ## get fully commuting generators
+        symmetry_mask = np.all(generators.commutes_termwise(generators), axis=1)
+        Z2_symmerties = generators[symmetry_mask]
+
+        ## noncon structure means remaining terms should be disjoint comuting cliques (graph colouring is trivial here!)
+        self.decomposed = generators[~symmetry_mask].clique_cover('C')
         self.n_cliques = len(self.decomposed)
         if self.n_cliques > 0:
             # choose clique representatives with the greatest coefficient
+            # see equation 3 of https://arxiv.org/pdf/2002.05693.pdf
+            clique_rep_list = [C.sort()[0] for C in self.decomposed.values()]
             self.clique_operator = AntiCommutingOp.from_PauliwordOp(
-                sum([C.sort()[0] for C in self.decomposed.values()])
+                sum(clique_rep_list)
             )
+
+            sym_from_cliques = sum((self.decomposed[n]-C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+                                   self.decomposed[n].n_terms > 1)
+            
+            Z2_symmerties += sym_from_cliques
         else:
             self.clique_operator = PauliwordOp.empty(self.n_qubits).cleanup()
-        # extract the universally commuting noncontextual terms (i.e. those which may be constructed from symmetry generators)
-        self.decomposed['symmetry'] = self[symmetry_mask]
+
+        self.symmetry_generators = Z2_symmerties
+        _, Z2_mask = self.generator_reconstruction(Z2_symmerties)
+        self.decomposed['symmetry'] = self[Z2_mask]
+
+        
         
     def noncontextual_reconstruction(self) -> None:
         """ 
