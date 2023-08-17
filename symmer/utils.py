@@ -1,4 +1,4 @@
-from symmer.operators import PauliwordOp, QuantumState
+from symmer.operators import PauliwordOp, QuantumState, AnticommutingOp
 import numpy as np
 import scipy as sp
 from typing import List, Tuple, Union
@@ -314,3 +314,68 @@ def matrix_allclose(A: Union[csr_matrix, np.array], B:Union[csr_matrix, np.array
             B = B.toarray()
 
         return np.allclose(A, B, atol=tol)
+
+
+def get_PauliwordOp_root(power: int, pauli: PauliwordOp) -> PauliwordOp:
+    """
+    Get arbitrary power of a single Pauli operator. See eq1 in https://arxiv.org/pdf/2012.01667.pdf
+
+    Log(A) in paper given by = 1j*pi*(I-P)/2 here
+
+    P^{k} = e^{k i pi Q}
+
+    Q = (I-P)/2, where P in {X,Y,Z}
+
+    e^{k i pi (I-P)/2} = e^{k i pi/2 I} * e^{ - k i pi/2 P} <- expand product!
+
+    Args:
+        power (int): power to take
+        pauli (PauliwordOp): Pauli operator to take power of
+    Returns:
+        Pk (PauliwordOp): Pauli operator that is power of input
+
+    """
+    assert pauli.n_terms == 1, 'can only take power of single operators'
+
+    I_term = PauliwordOp.from_list(['I' * pauli.n_qubits])
+
+    cos_term = np.cos(power * np.pi / 2)
+    sin_term = np.sin(power * np.pi / 2)
+
+    Pk = (I_term.multiply_by_constant(cos_term ** 2 + 1j * cos_term * sin_term) +
+          pauli.multiply_by_constant(-1j * cos_term * sin_term + sin_term ** 2))
+
+    return Pk
+
+
+def Get_AC_root(power: float, operator: AntiCommutingOp) -> PauliwordOp:
+    """
+    Get arbitrary power of an anticommuting Pauli operator.
+
+    ** test **
+    from symmer.operators import AntiCommutingOp
+    from symmer.utils import random_anitcomm_2n_1_PauliwordOp, Get_AC_root
+
+    op = random_anitcomm_2n_1_PauliwordOp(3)
+    AC = AntiCommutingOp.from_PauliwordOp(op)
+
+    p = 0.25
+    root = Get_AC_root(p, AC)
+    print((root*root*root*root - AC).cleanup(zero_threshold=1e-12)
+
+    Args:
+        power (float): any power
+        operator (AntiCommutingOp) Anticommuting Pauli operator
+
+    Returns:
+        AC_root (PauliwordOp): operator representing power of AC input
+
+    """
+    Ps, rot, gamma_l, AC_normed = operator.unitary_partitioning(up_method='LCU')
+
+    Ps_root = get_PauliwordOp_root(power, Ps)
+
+    AC_root = (rot.dagger * Ps_root * rot).multiply_by_constant(gamma_l ** power)
+
+    return AC_root
+
