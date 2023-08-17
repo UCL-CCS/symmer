@@ -395,7 +395,7 @@ class NoncontextualOp(PauliwordOp):
             Si_list.append(Si)
 
         S = sum([Si**2 for Si in Si_list[1:]])
-        norm = np.linalg.norm(S.coeff_vec, ord=2)
+        norm = np.linalg.norm(S.coeff_vec, ord=1)
         S *= (1/norm)
         I = PauliwordOp.from_list(['I'*self.n_qubits])
         terms = [
