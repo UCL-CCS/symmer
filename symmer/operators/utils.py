@@ -403,7 +403,8 @@ def check_independent(operators):
 
 def check_jordan_independent(operators):
     """ 
-    Check if the input PauliwordOp contains algebraically dependent terms.
+    Check if the input PauliwordOp contains algebraically dependent terms under jordan product
+    (note input can be noncontextual, but contain dependent terms!)
 
     Args:
         operators (PauliwordOp): Operators.
@@ -476,7 +477,7 @@ def check_adjmat_noncontextual(adjmat) -> bool:
     return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
 
 
-def perform_noncontextual_sweep(operator):
+def perform_noncontextual_sweep(operator) -> "PauliwordOp":
     """
     Given an ordered operator, sweep over its terms once in order keeping terms that are noncontextual
 
