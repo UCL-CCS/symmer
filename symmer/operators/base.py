@@ -17,6 +17,12 @@ from scipy.stats import unitary_group
 import warnings
 warnings.simplefilter('always', UserWarning)
 
+from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning
+warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
+warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
+
+import ray
+
 class PauliwordOp:
     """ 
     A class thats represents an operator defined over the Pauli group in the symplectic representation.
@@ -822,8 +828,9 @@ class PauliwordOp:
         """
         if self.n_terms > 1:
             # parallelize if number of terms greater than one
-            with mp.Pool(mp.cpu_count()) as pool:      
-                expvals = np.array(list(pool.starmap(single_term_expval, [(P, psi) for P in self])))
+            psi_ray_store = ray.put(psi)
+            expvals = np.array(ray.get(
+                [single_term_expval.remote(P, psi_ray_store) for P in self]))
         else:
             expvals = np.array(single_term_expval(self, psi))
 
@@ -2346,7 +2353,7 @@ def get_ij_operator(i:int, j:int, n_qubits:int,
     else:
         return ij_symp_matrix, coeffs
 
-
+@ray.remote
 def single_term_expval(P_op: PauliwordOp, psi: QuantumState) -> float:
     """ 
     Expectation value calculation for a single Pauli operator given a QuantumState psi

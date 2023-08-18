@@ -17,12 +17,12 @@ flake8 = "^4.0.1"
 py3Dmol = "^1.8.0"
 ipywidgets = "7.7.2"
 ncon = "^1.0.0"
-quimb = ">=1.4 <1.5"
 opt-einsum = "^3.3.0"
-autoray = "^0.5.3"
 qubovert = "^1.2.5"
 pytest = "^7.2.2"
 numba = "0.56"
+quimb = "^1.5.1"
+ray = "^2.6.3"
 
 [tool.poetry.dev-dependencies]
 
