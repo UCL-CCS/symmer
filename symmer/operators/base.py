@@ -227,6 +227,7 @@ class PauliwordOp:
         Args:
             n_qubits (int): The number of qubits.
             operator_basis (PauliwordOp, optional): The operator basis to use. Default is 'None'.
+            disable_loading_bar (bool) : whether to have loading bar when constructing operator
 
         Returns:
             PauliwordOp: A new PauliwordOp object.
@@ -273,6 +274,7 @@ class PauliwordOp:
         Args:
             matrix (Union[np.array, csr_matrix]): The matrix to decompose.
             n_qubits (int): The number of qubits.
+            disable_loading_bar (bool) : whether to have loading bar when constructing operator
 
         Returns:
             PauliwordOp: A new PauliwordOp object representing the decomposition of the matrix using projectors.
@@ -368,7 +370,7 @@ class PauliwordOp:
             matrix (Union[np.array, csr_matrix]): The matrix to construct the PauliwordOp from.
             operator_basis (PauliwordOp, optional): The operator basis to use for decomposition. Defaults to None.
             strategy (str, optional): The decomposition strategy. Options are 'full_basis' and 'projector'. Defaults to 'projector'.
-            disable_loading_bar (bool, optional): whether to have loading bar that gives time estimate for decompostion
+            disable_loading_bar (bool, optional): whether to have loading bar that gives time estimate for decompostion time
 
         Returns:
             PauliwordOp: A new PauliwordOp object representing the matrix.
