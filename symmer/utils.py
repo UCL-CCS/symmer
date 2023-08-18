@@ -8,6 +8,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse import kron as sparse_kron
 import multiprocessing as mp
 import ray
+# from psutil import cpu_count
 
 def exact_gs_energy(
         sparse_matrix, 
@@ -262,8 +263,13 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
         # P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i+1]] for ind_i, _ in enumerate(P_op_chunks_inds[1:])]
         # with mp.Pool(n_cpus) as pool:
         #     tracker = pool.map(_get_sparse_matrix_large_pauliwordop, P_op_chunks)
+
+        n_chunks = 8 #cpu_count()
+        P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_chunks, P_op.n_terms))).astype(set).astype(int)
+        P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i + 1]] for ind_i, _ in
+                       enumerate(P_op_chunks_inds[1:])]
         tracker = np.array(ray.get(
-            [_get_sparse_matrix_large_pauliwordop.remote(P) for P in P_op]))
+            [_get_sparse_matrix_large_pauliwordop.remote(op) for op in P_op_chunks]))
         mat = reduce(lambda x, y: x + y, tracker)
 
     return mat
