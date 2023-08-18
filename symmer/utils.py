@@ -1,4 +1,4 @@
-from symmer.operators import PauliwordOp, QuantumState, AnticommutingOp
+from symmer.operators import PauliwordOp, QuantumState, AntiCommutingOp
 import numpy as np
 import scipy as sp
 from typing import List, Tuple, Union

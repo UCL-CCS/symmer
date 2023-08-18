@@ -315,14 +315,15 @@ class NoncontextualOp(PauliwordOp):
         """
 
         ## rather than searching over self (operator iteself) use generators instead ==> much faster
-        generators = self.generators
+        # get Z2 symmetry of generators (may anticommute among themselves, but will commute with all generators)
+        Z2_symmerties = IndependentOp.symmetry_generators(self.generators, commuting_override=True)
 
-        ## get fully commuting generators
-        symmetry_mask = np.all(generators.commutes_termwise(generators), axis=1)
-        Z2_symmerties = generators[symmetry_mask]
+        # find terms not generated these Z2 symmerties
+        # Note: CANNOT just use commuting subset from generators as this misses parts of problem off
+        _, z2_mask = self.generator_reconstruction(Z2_symmerties)
 
-        ## noncon structure means remaining terms should be disjoint comuting cliques (graph colouring is trivial here!)
-        self.decomposed = generators[~symmetry_mask].clique_cover('C')
+        ## noncon structure means remaining terms should be disjoint commuting cliques (graph colouring is trivial here!)
+        self.decomposed = self[~z2_mask].clique_cover('C')
         self.n_cliques = len(self.decomposed)
         if self.n_cliques > 0:
             # choose clique representatives with the greatest coefficient
@@ -332,14 +333,18 @@ class NoncontextualOp(PauliwordOp):
                 sum(clique_rep_list)
             )
 
-            sym_from_cliques = sum((self.decomposed[n]-C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
-                                   self.decomposed[n].n_terms > 1)
-            
-            Z2_symmerties += sym_from_cliques
+            ## cliques can form new Z2 syms
+            # sym_from_cliques = sum((self.decomposed[n]-C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+            #                        self.decomposed[n].n_terms > 1)
+            # if sym_from_cliques:
+            #     _, mask = sym_from_cliques.generator_reconstruction(Z2_symmerties)
+            #     sym_from_cliques.coeff_vec = np.ones_like(sym_from_cliques.coeff_vec)
+            #     Z2_symmerties += sym_from_cliques[~mask]
+
         else:
             self.clique_operator = PauliwordOp.empty(self.n_qubits).cleanup()
 
-        self.symmetry_generators = Z2_symmerties
+        self.symmetry_generators = IndependentOp.from_PauliwordOp(Z2_symmerties)
         _, Z2_mask = self.generator_reconstruction(Z2_symmerties)
         self.decomposed['symmetry'] = self[Z2_mask]
 

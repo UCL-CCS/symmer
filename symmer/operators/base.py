@@ -4,7 +4,7 @@ import networkx as nx
 from tqdm.auto import tqdm
 from copy import deepcopy
 from functools import reduce
-from typing import List, Union
+from typing import List, Union, Optional
 from numbers import Number
 import multiprocessing as mp
 from cached_property import cached_property
@@ -90,6 +90,8 @@ class PauliwordOp:
     @classmethod
     def haar_random(cls,
             n_qubits: int,
+            strategy: Optional[str] = 'projector',
+            disable_loading_bar: Optional[bool] = False
         ) -> "PauliwordOp":
         """ 
         Generate a Haar random U(N) matrix (N^n_qubits) as a linear combination of Pauli operators.
@@ -101,7 +103,7 @@ class PauliwordOp:
             p_random (PauliwordOp): Haar random matrix in Pauli basis
         """
         haar_matrix = unitary_group.rvs(2**n_qubits)
-        p_random = cls.from_matrix(haar_matrix)
+        p_random = cls.from_matrix(haar_matrix, strategy=strategy, disable_loading_bar=disable_loading_bar)
         return p_random
 
     @classmethod
@@ -547,21 +549,25 @@ class PauliwordOp:
         """
         assert check_jordan_independent(generators), 'The non-symmetry elements do not pairwise anticommute.'
 
-        # empty reconstruction matrix to be updated in loop over anticommuting elements
-        op_reconstruction = np.zeros([self.n_terms, generators.n_terms])
-        successfully_reconstructed = np.zeros(self.n_terms, dtype=bool)
 
         # first, separate symmetry elements  from anticommuting ones
-        mask_symmetries = np.all(generators.adjacency_matrix, axis=1)
+        symmetry_mask = np.all(generators.commutes_termwise(generators), axis=1)
 
-        if np.all(mask_symmetries):
+        if np.all(symmetry_mask):
             # If not anticommuting component, return standard generator recon over symmetries
             return self.generator_reconstruction(generators)
         else:
+            # empty reconstruction matrix to be updated in loop over anticommuting elements
+            op_reconstruction = np.zeros([self.n_terms, generators.n_terms])
+            successfully_reconstructed = np.zeros(self.n_terms, dtype=bool)
+
+            Z2_terms = generators[symmetry_mask]
+            ac_terms = generators[~symmetry_mask]
+
             # loop over anticommuting elements to enforce Jordan condition (no two anticommuting elements multiplied)
-            for _, clq in generators[~mask_symmetries].clique_cover(edge_relation='C').items():
+            for _, clq in ac_terms.clique_cover(edge_relation='C').items():
                 clq_indices = [np.where(np.all(generators.symp_matrix == t, axis=1))[0][0] for t in clq.symp_matrix]   
-                mask_symmetries_with_P = mask_symmetries.copy()
+                mask_symmetries_with_P = symmetry_mask.copy()
                 mask_symmetries_with_P[np.array(clq_indices)] = True   
                 # reconstruct this PauliwordOp in the augemented symmetry + single anticommuting term generating set
                 augmented_symmetries = generators[mask_symmetries_with_P]
@@ -1387,23 +1393,25 @@ class PauliwordOp:
 
     @cached_property
     def generators(self) -> "PauliwordOp":
-    """ Find an independent generating set for input Pauli operator
+        """ Find an independent generating set for input Pauli operator
 
-    Args:
-        op (PauliwordOp): operator to find symmetry basis for
+        Args:
+            op (PauliwordOp): operator to find symmetry basis for
 
-    Returns:
-        generators (PauliwordOp): independet generating set for op
-    """
-    row_red = _rref_binary(self.symp_matrix)
-    non_zero_rows = row_red[np.sum(row_red, axis=1).astype(bool)]
-    generators = cls(non_zero_rows,
-                      np.ones(non_zero_rows.shape[0]))
+        Returns:
+            generators (PauliwordOp): independet generating set for op
+        """
+        from symmer.operators.utils import _rref_binary
 
-    assert check_independent(generators), 'generators are not independent'
-    assert generators.n_terms <= 2*self.n_qubits, 'cannot have an independent generating set of size greaterthan 2 time num qubits'
-    
-    return generators
+        row_red = _rref_binary(self.symp_matrix)
+        non_zero_rows = row_red[np.sum(row_red, axis=1).astype(bool)]
+        generators = PauliwordOp(non_zero_rows,
+                          np.ones(non_zero_rows.shape[0]))
+
+        assert check_independent(generators), 'generators are not independent'
+        assert generators.n_terms <= 2*self.n_qubits, 'cannot have an independent generating set of size greaterthan 2 time num qubits'
+
+        return generators
 
     @cached_property
     def to_sparse_matrix(self) -> csr_matrix:

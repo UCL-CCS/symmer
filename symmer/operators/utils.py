@@ -475,10 +475,10 @@ def check_adjmat_noncontextual(adjmat) -> bool:
     # the resulting vector consists of all ones.
     return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
 
+
 def perform_noncontextual_sweep(operator):
     """
-    Given an ordered operator, sweep over its terms and append 
-    to a list if the newly appended term maintains noncontextuality.
+    Given an ordered operator, sweep over its terms once in order keeping terms that are noncontextual
 
     Args:
         operator (PauliwordOp): Ordered operator.
@@ -486,20 +486,37 @@ def perform_noncontextual_sweep(operator):
     Returns:
         List of terms maintaining noncontextuality.
     """
-    # initialize noncontextual operator with first element of input operator
-    noncon_indices = np.array([0])
-    adjmat = np.array([[True]], dtype=bool)
-    for index, term in enumerate(operator[1:]):
-        # pad the adjacency matrix term-by-term - avoids full construction each time
-        adjmat_vector = np.append(term.commutes_termwise(operator[noncon_indices]), True)
-        adjmat_padded = np.pad(adjmat, pad_width=((0, 1), (0, 1)), mode='constant')
-        adjmat_padded[-1,:] = adjmat_vector; adjmat_padded[:,-1] = adjmat_vector
-        # check whether the adjacency matrix has a noncontextual structure
-        if check_adjmat_noncontextual(adjmat_padded):
-            noncon_indices = np.append(noncon_indices, index+1)
-            adjmat = adjmat_padded
 
-    return operator[noncon_indices] 
+    # # initialize noncontextual operator with first element of input operator
+    # noncon_indices = np.array([0])
+    # adjmat = np.array([[True]], dtype=bool)
+    # for index, term in enumerate(operator[1:]):
+    #     # pad the adjacency matrix term-by-term - avoids full construction each time
+    #     adjmat_vector = np.append(term.commutes_termwise(operator[noncon_indices]), True)
+    #     adjmat_padded = np.pad(adjmat, pad_width=((0, 1), (0, 1)), mode='constant')
+    #     adjmat_padded[-1,:] = adjmat_vector; adjmat_padded[:,-1] = adjmat_vector
+    #     # check whether the adjacency matrix has a noncontextual structure
+    #     if check_adjmat_noncontextual(adjmat_padded):
+    #         noncon_indices = np.append(noncon_indices, index+1)
+    #         adjmat = adjmat_padded
+
+    # return operator[noncon_indices] 
+
+    ## new method uses generators to speed up sweep
+    from symmer.operators import PauliwordOp
+    mask = np.zeros(operator.n_terms, dtype=bool)
+    
+    for ind in range(operator.n_terms):
+        mask[ind] = ~mask[ind]
+        
+        # get generators of current operator and check these are not contextual
+        row_red = _rref_binary(operator.symp_matrix[mask])
+        non_zero_rows = row_red[np.sum(row_red, axis=1).astype(bool)]
+        generators = PauliwordOp(non_zero_rows,
+                          np.ones(non_zero_rows.shape[0]))
+        if not check_adjmat_noncontextual(generators.adjacency_matrix):
+            mask[ind] = ~mask[ind]
+    return operator[mask]
 
 def binary_array_to_int(bin_arr):
     """
