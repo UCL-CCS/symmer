@@ -1,7 +1,7 @@
 import numpy as np
 import scipy as sp
 from typing import Tuple, Dict
-import openfermion as of
+from openfermion import QubitOperator
 from qiskit.opflow import PauliSumOp
 
 def symplectic_to_string(symp_vec) -> str:
@@ -244,18 +244,18 @@ def cref_binary(matrix: np.array) -> np.array:
     """
     return rref_binary(matrix.T).T        
 
-def QubitOperator_to_dict(op, num_qubits):
+def QubitOperator_to_dict(op: QubitOperator, num_qubits: int):
     """ 
     OpenFermion
 
     Args:
-        op: Qubit Operator
-        num_qubits: Number of qubiits.
+        op (QubitOperator): Qubit Operator
+        num_qubits (int) : Number of qubiits.
 
     Returns:
         Dictionary format of Qubit Operator.
     """
-    assert(type(op) == of.QubitOperator)
+    assert(type(op) == QubitOperator)
     op_dict = {}
     term_dict = op.terms
     terms = list(term_dict.keys())
