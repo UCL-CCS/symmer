@@ -7,6 +7,8 @@ import py3Dmol
 from scipy.sparse import csr_matrix
 from scipy.sparse import kron as sparse_kron
 import multiprocessing as mp
+import ray
+# from psutil import cpu_count
 
 def exact_gs_energy(
         sparse_matrix, 
@@ -243,7 +245,7 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     divides into two equally sized tensor products finds the sparse matrix of those and then does a sparse
     kron product to get the large matrix.
 
-    TODO:  Could also add how many junks to split problem into (e.g. three/four/... tensor products).
+    TODO:  Could also add how many chunks to split problem into (e.g. three/four/... tensor products).
 
     Args:
         P_op (PauliwordOp): Pauli operator to convert into sparse matrix
@@ -254,19 +256,25 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     if nq<16:
         mat = P_op.to_sparse_matrix
     else:
-        n_cpus = mp.cpu_count()
-        P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_cpus, P_op.n_terms))).astype(set).astype(int)
+        # n_cpus = mp.cpu_count()
+        # P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_cpus, P_op.n_terms))).astype(set).astype(int)
+        #
+        # # miss zero index out (as emtpy list)
+        # P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i+1]] for ind_i, _ in enumerate(P_op_chunks_inds[1:])]
+        # with mp.Pool(n_cpus) as pool:
+        #     tracker = pool.map(_get_sparse_matrix_large_pauliwordop, P_op_chunks)
 
-        # miss zero index out (as emtpy list)
-        P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i+1]] for ind_i, _ in enumerate(P_op_chunks_inds[1:])]
-        with mp.Pool(n_cpus) as pool:
-            tracker = pool.map(_get_sparse_matrix_large_pauliwordop, P_op_chunks)
-
+        n_chunks = 8 #cpu_count()
+        P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_chunks, P_op.n_terms))).astype(set).astype(int)
+        P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i + 1]] for ind_i, _ in
+                       enumerate(P_op_chunks_inds[1:])]
+        tracker = np.array(ray.get(
+            [_get_sparse_matrix_large_pauliwordop.remote(op) for op in P_op_chunks]))
         mat = reduce(lambda x, y: x + y, tracker)
 
     return mat
 
-
+@ray.remote
 def _get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     """
     """

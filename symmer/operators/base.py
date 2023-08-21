@@ -17,6 +17,12 @@ from scipy.stats import unitary_group
 import warnings
 warnings.simplefilter('always', UserWarning)
 
+from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning
+warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
+warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
+
+import ray
+
 class PauliwordOp:
     """ 
     A class thats represents an operator defined over the Pauli group in the symplectic representation.
@@ -822,8 +828,9 @@ class PauliwordOp:
         """
         if self.n_terms > 1:
             # parallelize if number of terms greater than one
-            with mp.Pool(mp.cpu_count()) as pool:      
-                expvals = np.array(list(pool.starmap(single_term_expval, [(P, psi) for P in self])))
+            psi_ray_store = ray.put(psi)
+            expvals = np.array(ray.get(
+                [single_term_expval.remote(P, psi_ray_store) for P in self]))
         else:
             expvals = np.array(single_term_expval(self, psi))
 
@@ -1429,36 +1436,33 @@ class PauliwordOp:
         if self.n_qubits == 0:
             return csr_matrix(self.coeff_vec)
 
-        # if self.n_qubits > 64:
-        #     # numpy cannot handle ints over int64s (2**64) therefore use python objects
-        #     binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1).astype(object)
-        # else:
-        #     binary_int_array = 1 << np.arange(self.n_qubits - 1, -1, -1)
-        # x_int = (self.X_block @ binary_int_array).reshape(-1, 1)
-        # z_int = (self.Z_block @ binary_int_array).reshape(-1, 1)
+        if self.n_qubits>15:
+            from symmer.utils import get_sparse_matrix_large_pauliwordop
+            sparse_matrix = get_sparse_matrix_large_pauliwordop(self)
+            return sparse_matrix
+        else:
+            x_int = binary_array_to_int(self.X_block).reshape(-1, 1)
+            z_int = binary_array_to_int(self.Z_block).reshape(-1, 1)
 
-        x_int = binary_array_to_int(self.X_block).reshape(-1, 1)
-        z_int = binary_array_to_int(self.Z_block).reshape(-1, 1)
+            Y_number = np.sum(np.bitwise_and(self.X_block, self.Z_block).astype(int), axis=1)
+            global_phase = (-1j) ** Y_number
 
-        Y_number = np.sum(np.bitwise_and(self.X_block, self.Z_block).astype(int), axis=1)
-        global_phase = (-1j) ** Y_number
+            dimension = 2 ** self.n_qubits
+            row_ind = np.repeat(np.arange(dimension).reshape(1, -1), self.X_block.shape[0], axis=0)
+            col_ind = np.bitwise_xor(row_ind, x_int)
 
-        dimension = 2 ** self.n_qubits
-        row_ind = np.repeat(np.arange(dimension).reshape(1, -1), self.X_block.shape[0], axis=0)
-        col_ind = np.bitwise_xor(row_ind, x_int)
+            row_inds_and_Zint = np.bitwise_and(row_ind, z_int)
+            vals = global_phase.reshape(-1, 1) * (-1) ** (
+                        count1_in_int_bitstring(row_inds_and_Zint) % 2)  # .astype(complex))
 
-        row_inds_and_Zint = np.bitwise_and(row_ind, z_int)
-        vals = global_phase.reshape(-1, 1) * (-1) ** (
-                    count1_in_int_bitstring(row_inds_and_Zint) % 2)  # .astype(complex))
+            values_and_coeff = np.einsum('ij,i->ij', vals, self.coeff_vec)
 
-        values_and_coeff = np.einsum('ij,i->ij', vals, self.coeff_vec)
-
-        sparse_matrix = csr_matrix(
-            (values_and_coeff.flatten(), (row_ind.flatten(), col_ind.flatten())),
-            shape=(dimension, dimension),
-            dtype=complex
-        )
-        return sparse_matrix
+            sparse_matrix = csr_matrix(
+                (values_and_coeff.flatten(), (row_ind.flatten(), col_ind.flatten())),
+                shape=(dimension, dimension),
+                dtype=complex
+            )
+            return sparse_matrix
 
     def conjugate_op(self, R: 'PauliwordOp') -> 'PauliwordOp':
         """
@@ -2346,7 +2350,7 @@ def get_ij_operator(i:int, j:int, n_qubits:int,
     else:
         return ij_symp_matrix, coeffs
 
-
+@ray.remote
 def single_term_expval(P_op: PauliwordOp, psi: QuantumState) -> float:
     """ 
     Expectation value calculation for a single Pauli operator given a QuantumState psi
