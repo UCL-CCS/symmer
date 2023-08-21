@@ -245,7 +245,7 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     divides into two equally sized tensor products finds the sparse matrix of those and then does a sparse
     kron product to get the large matrix.
 
-    TODO:  Could also add how many junks to split problem into (e.g. three/four/... tensor products).
+    TODO:  Could also add how many chunks to split problem into (e.g. three/four/... tensor products).
 
     Args:
         P_op (PauliwordOp): Pauli operator to convert into sparse matrix

@@ -1,4 +1,4 @@
-from symmer.operators import PauliwordOp, IndependentOp
+from symmer.operators import PauliwordOp
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
 import warnings
