@@ -313,22 +313,42 @@ class NoncontextualOp(PauliwordOp):
         """ 
         Find an independent generating set for the noncontextual operator.
         """
-        # identify the symmetry generating set
-        self.symmetry_generators = IndependentOp.symmetry_generators(self, commuting_override=True)
-        # mask the symmetry terms within the noncontextual operator
-        _, symmetry_mask = self.generator_reconstruction(self.symmetry_generators)
-        # identify the reamining commuting cliques
-        self.decomposed = self[~symmetry_mask].clique_cover(edge_relation='C')
+
+        ## rather than searching over self (operator iteself) use generators instead ==> much faster
+        # get Z2 symmetry of generators (may anticommute among themselves, but will commute with all generators)
+        Z2_symmerties = IndependentOp.symmetry_generators(self.generators, commuting_override=True)
+
+        # find terms not generated these Z2 symmerties
+        # Note: CANNOT just use commuting subset from generators as this misses parts of problem off
+        _, z2_mask = self.generator_reconstruction(Z2_symmerties)
+
+        ## noncon structure means remaining terms should be disjoint commuting cliques (graph colouring is trivial here!)
+        self.decomposed = self[~z2_mask].clique_cover('C')
         self.n_cliques = len(self.decomposed)
         if self.n_cliques > 0:
             # choose clique representatives with the greatest coefficient
+            # see equation 3 of https://arxiv.org/pdf/2002.05693.pdf
+            clique_rep_list = [C.sort()[0] for C in self.decomposed.values()]
             self.clique_operator = AntiCommutingOp.from_PauliwordOp(
-                sum([C.sort()[0] for C in self.decomposed.values()])
+                sum(clique_rep_list)
             )
+
+            ## cliques can form new Z2 syms
+            # sym_from_cliques = sum((self.decomposed[n]-C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+            #                        self.decomposed[n].n_terms > 1)
+            # if sym_from_cliques:
+            #     _, mask = sym_from_cliques.generator_reconstruction(Z2_symmerties)
+            #     sym_from_cliques.coeff_vec = np.ones_like(sym_from_cliques.coeff_vec)
+            #     Z2_symmerties += sym_from_cliques[~mask]
+
         else:
             self.clique_operator = PauliwordOp.empty(self.n_qubits).cleanup()
-        # extract the universally commuting noncontextual terms (i.e. those which may be constructed from symmetry generators)
-        self.decomposed['symmetry'] = self[symmetry_mask]
+
+        self.symmetry_generators = IndependentOp.from_PauliwordOp(Z2_symmerties)
+        _, Z2_mask = self.generator_reconstruction(Z2_symmerties)
+        self.decomposed['symmetry'] = self[Z2_mask]
+
+        
         
     def noncontextual_reconstruction(self) -> None:
         """ 
@@ -380,7 +400,7 @@ class NoncontextualOp(PauliwordOp):
             Si_list.append(Si)
 
         S = sum([Si**2 for Si in Si_list[1:]])
-        norm = np.linalg.norm(S.coeff_vec, ord=2)
+        norm = np.linalg.norm(S.coeff_vec, ord=1)
         S *= (1/norm)
         I = PauliwordOp.from_list(['I'*self.n_qubits])
         terms = [
@@ -490,7 +510,69 @@ class NoncontextualOp(PauliwordOp):
         self.symmetry_generators.coeff_vec = nu.astype(int)
         if self.n_cliques > 0:
             self.update_clique_representative_operator()
-        
+
+    def noncon_state(self, UP_method:Optional[str]= 'LCU') -> Tuple[QuantumState, np.array]:
+        """
+        Method to generate noncontextual state for current symmetry generators assignments. Note by default
+        UP_method is set to LCU as this avoids generating exponentially large states (which seq_rot can do!)
+
+        Args:
+            UP_method: string of unitary partitioning approach.
+
+        Returns:
+            state (QuantumState): noncontextual ground state
+            nu_assignment (np.array): vector (nu) of expectation value assignments for noncontexutal symmetry generators
+
+        """
+        nu_assignment = self.symmetry_generators.coeff_vec.copy()
+
+        ## update clique coeffs from nu assignment!
+        _, si = self.get_symmetry_contributions(nu_assignment)
+        self.clique_operator.coeff_vec = si
+
+        assert UP_method in ['LCU', 'seq_rot']
+
+        if UP_method == 'LCU':
+            Ps, rotations_LCU, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,
+                                                                                                  up_method='LCU')
+        else:
+            Ps, rotations_SEQ, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,
+                                                                                   up_method='seq_rot')
+
+        # choose negative value for clique operator (to minimize energy)
+        Ps.coeff_vec[0] = -1
+
+        ### to find ground state, need to map noncontextual stabilizers to single qubit Pauli Zs
+        independent_stabilizers = self.symmetry_generators + Ps
+
+        # rotate onto computational basis
+        independent_stabilizers.target_sqp = 'Z'
+
+        rotated_stabs = independent_stabilizers.rotate_onto_single_qubit_paulis()
+        clifford_rots = independent_stabilizers.stabilizer_rotations
+
+        ## get stabilizer state for the rotated stabilizers
+        Z_indices = np.sum(rotated_stabs.Z_block, axis=0)
+        Z_vals = np.sum(rotated_stabs.Z_block[:, Z_indices.astype(bool)] * rotated_stabs.coeff_vec, axis=1)
+        Z_indices[Z_indices.astype(bool)] = ((Z_vals - 1) * -0.5).astype(int)
+
+        state = QuantumState(Z_indices.reshape(1, -1))
+
+        ## undo clifford rotations
+        from symmer.evolution.exponentiation import exponentiate_single_Pop
+        for op, _ in clifford_rots:
+            rot = exponentiate_single_Pop(op.multiply_by_constant(1j * np.pi / 4))
+            state = rot.dagger * state
+
+        ## undo unitary partitioning step
+        if UP_method == 'LCU':
+            state = rotations_LCU.dagger * state
+        else:
+            for op, angle in rotations_SEQ[::-1]:
+                state = exponentiate_single_Pop(op.multiply_by_constant(1j * angle / 2)).dagger * state
+
+        # TODO: could return clifford and UP rotations here too!
+        return state, nu_assignment    
 ###############################################################################
 ################### NONCONTEXTUAL SOLVERS BELOW ###############################
 ###############################################################################
