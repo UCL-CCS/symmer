@@ -2352,7 +2352,16 @@ def get_ij_operator(i:int, j:int, n_qubits:int,
     else:
         return ij_symp_matrix, coeffs
 
-@ray.remote(num_cpus=os.cpu_count())
+@ray.remote(num_cpus=os.cpu_count(),
+            runtime_env={
+                "env_vars": {
+                    "NUMBA_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
+                    # "OMP_NUM_THREADS": str(os.cpu_count()),
+                    "OMP_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
+                    "NUMEXPR_MAX_THREADS": str(os.cpu_count())
+                }
+            }
+            )
 def single_term_expval(P_op: PauliwordOp, psi: QuantumState) -> float:
     """ 
     Expectation value calculation for a single Pauli operator given a QuantumState psi
