@@ -770,7 +770,16 @@ class NoncontextualSolver:
         return self.NC_op.get_energy(nu_vec), nu_vec
 
 
-@ray.remote(num_cpus=os.cpu_count())
+@ray.remote(num_cpus=os.cpu_count(),
+            runtime_env={
+                "env_vars": {
+                    "NUMBA_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
+                    # "OMP_NUM_THREADS": str(os.cpu_count()),
+                    "OMP_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
+                    "NUMEXPR_MAX_THREADS": str(os.cpu_count())
+                }
+            }
+            )
 def get_noncon_energy(noncon_H:NoncontextualOp, nu: np.array) -> float:
     """
     The classical objective function that encodes the noncontextual energies.

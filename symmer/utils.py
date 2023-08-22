@@ -266,7 +266,7 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
         # with mp.Pool(n_cpus) as pool:
         #     tracker = pool.map(_get_sparse_matrix_large_pauliwordop, P_op_chunks)
 
-        n_chunks = 8 #cpu_count()
+        n_chunks = os.cpu_count()
         P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_chunks, P_op.n_terms))).astype(set).astype(int)
         P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i + 1]] for ind_i, _ in
                        enumerate(P_op_chunks_inds[1:])]
@@ -276,7 +276,16 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
 
     return mat
 
-@ray.remote(num_cpus=os.cpu_count())
+@ray.remote(num_cpus=os.cpu_count(),
+            runtime_env={
+                "env_vars": {
+                    "NUMBA_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
+                    # "OMP_NUM_THREADS": str(os.cpu_count()),
+                    "OMP_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
+                    "NUMEXPR_MAX_THREADS": str(os.cpu_count())
+                }
+            }
+            )
 def _get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     """
     """
