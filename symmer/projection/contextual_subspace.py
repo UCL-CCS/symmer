@@ -1,7 +1,8 @@
 import numpy as np
 from symmer.operators import PauliwordOp, IndependentOp, NoncontextualOp, QuantumState
 from symmer.projection.utils import (
-    update_eigenvalues, StabilizerIdentification, ObservableBiasing, stabilizer_walk
+    update_eigenvalues, StabilizerIdentification, ObservableBiasing, stabilizer_walk,
+    # get_noncon_generators_from_commuting_stabilizers
 )
 from symmer.projection import S3_projection
 from symmer.evolution import trotter

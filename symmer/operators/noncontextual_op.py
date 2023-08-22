@@ -1,4 +1,5 @@
 import warnings
+import os
 import itertools
 import numpy as np
 import networkx as nx
@@ -243,12 +244,12 @@ class NoncontextualOp(PauliwordOp):
             NoncontextualOp: A NoncontextualOp instance constructed from the given Hamiltonian and generators.
         """
         assert generators is not None, 'Must specify a noncontextual generating set.'
+        assert generators.is_noncontextual, 'Generating set is contextual.'
         if use_jordan_product:
             _, noncontextual_terms_mask = H.jordan_generator_reconstruction(generators)
         else:
-            assert generators.is_noncontextual, 'Generating set is contextual.'
             _, noncontextual_terms_mask = H.generator_reconstruction(generators, override_independence_check=True)
-        
+
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
     
     @classmethod
@@ -266,7 +267,12 @@ class NoncontextualOp(PauliwordOp):
             NoncontextualOp: A NoncontextualOp instance constructed from the given PauliwordOp and stabilizers.
         """
         symmetries = IndependentOp.symmetry_generators(stabilizers, commuting_override=True)
-        generators = NoncontextualOp.from_hamiltonian(symmetries, strategy='DFS_magnitude')
+        noncon = NoncontextualOp.from_hamiltonian(symmetries, strategy='DFS_magnitude')
+        generators = noncon.symmetry_generators
+        if noncon.clique_operator.n_terms>0:
+            generators+=noncon.clique_operator
+            use_jordan_product=True
+
         return cls._from_generators_noncontextual_op(H=H, generators=generators, use_jordan_product=use_jordan_product)
         
     def draw_graph_structure(self, 
@@ -291,7 +297,6 @@ class NoncontextualOp(PauliwordOp):
             include_symmetries (bool, optional): Determines whether to include symmetry edges in the visualization. Default is True.
         """
         adjmat = self.adjacency_matrix.copy()
-        adjmat = self.adjacency_matrix.copy()
         index_symmetries = np.where(np.all(adjmat, axis=1))[0]
         np.fill_diagonal(adjmat, False)
         
@@ -314,17 +319,31 @@ class NoncontextualOp(PauliwordOp):
         """ 
         Find an independent generating set for the noncontextual operator.
         """
+        Z2_symmerties = IndependentOp.symmetry_generators(self, commuting_override=True)
 
-        ## rather than searching over self (operator iteself) use generators instead ==> much faster
-        # get Z2 symmetry of generators (may anticommute among themselves, but will commute with all generators)
-        Z2_symmerties = IndependentOp.symmetry_generators(self.generators, commuting_override=True)
+        if not np.all(Z2_symmerties.commutes_termwise(Z2_symmerties)):
+            # need to account for Z2_symmerties not commuting with themselves
+            sym_gens = self.generators
+            z2_mask = np.sum(sym_gens.adjacency_matrix, axis=1) == sym_gens.n_terms
 
-        # find terms not generated these Z2 symmerties
-        # Note: CANNOT just use commuting subset from generators as this misses parts of problem off
-        _, z2_mask = self.generator_reconstruction(Z2_symmerties)
+            Z2_incomplete = sym_gens[z2_mask]
+            _, missing_mask = sym_gens.generator_reconstruction(Z2_incomplete)
+            Z2_missing = sym_gens[~missing_mask]
 
-        ## noncon structure means remaining terms should be disjoint commuting cliques (graph colouring is trivial here!)
-        self.decomposed = self[~z2_mask].clique_cover('C')
+            cover = Z2_missing.clique_cover('C')
+            clique_rep_list = [C.sort()[0] for C in cover.values()]
+
+            sym_from_cliques = sum((cover[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+                                   cover[n].n_terms > 1)
+
+            Z2_symmerties = (sym_from_cliques + Z2_incomplete).generators
+            _, z2_mask = self.generator_reconstruction(Z2_symmerties)
+        else:
+            _, z2_mask = self.generator_reconstruction(Z2_symmerties)
+
+        remaining = self[~z2_mask]
+        self.decomposed = remaining.clique_cover('C')
+
         self.n_cliques = len(self.decomposed)
         if self.n_cliques > 0:
             # choose clique representatives with the greatest coefficient
@@ -333,15 +352,13 @@ class NoncontextualOp(PauliwordOp):
             self.clique_operator = AntiCommutingOp.from_PauliwordOp(
                 sum(clique_rep_list)
             )
+            self.clique_operator.coeff_vec = np.ones_like(self.clique_operator.coeff_vec)
 
             ## cliques can form new Z2 syms
-            # sym_from_cliques = sum((self.decomposed[n]-C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
-            #                        self.decomposed[n].n_terms > 1)
-            # if sym_from_cliques:
-            #     _, mask = sym_from_cliques.generator_reconstruction(Z2_symmerties)
-            #     sym_from_cliques.coeff_vec = np.ones_like(sym_from_cliques.coeff_vec)
-            #     Z2_symmerties += sym_from_cliques[~mask]
-
+            sym_from_cliques = sum((self.decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+                                   self.decomposed[n].n_terms > 1)
+            if sym_from_cliques:
+                Z2_symmerties = (sym_from_cliques + Z2_symmerties).generators
         else:
             self.clique_operator = PauliwordOp.empty(self.n_qubits).cleanup()
 
@@ -349,8 +366,6 @@ class NoncontextualOp(PauliwordOp):
         _, Z2_mask = self.generator_reconstruction(Z2_symmerties)
         self.decomposed['symmetry'] = self[Z2_mask]
 
-        
-        
     def noncontextual_reconstruction(self) -> None:
         """ 
         Reconstruct the noncontextual operator in each independent basis GuCi - one for every clique.
@@ -360,6 +375,7 @@ class NoncontextualOp(PauliwordOp):
             np.vstack([self.symmetry_generators.symp_matrix, self.clique_operator.symp_matrix]),
             np.ones(self.symmetry_generators.n_terms + self.n_cliques)
         )
+
         # Cannot simultaneously know eigenvalues of cliques so we peform a generator reconstruction
         # that respects the jordan product A*B = {A, B}/2, i.e. anticommuting elements are zeroed out
         jordan_recon_matrix, successful = self.jordan_generator_reconstruction(noncon_generators)#, override_independence_check=True)
@@ -749,12 +765,12 @@ class NoncontextualSolver:
             nu_vec = np.ones(self.NC_op.symmetry_generators.n_terms, dtype=int)
             nu_vec[self.fixed_ev_mask] = self.fixed_eigvals
             # must ensure the binary variables are correctly ordered in the solution:
-            nu_vec[~self.fixed_ev_mask] = np.array([solution[f'x{i}'] for i in range(COST.num_binary_variables)])
+            nu_vec[~self.fixed_ev_mask] = np.array([solution[x_i] for x_i in COST.variables])
         
         return self.NC_op.get_energy(nu_vec), nu_vec
 
 
-@ray.remote
+@ray.remote(num_cpus=os.cpu_count())
 def get_noncon_energy(noncon_H:NoncontextualOp, nu: np.array) -> float:
     """
     The classical objective function that encodes the noncontextual energies.

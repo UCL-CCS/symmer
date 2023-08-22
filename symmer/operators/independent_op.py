@@ -29,8 +29,8 @@ class IndependentOp(PauliwordOp):
             target_sqp (str): Target SQP (Single-Qubit Pauli). By default it is to 'Z'.
         """
         if coeff_vec is None:
-            coeff_vec = np.ones(symp_matrix.shape[0])
-        super().__init__(symp_matrix, coeff_vec)
+            coeff_vec = np.ones(symp_matrix.shape[0], dtype=complex)
+        super().__init__(symp_matrix, coeff_vec.astype(complex))
         self._check_stab()
         self.coeff_vec = self.coeff_vec.real.astype(int)
         self._check_independent()
@@ -141,7 +141,7 @@ class IndependentOp(PauliwordOp):
                 S_commuting = S.clique_cover(edge_relation='C')[0]
                 warnings.warn('Greedy method may identify non-optimal commuting symmetry terms; might be able to taper again.')
             
-            return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms))
+            return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms, dtype=complex))
 
     def _check_stab(self) -> None:
         """ 
