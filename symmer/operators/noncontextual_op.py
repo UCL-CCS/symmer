@@ -765,7 +765,7 @@ class NoncontextualSolver:
             nu_vec = np.ones(self.NC_op.symmetry_generators.n_terms, dtype=int)
             nu_vec[self.fixed_ev_mask] = self.fixed_eigvals
             # must ensure the binary variables are correctly ordered in the solution:
-            nu_vec[~self.fixed_ev_mask] = np.array([solution[x_i] for x_i in COST.variables])
+            nu_vec[~self.fixed_ev_mask] = np.array([solution[x_i] for x_i in sorted(COST.variables)])
         
         return self.NC_op.get_energy(nu_vec), nu_vec
 
