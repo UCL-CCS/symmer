@@ -30,7 +30,7 @@ class IndependentOp(PauliwordOp):
         """
         if coeff_vec is None:
             coeff_vec = np.ones(symp_matrix.shape[0], dtype=complex)
-        super().__init__(symp_matrix, coeff_vec.astype(complex))
+        super().__init__(symp_matrix, coeff_vec)
         self._check_stab()
         self.coeff_vec = self.coeff_vec.real.astype(int)
         self._check_independent()
@@ -169,7 +169,7 @@ class IndependentOp(PauliwordOp):
         out_string = ''
         for pauli_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
             p_string = symplectic_to_string(pauli_vec)
-            out_string += (f'{coeff: d} {p_string} \n')
+            out_string += (f'{coeff} {p_string} \n')
         return out_string[:-2]
 
     def __repr__(self) -> str:
