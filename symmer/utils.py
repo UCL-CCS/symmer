@@ -6,8 +6,10 @@ from functools import reduce
 import py3Dmol
 from scipy.sparse import csr_matrix
 from scipy.sparse import kron as sparse_kron
+from symmer.operators.utils import _rref_binary
 import multiprocessing as mp
 import ray
+import os
 # from psutil import cpu_count
 
 def exact_gs_energy(
@@ -274,7 +276,7 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
 
     return mat
 
-@ray.remote
+@ray.remote(num_cpus=os.cpu_count())
 def _get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     """
     """
@@ -387,3 +389,33 @@ def Get_AC_root(power: float, operator: AntiCommutingOp) -> PauliwordOp:
 
     return AC_root
 
+
+def get_generators_including_xz_products(operator: PauliwordOp) -> PauliwordOp:
+    """
+    Given an input operator perform similar process to finding generators (but do not use X,Z terms to generate Y terms)
+    i.e. the set can be dependent.
+
+    Args:
+        operator:
+
+    Returns:
+        PauliwordOp of generators build of X,Y,Z terms (note can have dependent terms!)
+
+    """
+    X_only = np.logical_and(operator.X_block, ~operator.Z_block)
+    Z_only = np.logical_and(~operator.X_block, operator.Z_block)
+    Y_only = np.logical_and(operator.Z_block, operator.X_block)
+
+    XZY_block = np.hstack((np.hstack((X_only, Z_only)), Y_only))
+
+    row_red_XYZ = _rref_binary(XZY_block)
+    non_zero_rows = row_red_XYZ[np.sum(row_red_XYZ, axis=1).astype(bool)]
+
+    X_new = non_zero_rows[:, :operator.X_block.shape[1]]
+    Z_new = non_zero_rows[:, operator.X_block.shape[1]:2 * operator.Z_block.shape[1]]
+    Y_new = non_zero_rows[:, 2 * operator.Z_block.shape[1]:]
+
+    sym_final = np.hstack((np.logical_or(X_new, Y_new),
+                           np.logical_or(Z_new, Y_new)))
+
+    return PauliwordOp(sym_final, np.ones(sym_final.shape[0]))

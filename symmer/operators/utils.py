@@ -431,17 +431,22 @@ def check_jordan_independent(operators):
     #     check_independent(Symmetries) & 
     #     np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
     # )
+    from symmer.operators import IndependentOp
 
-    symmetry_mask = np.all(operators.commutes_termwise(operators), axis=1)
-    Z2_terms = operators[symmetry_mask]
-    ac_terms = operators[~symmetry_mask]
+    Z2_gen_mask = np.sum(operators.commutes_termwise(operators), axis=1) == operators.n_terms
+    Z2_terms = operators[Z2_gen_mask]
 
+    # find terms not generated these Z2 symmerties
+    _, z2_mask = operators.generator_reconstruction(Z2_terms)
+
+    ac_terms = operators[~z2_mask]
     if ac_terms.n_terms > 0:
         decomposed = ac_terms.clique_cover(edge_relation='C')
         clique_rep_list = [C.sort()[0] for C in decomposed.values()]
-        ac_op = sum(clique_rep_list)
-        assert (np.sum(ac_op.adjacency_matrix.astype(int)
-                       - np.eye(ac_op.adjacency_matrix.shape[0])) == 0), 'ac_op is not anticommuting'
+        ac_op = sum(clique_rep_list).cleanup()
+        if ac_op.n_terms>0:
+            assert (np.sum(ac_op.adjacency_matrix.astype(int)
+                           - np.eye(ac_op.adjacency_matrix.shape[0])) == 0), f'ac_op is not anticommuting: {ac_op}'
         del ac_op
 
         Z2_from_cliques = sum((decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
@@ -517,6 +522,10 @@ def perform_noncontextual_sweep(operator) -> "PauliwordOp":
                           np.ones(non_zero_rows.shape[0]))
         if not check_adjmat_noncontextual(generators.adjacency_matrix):
             mask[ind] = ~mask[ind]
+
+    # noncon_H = operator[mask]
+    # assert noncon_H.is_noncontextual, 'DFS output is not noncontextual'
+    # return noncon_H
     return operator[mask]
 
 def binary_array_to_int(bin_arr):

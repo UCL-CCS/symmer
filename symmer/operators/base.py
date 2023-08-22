@@ -1,3 +1,7 @@
+import os
+import quimb
+from symmer.operators.utils import *
+import ray
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -9,7 +13,7 @@ from numbers import Number
 import multiprocessing as mp
 from cached_property import cached_property
 from scipy.sparse import csr_matrix, csc_matrix, coo_matrix, dok_matrix
-from symmer.operators.utils import *
+
 from openfermion import QubitOperator, count_qubits
 import matplotlib.pyplot as plt
 from qiskit.opflow import PauliSumOp as ibm_PauliSumOp
@@ -20,8 +24,6 @@ warnings.simplefilter('always', UserWarning)
 from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning
 warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
 warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
-
-import ray
 
 class PauliwordOp:
     """ 
@@ -557,7 +559,6 @@ class PauliwordOp:
         """
         assert check_jordan_independent(generators), 'The non-symmetry elements do not pairwise anticommute.'
 
-
         # first, separate symmetry elements  from anticommuting ones
         symmetry_mask = np.all(generators.commutes_termwise(generators), axis=1)
 
@@ -569,23 +570,22 @@ class PauliwordOp:
             op_reconstruction = np.zeros([self.n_terms, generators.n_terms])
             successfully_reconstructed = np.zeros(self.n_terms, dtype=bool)
 
-            Z2_terms = generators[symmetry_mask]
             ac_terms = generators[~symmetry_mask]
 
             # loop over anticommuting elements to enforce Jordan condition (no two anticommuting elements multiplied)
             for _, clq in ac_terms.clique_cover(edge_relation='C').items():
-                clq_indices = [np.where(np.all(generators.symp_matrix == t, axis=1))[0][0] for t in clq.symp_matrix]   
+                clq_indices = [np.where(np.all(generators.symp_matrix == t, axis=1))[0][0] for t in clq.symp_matrix]
                 mask_symmetries_with_P = symmetry_mask.copy()
-                mask_symmetries_with_P[np.array(clq_indices)] = True   
+                mask_symmetries_with_P[np.array(clq_indices)] = True
                 # reconstruct this PauliwordOp in the augemented symmetry + single anticommuting term generating set
                 augmented_symmetries = generators[mask_symmetries_with_P]
                 recon_mat_P, successful_P = self.generator_reconstruction(augmented_symmetries)
                 # np.ix_ needed to correctly slice op_reconstruction as mask method does not work
-                row, col = np.ix_(successful_P,mask_symmetries_with_P)
+                row, col = np.ix_(successful_P, mask_symmetries_with_P)
                 op_reconstruction[row, col] = recon_mat_P[successful_P]
                 # will have duplicate succesful reconstruction of symmetries, so only sets True once in logical OR
                 successfully_reconstructed = np.logical_or(successfully_reconstructed, successful_P)
-            
+
             return op_reconstruction.astype(int), successfully_reconstructed
 
     @cached_property
@@ -1089,6 +1089,8 @@ class PauliwordOp:
             bool: True if the operator is noncontextual, False if contextual.
         """
         return check_adjmat_noncontextual(self.generators.adjacency_matrix)
+        # from symmer.utils import get_generators_including_xz_products
+        # return check_adjmat_noncontextual(get_generators_including_xz_products(self).adjacency_matrix)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 
@@ -1415,7 +1417,7 @@ class PauliwordOp:
         row_red = _rref_binary(self.symp_matrix)
         non_zero_rows = row_red[np.sum(row_red, axis=1).astype(bool)]
         generators = PauliwordOp(non_zero_rows,
-                          np.ones(non_zero_rows.shape[0]))
+                          np.ones(non_zero_rows.shape[0], dtype=complex))
 
         assert check_independent(generators), 'generators are not independent'
         assert generators.n_terms <= 2*self.n_qubits, 'cannot have an independent generating set of size greaterthan 2 time num qubits'
@@ -2350,7 +2352,7 @@ def get_ij_operator(i:int, j:int, n_qubits:int,
     else:
         return ij_symp_matrix, coeffs
 
-@ray.remote
+@ray.remote(num_cpus=os.cpu_count())
 def single_term_expval(P_op: PauliwordOp, psi: QuantumState) -> float:
     """ 
     Expectation value calculation for a single Pauli operator given a QuantumState psi
