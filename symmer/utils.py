@@ -267,6 +267,10 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
         #     tracker = pool.map(_get_sparse_matrix_large_pauliwordop, P_op_chunks)
 
         n_chunks = os.cpu_count()
+        if n_chunks<8:
+            # code breaks for n_chunks <= 1! (note even if single core it is better to increase chunks)
+            n_chunks = 8
+
         P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_chunks, P_op.n_terms))).astype(set).astype(int)
         P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i + 1]] for ind_i, _ in
                        enumerate(P_op_chunks_inds[1:])]
@@ -300,12 +304,9 @@ def _get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
                                   op.Z_block[:, nq // 2:]))
         right_coeff = np.array([1])
 
-        temp = sparse_kron(PauliwordOp(left_tensor, left_coeff).to_sparse_matrix,
+        mat += sparse_kron(PauliwordOp(left_tensor, left_coeff).to_sparse_matrix,
                            PauliwordOp(right_tensor, right_coeff).to_sparse_matrix,
                            format='csr')  # setting format makes this faster!
-
-        mat += temp
-        del temp
 
     return mat
 

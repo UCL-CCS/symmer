@@ -270,7 +270,7 @@ class PauliwordOp:
         #     if flag:
         #         warnings.warn('Basis not sufficiently expressive, output operator projected onto basis supplied.')
 
-        return op_basis
+        return op_basis[op_basis.coeff_vec.nonzero()[0]]
 
     @classmethod
     def _from_matrix_projector(cls, 
@@ -1615,7 +1615,7 @@ class QuantumState:
 
         Args:
             num_qubits (int): The number of qubits.
-            num_terms (int): The number of terms.
+            num_terms (int): The number of terms. Note duplicate bitstrings mean the produced state can have slightly fewer terms
             vec_type (str, optional): The vector type. Defaults to 'ket'.
 
         Returns:
@@ -1628,7 +1628,7 @@ class QuantumState:
             np.random.rand(num_terms) + 
             np.random.rand(num_terms)*1j
         )
-        return QuantumState(random_state, coeff_vec, vec_type=vec_type).normalize
+        return QuantumState(random_state, coeff_vec, vec_type=vec_type).cleanup().normalize
     
     @classmethod
     def zero(cls,
@@ -1979,8 +1979,8 @@ class QuantumState:
             bool: True or False depending on if state is normalized.
 
         """
-
-        if not np.isclose(np.linalg.norm(self.state_op.coeff_vec), 1):
+        # clean-up needed to avoid duplicated terms messing with normalization calculation
+        if not np.isclose(np.linalg.norm(self.state_op.cleanup().coeff_vec), 1):
             return False
         else:
             return True
