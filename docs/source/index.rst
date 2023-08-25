@@ -73,16 +73,12 @@ The following guides, generated from the notebooks in `notebooks <https://github
 provide a beginners guide and demonstrate some more advanced features or complete usage:
 
 .. toctree::
-  :numbered:
   :maxdepth: 2
 
   ./notebooks/1_Basic_Usage/1.1 PauliwordOp Usage.ipynb
-  ./notebooks/1_Basic_Usage/1.2 QuantumState Usage.ipynb
-  ./notebooks/1_Basic_Usage/1.3 Importing Hamiltonian Data.ipynb
-  ./notebooks/1_Basic_Usage/1.4 QubitSubspaceManager Usage.ipynb
 
 .. toctree::
-  :numbered:
   :maxdepth: 2
-  ./notebooks/2_Applications
+
+  ./notebooks/1_Basic_Usage/1.2 QuantumState Usage.ipynb
 
