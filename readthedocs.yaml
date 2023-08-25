@@ -8,10 +8,14 @@ version: 2
 # Set the OS, Python version and other tools you might need
 build:
   os: ubuntu-22.04
-  python: "3.10"
+  tools:
+    python: "3.10"
+
+python:
   install:
     - method: pip
       path: .
+
 # Build documentation in the "docs/" directory with Sphinx
 sphinx:
    configuration: docs/conf.py
