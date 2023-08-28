@@ -26,7 +26,7 @@ library, that form a base for all operations, are:
 .. grid:: 2
 
     .. grid-item-card::  PauliwordOp
-        :img-bottom: _images/noncontextual-graph.png
+        :img-bottom: ./_static/noncontextual-graph.png
 
         The :mod:`PauliwordOp` class contains tools for working with
         **Pauli operators**. It has a particular focus on:
@@ -36,7 +36,7 @@ library, that form a base for all operations, are:
         * output to various other backends:
           `openfermion <https://github.com/quantumlib/OpenFermion>`_ and
           `qiskit <https://github.com/Qiskit/qiskit>`_
-        * Find commutation relations between Pauli operators in an efficient manor.
+        * Find commutation relations between Pauli operators in an efficient manner.
 
     .. grid-item-card::  QuantumState
 
