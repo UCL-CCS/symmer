@@ -5,6 +5,7 @@ from qiskit.opflow import PauliSumOp
 from openfermion import QubitOperator
 from scipy.sparse import rand, csr_matrix
 from symmer.utils import matrix_allclose
+from symmer.operators.utils import check_adjmat_noncontextual
 
 P_matrices ={
     'X': np.array([[0, 1],
@@ -597,6 +598,50 @@ def test_is_noncontextual(P_list, is_noncon):
         ({'Z':1},{'Y':1},{'X':-1j}),
     ]
 )
+
+def test_is_noncontextual_generators():
+    """
+    noncontextual test that breaks if only 2n generators are used rather than 3n generators
+    Returns:
+
+    """
+    Hnc = PauliwordOp.from_dictionary({'IIIZX': (0.04228614428142647-0j),
+                                        'IIIZY': (-0.30109670698419544-0j),
+                                        'IIZZX': (0.04228614428142647-0j),
+                                        'IIZZY': (-0.30109670698419544-0j),
+                                        'IZIZX': (0.04228614428142647-0j),
+                                        'IZIZY': (-0.30109670698419544-0j),
+                                        'IZZZX': (0.04228614428142647-0j),
+                                        'IZZZY': (-0.30109670698419544-0j),
+                                        'ZIIZX': (0.04228614428142647-0j),
+                                        'ZIIZY': (-0.30109670698419544-0j),
+                                        'ZIZZX': (0.04228614428142647-0j),
+                                        'ZIZZY': (-0.30109670698419544-0j),
+                                        'ZZIZX': (0.04228614428142647-0j),
+                                        'ZZIZY': (-0.30109670698419544-0j),
+                                        'ZZZZX': (0.04228614428142647-0j),
+                                        'ZZZZY': (-0.30109670698419544-0j),
+                                        'IIIXI': (-1.6377047626147634-0j),
+                                        'IIIYI': (-0.8887783867443338-0j),
+                                        'IIZXI': (-1.6377047626147634-0j),
+                                        'IIZYI': (-0.8887783867443338-0j),
+                                        'IZIXI': (-1.6377047626147634-0j),
+                                        'IZIYI': (-0.8887783867443338-0j),
+                                        'IZZXI': (-1.6377047626147634-0j),
+                                        'IZZYI': (-0.8887783867443338-0j),
+                                        'ZIIXI': (-1.6377047626147634-0j),
+                                        'ZIIYI': (-0.8887783867443338-0j),
+                                        'ZIZXI': (-1.6377047626147634-0j),
+                                        'ZIZYI': (-0.8887783867443338-0j),
+                                        'ZZIXI': (-1.6377047626147634-0j),
+                                        'ZZIYI': (-0.8887783867443338-0j),
+                                        'ZZZXI': (-1.6377047626147634-0j),
+                                        'ZZZYI': (-0.8887783867443338-0j)})
+
+    ## note this commented out method is gives incorrect answer
+    # assert check_adjmat_noncontextual(Hnc.generators.adjacency_matrix), 'noncontexutal operator is being correctly defined as noncontextual'
+    assert Hnc.is_noncontextual, 'noncontexutal operator is being correctly defined as noncontextual'
+
 def test_single_qubit_multiplication(
         P1_dict, P2_dict, P1P2_dict
     ):

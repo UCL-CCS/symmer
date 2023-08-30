@@ -1088,9 +1088,9 @@ class PauliwordOp:
         Returns:
             bool: True if the operator is noncontextual, False if contextual.
         """
-        return check_adjmat_noncontextual(self.generators.adjacency_matrix)
-        # from symmer.utils import get_generators_including_xz_products
-        # return check_adjmat_noncontextual(get_generators_including_xz_products(self).adjacency_matrix)
+        # return check_adjmat_noncontextual(self.generators.adjacency_matrix)
+        from symmer.utils import get_generators_including_xz_products
+        return check_adjmat_noncontextual(get_generators_including_xz_products(self).adjacency_matrix)
 
     def _rotate_by_single_Pword(self, 
             Pword: "PauliwordOp", 

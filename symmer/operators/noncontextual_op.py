@@ -14,6 +14,7 @@ from scipy.optimize import differential_evolution, shgo
 from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
 from symmer.operators.utils import binomial_coefficient, perform_noncontextual_sweep
 import ray
+from symmer.utils import random_anitcomm_2n_1_PauliwordOp
 
 class NoncontextualOp(PauliwordOp):
     """ 
@@ -251,7 +252,71 @@ class NoncontextualOp(PauliwordOp):
             _, noncontextual_terms_mask = H.generator_reconstruction(generators, override_independence_check=True)
 
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
-    
+
+    @classmethod
+    def random(cls,
+            n_qubits: int,
+            n_cliques:Optional[int]=3,
+            complex_coeffs:Optional[bool]=False
+        ) -> "NoncontextualOp":
+        """
+        Generate a random Noncontextual operator with normally distributed coefficients.
+        Note to maximise size choose number of n_cliques to be 3 (and for 2<= n_cliques <= 5 the operator
+        will be larger than 2^n).
+
+        Note: The number of terms in output will be: n_cliques*2**(n_qubits -  int(np.ceil((n_cliques - 1) / 2)))
+
+        Args:
+            n_qubits (int): Number of qubits noncontextual operator defined on
+            n_cliques (int): Number of cliques representives in operator
+            complex_coeffs (bool): Whether to generate complex coefficients (default: True).
+
+        Returns:
+            NoncontextualOp: A random NoncontextualOp object.
+        """
+        n_clique_qubits = int(np.ceil((n_cliques - 1) / 2))
+        assert n_clique_qubits <= n_qubits, 'cannot have {n_cliques} anticommuting cliques on {n_qubits} qubits'
+
+        remaining_qubits = n_qubits - n_clique_qubits
+
+        if n_cliques == 0:
+            XZ_block = (((np.arange(2 ** (remaining_qubits))[:, None] & (1 << np.arange(2 * remaining_qubits))[
+                                                                        ::-1])) > 0).astype(bool)
+            H_nc = PauliwordOp(XZ_block, np.ones(XZ_block.shape[0]))
+
+        else:
+            AC = random_anitcomm_2n_1_PauliwordOp(n_clique_qubits,
+                                                  apply_clifford=True)[:n_cliques]
+            AC.coeff_vec = np.ones_like(AC.coeff_vec)
+            if remaining_qubits >= 1:
+                XZ_block = (((np.arange(2 ** (remaining_qubits))[:, None] & (1 << np.arange(2 * remaining_qubits))[
+                                                                            ::-1])) > 0).astype(bool)
+                diag_H = PauliwordOp(XZ_block, np.ones(XZ_block.shape[0]))
+            else:
+                diag_H = PauliwordOp.from_list(['I' * remaining_qubits])
+
+            AC_full = PauliwordOp.from_list(['I' * remaining_qubits]).tensor(AC)
+            H_sym = diag_H.tensor(PauliwordOp.from_list(['I' * n_clique_qubits]))
+            H_nc = AC_full * H_sym
+
+        coeff_vec = np.random.randn(H_nc.n_terms).astype(complex)
+        if complex_coeffs:
+            coeff_vec += 1j * np.random.randn(H_nc.n_terms)
+
+        assert AC.n_terms * 2**(remaining_qubits) == H_nc.n_terms, 'operator not largest it can be'
+
+
+        # apply clifford rotations to get rid of structure
+        U_cliff_rotations = []
+        for _ in range(n_qubits * 5):
+            P_rand = PauliwordOp.random(n_qubits, n_terms=1)
+            P_rand.coeff_vec = [1]
+            U_cliff_rotations.append((P_rand, None))
+
+        H_nc = H_nc.perform_rotations(U_cliff_rotations)
+
+        return cls(H_nc.symp_matrix, coeff_vec)
+
     @classmethod
     def _from_stabilizers_noncontextual_op(cls, 
             H:PauliwordOp, stabilizers: IndependentOp, use_jordan_product=False
