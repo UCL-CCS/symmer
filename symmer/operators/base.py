@@ -1088,11 +1088,58 @@ class PauliwordOp:
         Returns:
             bool: True if the operator is noncontextual, False if contextual.
         """
-        # return check_adjmat_noncontextual(self.generators.adjacency_matrix)
-        from symmer.utils import get_generators_including_xz_products
-        return check_adjmat_noncontextual(get_generators_including_xz_products(self).adjacency_matrix)
+        # if self.n_terms<=2*self.n_qubits+1:
+        #     # edge case where only have anticommuting operator
+        #     adj_mat = self.adjacency_matrix
+        #     adj_mat[np.diag_indices_from(adj_mat)] = False
+        #     if np.all(~adj_mat):
+        #         return True
+        #
+        # # return check_adjmat_noncontextual(self.generators.adjacency_matrix)
+        # from symmer.utils import get_generators_including_xz_products
+        # return check_adjmat_noncontextual(get_generators_including_xz_products(self).adjacency_matrix)
 
-    def _rotate_by_single_Pword(self, 
+
+        # if generators of operator (self) are noncontextual then whole of operator (self) must be too!
+        # from symmer.utils import get_generators_including_xz_products
+        # generators = get_generators_including_xz_products(Hnc)
+        generators = self.generators
+
+        if np.any(generators.adjacency_matrix - np.eye(generators.n_terms)):
+            # generators are not fully anticommuting
+
+            z2_mask = np.sum(generators.adjacency_matrix, axis=1) == generators.n_terms
+
+            if np.all(z2_mask):
+                # generators are fully commuting
+                return True
+            else:
+                # find missing pieces of self not built from commuting generators
+                remaining_gens = generators[~z2_mask]
+                _, missing_mask = self.generator_reconstruction(remaining_gens)
+                H_rem = self[missing_mask]
+
+                # remaining must be disjoint union of commuting cliques...
+                # So find unique rows of adj matrix and check there is NO overlap between them (disjoint!)
+                adj_matrix_view = np.ascontiguousarray(H_rem.adjacency_matrix).view(
+                    np.dtype((np.void, H_rem.adjacency_matrix.dtype.itemsize * H_rem.adjacency_matrix.shape[1]))
+                )
+                re_order_indices = np.argsort(adj_matrix_view.ravel())
+                # sort the adj matrix and vector of coefficients accordingly
+                sorted_terms = H_rem.adjacency_matrix[re_order_indices]
+                # unique terms are those with non-zero entries in the adjacent row difference array
+                diff_adjacent = np.diff(sorted_terms, axis=0)
+                mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
+                clique_mask = sorted_terms[mask_unique_terms]
+
+                # check for overlap (array of ones == no overlap)
+                return np.all(np.sum(clique_mask, axis=0) == 1)
+
+        else:
+            # set of anti commuting generators (edge case]) [must be noncontextual]
+            return True
+
+    def _rotate_by_single_Pword(self,
             Pword: "PauliwordOp", 
             angle: float = None
         ) -> "PauliwordOp":

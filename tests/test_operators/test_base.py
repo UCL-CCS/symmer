@@ -598,6 +598,13 @@ def test_is_noncontextual(P_list, is_noncon):
         ({'Z':1},{'Y':1},{'X':-1j}),
     ]
 )
+def test_single_qubit_multiplication(
+        P1_dict, P2_dict, P1P2_dict
+    ):
+    P1   = PauliwordOp.from_dictionary(P1_dict)
+    P2   = PauliwordOp.from_dictionary(P2_dict)
+    P1P2 = PauliwordOp.from_dictionary(P1P2_dict)
+    assert P1 * P2 == P1P2
 
 def test_is_noncontextual_generators():
     """
@@ -641,14 +648,6 @@ def test_is_noncontextual_generators():
     ## note this commented out method is gives incorrect answer
     # assert check_adjmat_noncontextual(Hnc.generators.adjacency_matrix), 'noncontexutal operator is being correctly defined as noncontextual'
     assert Hnc.is_noncontextual, 'noncontexutal operator is being correctly defined as noncontextual'
-
-def test_single_qubit_multiplication(
-        P1_dict, P2_dict, P1P2_dict
-    ):
-    P1   = PauliwordOp.from_dictionary(P1_dict)
-    P2   = PauliwordOp.from_dictionary(P2_dict)
-    P1P2 = PauliwordOp.from_dictionary(P1P2_dict)
-    assert P1 * P2 == P1P2
 
 def test_multiplication_1():
     """ Tests multiplication and the OpenFermion conversion
