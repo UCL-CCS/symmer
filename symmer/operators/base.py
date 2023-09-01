@@ -975,6 +975,14 @@ class PauliwordOp:
             np.array: A Boolean array indicating the term-wise commutation.
         """
         assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
+
+        ### sparse code
+        # adjacency_matrix = (
+        #             csr_matrix(self.symp_matrix.astype(int)) @ csr_matrix(np.hstack((PwordOp.Z_block, PwordOp.X_block)).astype(int)).T)
+        # adjacency_matrix.data = ((adjacency_matrix.data % 2) != 0)
+        # return np.logical_not(adjacency_matrix.toarray())
+
+        ### dense code
         Omega_PwordOp_symp = np.hstack((PwordOp.Z_block,  PwordOp.X_block)).astype(int)
         return (self.symp_matrix @ Omega_PwordOp_symp.T) % 2 == 0
 
@@ -1089,6 +1097,14 @@ class PauliwordOp:
             bool: True if the operator is noncontextual, False if contextual.
         """
         # if generators of operator (self) are noncontextual then whole of operator (self) must be too!
+        if self.n_terms<= 2*self.n_qubits+1:
+            # check edge case where all terms are anticommuting
+            adj_mat = self.adjacency_matrix
+            adj_mat[np.diag_indices_from(adj_mat)] = False
+            if ~np.any(adj_mat):
+                # operator is all anticommuting
+                return True
+
         from symmer.utils import get_generators_including_xz_products
         xyz_generators = get_generators_including_xz_products(self)
 

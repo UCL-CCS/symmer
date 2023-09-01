@@ -20,8 +20,9 @@ class AntiCommutingOp(PauliwordOp):
         super().__init__(AC_op_symp_matrix, coeff_list)
 
         # check all operators anticommute
-        anti_comm_check = self.adjacency_matrix.astype(int) - np.eye(self.adjacency_matrix.shape[0])
-        assert (np.sum(anti_comm_check) == 0), 'operator needs to be made of anti-commuting Pauli operators'
+        adj_mat = self.adjacency_matrix
+        adj_mat[np.diag_indices_from(adj_mat)] = False
+        assert ~np.any(adj_mat), 'operator needs to be made of anti-commuting Pauli operators'
 
         self.X_sk_rotations = []
         self.R_LCU = None

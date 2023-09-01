@@ -650,6 +650,25 @@ def test_is_noncontextual_generators():
     # assert check_adjmat_noncontextual(Hnc.generators.adjacency_matrix), 'noncontexutal operator is being correctly defined as noncontextual'
     assert Hnc.is_noncontextual, 'noncontexutal operator is being correctly defined as noncontextual'
 
+def test_is_noncontextual_anticommuting_H():
+    """
+    noncontextual test that breaks if only 2n generators are used rather than 3n generators
+    Returns:
+
+    """
+    Hnc = PauliwordOp.from_dictionary({
+             'ZZZI': (1.2532436410975218-0j),
+             'IIXI': (0.8935108507410493-0j),
+             'ZIYI': (-1.1362909076230914+0j),
+             'IXZI': (-0.05373661687140326+0j),
+             'ZYZI': (-1.0012312990477774+0j),
+             'XXYI': (-0.045809456087963205+0j),
+             'YXYZ': (0.21569499626612557-0j),
+             'YXYX': (-0.5806963175396661+0j),
+             'YXYY': (0.3218493853030614-0j)})
+
+    assert Hnc.is_noncontextual, 'noncontexutal operator is being correctly defined as noncontextual'
+
 def test_multiplication_1():
     """ Tests multiplication and the OpenFermion conversion
     """
