@@ -648,7 +648,7 @@ def test_is_noncontextual_generators():
 
     ## note this commented out method is gives incorrect answer
     # assert check_adjmat_noncontextual(Hnc.generators.adjacency_matrix), 'noncontexutal operator is being correctly defined as noncontextual'
-    assert Hnc.is_noncontextual, 'noncontexutal operator is being correctly defined as noncontextual'
+    assert Hnc.is_noncontextual, 'noncontexutal operator is being incorrectly being defined as contextual'
 
 def test_is_noncontextual_anticommuting_H():
     """

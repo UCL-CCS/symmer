@@ -13,6 +13,7 @@ from numbers import Number
 import multiprocessing as mp
 from cached_property import cached_property
 from scipy.sparse import csr_matrix, csc_matrix, coo_matrix, dok_matrix
+from symmer.operators.utils import _cref_binary
 
 from openfermion import QubitOperator, count_qubits
 import matplotlib.pyplot as plt
@@ -1096,40 +1097,68 @@ class PauliwordOp:
         Returns:
             bool: True if the operator is noncontextual, False if contextual.
         """
-        # if generators of operator (self) are noncontextual then whole of operator (self) must be too!
-        if self.n_terms<= 2*self.n_qubits+1:
-            # check edge case where all terms are anticommuting
-            adj_mat = self.adjacency_matrix
-            adj_mat[np.diag_indices_from(adj_mat)] = False
-            if ~np.any(adj_mat):
-                # operator is all anticommuting
-                return True
-
+        ## if generators are noncontextual then reutrn true
         from symmer.utils import get_generators_including_xz_products
         xyz_generators = get_generators_including_xz_products(self)
-
-        mask = np.sum(xyz_generators.commutes_termwise(xyz_generators), axis=1) == xyz_generators.n_terms
-
-        non_Z2_generators = xyz_generators[~mask]
-        if non_Z2_generators.n_terms==0:
-            # gens are fully commuting!
+        if check_adjmat_noncontextual(xyz_generators.adjacency_matrix) or check_adjmat_noncontextual(self.generators.adjacency_matrix):
             return True
-        else:
-            # remaining non Z2 generators must be disjoint union of commuting cliques...
-            # so find unique rows of adj matrix and check there is NO overlap between them (disjoint!)
-            adj_matrix_view = np.ascontiguousarray(non_Z2_generators.adjacency_matrix).view(
-                np.dtype((np.void, non_Z2_generators.adjacency_matrix.dtype.itemsize * non_Z2_generators.adjacency_matrix.shape[1]))
-            )
-            re_order_indices = np.argsort(adj_matrix_view.ravel())
-            # sort the adj matrix and vector of coefficients accordingly
-            sorted_terms = non_Z2_generators.adjacency_matrix[re_order_indices]
-            # unique terms are those with non-zero entries in the adjacent row difference array
-            diff_adjacent = np.diff(sorted_terms, axis=0)
-            mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
-            clique_mask = sorted_terms[mask_unique_terms]
+        elif self.n_terms<= 2*self.n_qubits+1:
+            # check all operators anticommute
+            adj_mat = self.adjacency_matrix
+            adj_mat[np.diag_indices_from(adj_mat)] = False
+            return np.all(~adj_mat)
 
-            # check for overlap (array of ones == no overlap)
-            return np.all(np.sum(clique_mask, axis=0) == 1)
+        ## else need to do longer form search to make sure op is not contextual
+
+        # ## same as: IndependentOp.symmetry_generators(self, commuting_override=True)
+        # # swap order of XZ blocks in symplectic matrix to ZX
+        # to_reduce = np.vstack([np.hstack([self.Z_block, self.X_block]), np.eye(2 * self.n_qubits, dtype=bool)])
+        # cref_matrix = _cref_binary(to_reduce)
+        # S_symp = cref_matrix[self.n_terms:, np.all(~cref_matrix[:self.n_terms], axis=0)].T
+        # Z2_symmerties = PauliwordOp(S_symp, np.ones(S_symp.shape[0]))
+        #
+        # if not np.all(Z2_symmerties.commutes_termwise(Z2_symmerties)):
+        #     # need to account for Z2_symmerties not commuting with themselves
+        #     sym_gens = self.generators
+        #     z2_mask = np.sum(sym_gens.adjacency_matrix, axis=1) == sym_gens.n_terms
+        #
+        #     Z2_incomplete = sym_gens[z2_mask]
+        #     _, missing_mask = sym_gens.generator_reconstruction(Z2_incomplete)
+        #     Z2_missing = sym_gens[~missing_mask]
+        #
+        #     cover = Z2_missing.clique_cover('C')
+        #     clique_rep_list = [C.sort()[0] for C in cover.values()]
+        #
+        #     sym_from_cliques = sum((cover[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+        #                            cover[n].n_terms > 1)
+        #
+        #     Z2_symmerties = (sym_from_cliques + Z2_incomplete).generators
+        #     _, z2_mask = self.generator_reconstruction(Z2_symmerties)
+        # else:
+        #     _, z2_mask = self.generator_reconstruction(Z2_symmerties)
+        #
+        # remaining = self[~z2_mask]
+        #
+        # if remaining.n_terms>0:
+        #     # for remaining to be noncontextual must be disjoint union of cliques
+        #     # we can test for this below
+        #
+        #     adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
+        #         np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
+        #     )
+        #     re_order_indices = np.argsort(adj_matrix_view.ravel())
+        #     # sort the adj matrix and vector of coefficients accordingly
+        #     sorted_terms = remaining.adjacency_matrix[re_order_indices]
+        #     # unique terms are those with non-zero entries in the adjacent row difference array
+        #     diff_adjacent = np.diff(sorted_terms, axis=0)
+        #     mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
+        #     clique_mask = sorted_terms[mask_unique_terms]
+        #
+        #     # check for overlap (array of ones == no overlap)
+        #     return np.all(np.sum(clique_mask, axis=0) == 1)
+        # else:
+        #     return True
+        return False
 
     def _rotate_by_single_Pword(self,
             Pword: "PauliwordOp", 

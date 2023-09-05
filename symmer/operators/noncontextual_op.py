@@ -431,41 +431,44 @@ class NoncontextualOp(PauliwordOp):
 
         remaining = self[~z2_mask]
 
-        ## rather than doing graph coloring (line below)
-        #self.decomposed = remaining.clique_cover('C')
+        if remaining.n_terms>0:
+            ## rather than doing graph coloring (line below)
+            #self.decomposed = remaining.clique_cover('C')
 
-        ## use noncon structure of disjoint cliques
-        # remaining must be disjoint union of commuting cliques...
-        # So find unique rows of adj matrix and check there is NO overlap between them (disjoint!)
-        adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
-            np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
-        )
-        re_order_indices = np.argsort(adj_matrix_view.ravel())
-        # sort the adj matrix and vector of coefficients accordingly
-        sorted_terms = remaining.adjacency_matrix[re_order_indices]
-        # unique terms are those with non-zero entries in the adjacent row difference array
-        diff_adjacent = np.diff(sorted_terms, axis=0)
-        mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
-        clique_mask = sorted_terms[mask_unique_terms]
-        self.decomposed = {ind: remaining[c_mask] for ind, c_mask in enumerate(clique_mask)}
-
-        self.n_cliques = len(self.decomposed)
-        if self.n_cliques > 0:
-            # choose clique representatives with the greatest coefficient
-            # see equation 3 of https://arxiv.org/pdf/2002.05693.pdf
-            clique_rep_list = [C.sort()[0] for C in self.decomposed.values()]
-            self.clique_operator = AntiCommutingOp.from_PauliwordOp(
-                sum(clique_rep_list)
+            ## use noncon structure of disjoint cliques
+            # remaining must be disjoint union of commuting cliques...
+            # So find unique rows of adj matrix and check there is NO overlap between them (disjoint!)
+            adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
+                np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
             )
-            self.clique_operator.coeff_vec = np.ones_like(self.clique_operator.coeff_vec)
+            re_order_indices = np.argsort(adj_matrix_view.ravel())
+            # sort the adj matrix and vector of coefficients accordingly
+            sorted_terms = remaining.adjacency_matrix[re_order_indices]
+            # unique terms are those with non-zero entries in the adjacent row difference array
+            diff_adjacent = np.diff(sorted_terms, axis=0)
+            mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
+            clique_mask = sorted_terms[mask_unique_terms]
+            self.decomposed = {ind: remaining[c_mask] for ind, c_mask in enumerate(clique_mask)}
 
-            ## cliques can form new Z2 syms
-            sym_from_cliques = sum((self.decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
-                                   self.decomposed[n].n_terms > 1)
-            if sym_from_cliques:
-                Z2_symmerties = (sym_from_cliques + Z2_symmerties).generators
+            self.n_cliques = len(self.decomposed)
+            if self.n_cliques > 0:
+                # choose clique representatives with the greatest coefficient
+                # see equation 3 of https://arxiv.org/pdf/2002.05693.pdf
+                clique_rep_list = [C.sort()[0] for C in self.decomposed.values()]
+                self.clique_operator = AntiCommutingOp.from_PauliwordOp(
+                    sum(clique_rep_list)
+                )
+                self.clique_operator.coeff_vec = np.ones_like(self.clique_operator.coeff_vec)
+
+                ## cliques can form new Z2 syms
+                sym_from_cliques = sum((self.decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+                                       self.decomposed[n].n_terms > 1)
+                if sym_from_cliques:
+                    Z2_symmerties = (sym_from_cliques + Z2_symmerties).generators
         else:
             self.clique_operator = PauliwordOp.empty(self.n_qubits).cleanup()
+            self.decomposed = dict()
+            self.n_cliques=0
 
         self.symmetry_generators = IndependentOp.from_PauliwordOp(Z2_symmerties)
         _, Z2_mask = self.generator_reconstruction(Z2_symmerties)
