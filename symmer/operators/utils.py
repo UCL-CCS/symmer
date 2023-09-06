@@ -431,31 +431,73 @@ def check_jordan_independent(operators):
     #     check_independent(Symmetries) & 
     #     np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
     # )
-    from symmer.operators import IndependentOp
 
-    Z2_gen_mask = np.sum(operators.commutes_termwise(operators), axis=1) == operators.n_terms
-    Z2_terms = operators[Z2_gen_mask]
+    # if operators.n_terms<= 2*operators.n_qubits+1:
+    #     # check if input is fully anticommuting
+    #     adj_mat = operators.adjacency_matrix
+    #     adj_mat[np.diag_indices_from(adj_mat)] = False
+    #     if np.all(~adj_mat):
+    #         return True
 
-    # find terms not generated these Z2 symmerties
-    _, z2_mask = operators.generator_reconstruction(Z2_terms)
+    # Z2_gen_mask = np.sum(operators.commutes_termwise(operators), axis=1) == operators.n_terms
+    # Z2_terms = operators[Z2_gen_mask]
+    #
+    # # find terms not generated these Z2 symmerties
+    # _, z2_mask = operators.generator_reconstruction(Z2_terms, override_independence_check=True)
+    #
+    # ac_terms = operators[~z2_mask]
+    # if ac_terms.n_terms > 0:
+    #     decomposed = ac_terms.clique_cover(edge_relation='C')
+    #     clique_rep_list = [C.sort()[0] for C in decomposed.values()]
+    #     ac_op = sum(clique_rep_list).cleanup()
+    #     # if ac_op.n_terms>0:
+    #     #     assert (np.sum(ac_op.adjacency_matrix.astype(int)
+    #     #                    - np.eye(ac_op.adjacency_matrix.shape[0])) == 0), f'ac_op is not anticommuting: {ac_op}'
+    #     # del ac_op
+    #     if ac_op.n_terms > 0:
+    #         # check all operators anticommute
+    #         adj_mat = ac_op.adjacency_matrix
+    #         adj_mat[np.diag_indices_from(adj_mat)] = False
+    #         if not np.all(~adj_mat):
+    #             return False
+    #
+    #     Z2_from_cliques = sum((decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+    #                           decomposed[n].n_terms > 1)
+    #     if Z2_from_cliques:
+    #         Z2_terms += Z2_from_cliques
+    #
+    #     if not np.all(Z2_terms.commutes_termwise(ac_op)):
+    #         return False
+    #
+    # return check_independent(Z2_terms)
 
-    ac_terms = operators[~z2_mask]
-    if ac_terms.n_terms > 0:
-        decomposed = ac_terms.clique_cover(edge_relation='C')
-        clique_rep_list = [C.sort()[0] for C in decomposed.values()]
-        ac_op = sum(clique_rep_list).cleanup()
-        if ac_op.n_terms>0:
-            assert (np.sum(ac_op.adjacency_matrix.astype(int)
-                           - np.eye(ac_op.adjacency_matrix.shape[0])) == 0), f'ac_op is not anticommuting: {ac_op}'
-        del ac_op
+    # get fully commuting terms
+    z2_mask = np.sum(operators.commutes_termwise(operators), axis=1) == operators.n_terms
+    Z2_symm = operators[z2_mask]
 
-        Z2_from_cliques = sum((decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
-                              decomposed[n].n_terms > 1)
-        if Z2_from_cliques:
-            Z2_terms += Z2_from_cliques
+    _, missing_mask = operators.generator_reconstruction(Z2_symm, override_independence_check=True)
+    remaining = operators[~missing_mask]
 
-    return check_independent(Z2_terms)
+    if remaining.n_terms > 0:
+        # for remaining to be jordan independent remaining must be disjoint union of cliques
+        # we can test for this below
 
+        adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
+            np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
+        )
+        re_order_indices = np.argsort(adj_matrix_view.ravel())
+        # sort the adj matrix and vector of coefficients accordingly
+        sorted_terms = remaining.adjacency_matrix[re_order_indices]
+        # unique terms are those with non-zero entries in the adjacent row difference array
+        diff_adjacent = np.diff(sorted_terms, axis=0)
+        mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
+        clique_mask = sorted_terms[mask_unique_terms]
+
+        # check for overlap (array of ones == no overlap)
+        return np.all(np.sum(clique_mask, axis=0) == 1)
+    else:
+        # operators is made up of pairwise commuting ops and thus must be jordan independent
+        return True
 
 def check_adjmat_noncontextual(adjmat) -> bool:
     """
@@ -511,21 +553,15 @@ def perform_noncontextual_sweep(operator) -> "PauliwordOp":
     ## new method uses generators to speed up sweep
     from symmer.operators import PauliwordOp
     mask = np.zeros(operator.n_terms, dtype=bool)
-    
+
     for ind in range(operator.n_terms):
         mask[ind] = ~mask[ind]
-        
-        # get generators of current operator and check these are not contextual
-        row_red = _rref_binary(operator.symp_matrix[mask])
-        non_zero_rows = row_red[np.sum(row_red, axis=1).astype(bool)]
-        generators = PauliwordOp(non_zero_rows,
-                          np.ones(non_zero_rows.shape[0]))
-        if not check_adjmat_noncontextual(generators.adjacency_matrix):
+        running_op = PauliwordOp(operator.symp_matrix[mask],
+                                 np.ones(np.sum(mask)))
+
+        if not running_op.is_noncontextual:
             mask[ind] = ~mask[ind]
 
-    # noncon_H = operator[mask]
-    # assert noncon_H.is_noncontextual, 'DFS output is not noncontextual'
-    # return noncon_H
     return operator[mask]
 
 def binary_array_to_int(bin_arr):

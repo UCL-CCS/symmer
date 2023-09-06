@@ -412,7 +412,8 @@ class NoncontextualOp(PauliwordOp):
         if not np.all(Z2_symmerties.commutes_termwise(Z2_symmerties)):
             # need to account for Z2_symmerties not commuting with themselves
             sym_gens = self.generators
-            z2_mask = np.sum(sym_gens.adjacency_matrix, axis=1) == sym_gens.n_terms
+            # z2_mask = np.sum(sym_gens.adjacency_matrix, axis=1) == sym_gens.n_terms
+            z2_mask = np.sum(sym_gens.commutes_termwise(sym_gens), axis=1) == sym_gens.n_terms
 
             Z2_incomplete = sym_gens[z2_mask]
             _, missing_mask = sym_gens.generator_reconstruction(Z2_incomplete)
