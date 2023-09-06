@@ -19,7 +19,7 @@ pip install .
 ```
 
 ## Basic usage
-For basic usage see [notebooks](https://github.com/UCL-CCS/symmer/tree/main/notebooks)
+For basic usage see [readthedocs](https://symmer.readthedocs.io/en/latest/) and the following [notebooks](https://github.com/UCL-CCS/symmer/tree/main/notebooks)
 
 ## Included in symmer:
 Qubit reduction techniques such as [tapering](https://arxiv.org/abs/1701.08213) and [Contextual-Subspace VQE](https://doi.org/10.22331/q-2021-05-14-456) are effected by the underlying [stabilizer subspace projection mechanism](https://arxiv.org/abs/2204.02150); such methods may be differentiated by the approach taken to selecting the stabilizers one wishes to project over. 
