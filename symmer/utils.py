@@ -270,7 +270,7 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
         n_chunks = os.cpu_count()
         if (n_chunks<=1) or (P_op.n_terms<=1):
             # no multiprocessing possible
-            mat = _get_sparse_matrix_large_pauliwordop(P_op)
+            mat = ray.get(_get_sparse_matrix_large_pauliwordop.remote(P_op))
         else:
             # plus one below due to indexing (actual number of chunks ignores this value)
             n_chunks += 1
