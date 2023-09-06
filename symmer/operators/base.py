@@ -1105,28 +1105,38 @@ class PauliwordOp:
         Z2_symp = cref_matrix[self.n_terms:, np.all(~cref_matrix[:self.n_terms], axis=0)].T
         Z2_terms = PauliwordOp(Z2_symp, np.ones(Z2_symp.shape[0]))
 
-        _, mask = self.generator_reconstruction(Z2_terms)
-        remaining = self[~mask]
+        if Z2_terms.n_terms < 1:
+            remaining = self.cleanup()
+            if remaining.n_terms > 2 * remaining.n_qubits + 1:
+                # no symmetry component, therefore operator must be made up of pairwise
+                # anticommuting pauli operators to be noncontextual. This can have a max size of 2n+1, if larger cannot
+                # be noncontextual
+                return False
+            else:
+                # for remaining to be noncontextual must be disjoint union of cliques
+                # we can test for this below
+                adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
+                    np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
+                )
+                re_order_indices = np.argsort(adj_matrix_view.ravel())
+                # sort the adj matrix and vector of coefficients accordingly
+                sorted_terms = remaining.adjacency_matrix[re_order_indices]
+                # unique terms are those with non-zero entries in the adjacent row difference array
+                diff_adjacent = np.diff(sorted_terms, axis=0)
+                mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
+                clique_mask = sorted_terms[mask_unique_terms]
 
-        if remaining.n_terms > 0:
-            # for remaining to be noncontextual must be disjoint union of cliques
-            # we can test for this below
-            adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
-                np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
-            )
-            re_order_indices = np.argsort(adj_matrix_view.ravel())
-            # sort the adj matrix and vector of coefficients accordingly
-            sorted_terms = remaining.adjacency_matrix[re_order_indices]
-            # unique terms are those with non-zero entries in the adjacent row difference array
-            diff_adjacent = np.diff(sorted_terms, axis=0)
-            mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
-            clique_mask = sorted_terms[mask_unique_terms]
-
-            # check for overlap (array of ones == no overlap)
-            return np.all(np.sum(clique_mask, axis=0) == 1)
+                # check for overlap (array of ones == no overlap)
+                return np.all(np.sum(clique_mask, axis=0) == 1)
         else:
-            # case of fully commuting gens
-            return True
+
+            _, mask = self.generator_reconstruction(Z2_terms)
+            missing = self[~mask]
+
+            from symmer.utils import get_generators_including_xz_products
+            gens_xyz = get_generators_including_xz_products(missing)
+            gens = missing.generators
+            return check_adjmat_noncontextual(gens.adjacency_matrix) or check_adjmat_noncontextual(gens_xyz.adjacency_matrix)
 
 
     def _rotate_by_single_Pword(self,
