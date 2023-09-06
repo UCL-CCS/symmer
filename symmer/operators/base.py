@@ -13,6 +13,7 @@ from numbers import Number
 import multiprocessing as mp
 from cached_property import cached_property
 from scipy.sparse import csr_matrix, csc_matrix, coo_matrix, dok_matrix
+from symmer.operators.utils import _cref_binary
 
 from openfermion import QubitOperator, count_qubits
 import matplotlib.pyplot as plt
@@ -975,6 +976,14 @@ class PauliwordOp:
             np.array: A Boolean array indicating the term-wise commutation.
         """
         assert (self.n_qubits == PwordOp.n_qubits), 'Pauliwords defined for different number of qubits'
+
+        ### sparse code
+        # adjacency_matrix = (
+        #             csr_matrix(self.symp_matrix.astype(int)) @ csr_matrix(np.hstack((PwordOp.Z_block, PwordOp.X_block)).astype(int)).T)
+        # adjacency_matrix.data = ((adjacency_matrix.data % 2) != 0)
+        # return np.logical_not(adjacency_matrix.toarray())
+
+        ### dense code
         Omega_PwordOp_symp = np.hstack((PwordOp.Z_block,  PwordOp.X_block)).astype(int)
         return (self.symp_matrix @ Omega_PwordOp_symp.T) % 2 == 0
 
@@ -1088,11 +1097,49 @@ class PauliwordOp:
         Returns:
             bool: True if the operator is noncontextual, False if contextual.
         """
-        return check_adjmat_noncontextual(self.generators.adjacency_matrix)
-        # from symmer.utils import get_generators_including_xz_products
-        # return check_adjmat_noncontextual(get_generators_including_xz_products(self).adjacency_matrix)
+        if self.n_terms < 4:
+            return True
 
-    def _rotate_by_single_Pword(self, 
+        to_reduce = np.vstack([np.hstack([self.Z_block, self.X_block]), np.eye(2 * self.n_qubits, dtype=bool)])
+        cref_matrix = _cref_binary(to_reduce)
+        Z2_symp = cref_matrix[self.n_terms:, np.all(~cref_matrix[:self.n_terms], axis=0)].T
+        Z2_terms = PauliwordOp(Z2_symp, np.ones(Z2_symp.shape[0]))
+
+        if Z2_terms.n_terms < 1:
+            remaining = self.cleanup()
+            if remaining.n_terms > 2 * remaining.n_qubits + 1:
+                # no symmetry component, therefore operator must be made up of pairwise
+                # anticommuting pauli operators to be noncontextual. This can have a max size of 2n+1, if larger cannot
+                # be noncontextual
+                return False
+            else:
+                # for remaining to be noncontextual must be disjoint union of cliques
+                # we can test for this below
+                adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
+                    np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
+                )
+                re_order_indices = np.argsort(adj_matrix_view.ravel())
+                # sort the adj matrix and vector of coefficients accordingly
+                sorted_terms = remaining.adjacency_matrix[re_order_indices]
+                # unique terms are those with non-zero entries in the adjacent row difference array
+                diff_adjacent = np.diff(sorted_terms, axis=0)
+                mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
+                clique_mask = sorted_terms[mask_unique_terms]
+
+                # check for overlap (array of ones == no overlap)
+                return np.all(np.sum(clique_mask, axis=0) == 1)
+        else:
+
+            _, mask = self.generator_reconstruction(Z2_terms)
+            missing = self[~mask]
+
+            from symmer.utils import get_generators_including_xz_products
+            gens_xyz = get_generators_including_xz_products(missing)
+            gens = missing.generators
+            return check_adjmat_noncontextual(gens.adjacency_matrix) or check_adjmat_noncontextual(gens_xyz.adjacency_matrix)
+
+
+    def _rotate_by_single_Pword(self,
             Pword: "PauliwordOp", 
             angle: float = None
         ) -> "PauliwordOp":

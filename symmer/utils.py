@@ -431,4 +431,8 @@ def get_generators_including_xz_products(operator: PauliwordOp) -> PauliwordOp:
     sym_final = np.hstack((np.logical_or(X_new, Y_new),
                            np.logical_or(Z_new, Y_new)))
 
-    return PauliwordOp(sym_final, np.ones(sym_final.shape[0]))
+    # remove duplicates due to same X_new and Z_new positions
+    xyz_gens = PauliwordOp(sym_final, np.ones(sym_final.shape[0])).cleanup()
+    xyz_gens.coeff_vec = np.ones_like(xyz_gens.coeff_vec)
+
+    return xyz_gens

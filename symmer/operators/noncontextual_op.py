@@ -14,6 +14,7 @@ from scipy.optimize import differential_evolution, shgo
 from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
 from symmer.operators.utils import binomial_coefficient, perform_noncontextual_sweep
 import ray
+from symmer.utils import random_anitcomm_2n_1_PauliwordOp
 
 class NoncontextualOp(PauliwordOp):
     """ 
@@ -251,7 +252,94 @@ class NoncontextualOp(PauliwordOp):
             _, noncontextual_terms_mask = H.generator_reconstruction(generators, override_independence_check=True)
 
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
-    
+
+    @classmethod
+    def random(cls,
+            n_qubits: int,
+            n_cliques:Optional[int]=3,
+            complex_coeffs:Optional[bool]=False,
+            n_commuting_terms:Optional[int]=None,
+        ) -> "NoncontextualOp":
+        """
+        Generate a random Noncontextual operator with normally distributed coefficients.
+        Note to maximise size choose number of n_cliques to be 3 (and for 2<= n_cliques <= 5 the operator
+        will be larger than only using commuting generators).
+        WARNING: this function can generates an exponentially large Hamiltonian unless n_terms set.
+        size when NOT set is: n_cliques * [ 2**(n_qubits -  int(np.ceil((n_cliques - 1) / 2))) ]
+
+        Note: The number of terms in output will be: n_cliques*n_commuting_terms
+
+        Args:
+            n_qubits (int): Number of qubits noncontextual operator defined on
+            n_cliques (int): Number of cliques representives in operator
+            complex_coeffs (bool): Whether to generate complex coefficients (default: True).
+            n_commuting_terms (int): Optional int for number of commuting terms. if not set then it will be: 2**(n_qubits -  int(np.ceil((n_cliques - 1) / 2))) (i.e. exponentially large)
+
+        Returns:
+            NoncontextualOp: A random NoncontextualOp object.
+        """
+        assert n_cliques > 1, 'number of cliques must be set to 2 or more (cannot have one anticommuting term)'
+        n_clique_qubits = int(np.ceil((n_cliques - 1) / 2))
+        assert n_clique_qubits <= n_qubits, 'cannot have {n_cliques} anticommuting cliques on {n_qubits} qubits'
+
+        remaining_qubits = n_qubits - n_clique_qubits
+
+        if n_commuting_terms:
+            assert n_commuting_terms<= 2**remaining_qubits, f'cannot have {n_commuting_terms} commuting operators on {remaining_qubits} qubits'
+
+        if remaining_qubits>=1:
+            if n_commuting_terms==None:
+                n_commuting_terms = 2 ** (remaining_qubits)
+                XZ_block = (((np.arange(n_commuting_terms)[:, None] & (1 << np.arange(2 * remaining_qubits))[
+                                                                            ::-1])) > 0).astype(bool)
+            else:
+                # randomly chooise Z bitstrings in symp matrix:
+                indices = np.unique(np.random.random_integers(0,
+                                                              high=2**remaining_qubits-1,
+                                                              size=10*n_commuting_terms))
+                while len(indices) < n_commuting_terms:
+                    indices = np.unique(np.append(indices,
+                                                  np.unique(np.random.random_integers(0,
+                                                                                      high=2 ** remaining_qubits - 1,
+                                                                                      size=10*n_commuting_terms)))
+                                        )
+
+                indices = indices[:n_commuting_terms]
+                XZ_block = (((indices[:, None] & (1 << np.arange(2 * remaining_qubits))[
+                                                                        ::-1])) > 0).astype(bool)
+
+        if n_cliques == 0:
+            H_nc = PauliwordOp(XZ_block, np.ones(XZ_block.shape[0]))
+
+        else:
+            AC = random_anitcomm_2n_1_PauliwordOp(n_clique_qubits,
+                                                  apply_clifford=True)[:n_cliques]
+            AC.coeff_vec = np.ones_like(AC.coeff_vec)
+            if remaining_qubits >= 1:
+                diag_H = PauliwordOp(XZ_block, np.ones(XZ_block.shape[0]))
+            else:
+                diag_H = PauliwordOp.from_list(['I' * remaining_qubits])
+
+            AC_full = PauliwordOp.from_list(['I' * remaining_qubits]).tensor(AC)
+            H_sym = diag_H.tensor(PauliwordOp.from_list(['I' * n_clique_qubits]))
+            H_nc = AC_full * H_sym
+            assert AC.n_terms * n_commuting_terms == H_nc.n_terms, 'operator not largest it can be'
+
+        coeff_vec = np.random.randn(H_nc.n_terms).astype(complex)
+        if complex_coeffs:
+            coeff_vec += 1j * np.random.randn(H_nc.n_terms)
+
+        # apply clifford rotations to get rid of some of generation structure
+        U_cliff_rotations = []
+        for _ in range(n_qubits * 5):
+            P_rand = PauliwordOp.random(H_nc.n_qubits, n_terms=1)
+            P_rand.coeff_vec = [1]
+            U_cliff_rotations.append((P_rand, None))
+
+        H_nc = H_nc.perform_rotations(U_cliff_rotations)
+
+        return cls(H_nc.symp_matrix, coeff_vec)
+
     @classmethod
     def _from_stabilizers_noncontextual_op(cls, 
             H:PauliwordOp, stabilizers: IndependentOp, use_jordan_product=False
@@ -324,7 +412,8 @@ class NoncontextualOp(PauliwordOp):
         if not np.all(Z2_symmerties.commutes_termwise(Z2_symmerties)):
             # need to account for Z2_symmerties not commuting with themselves
             sym_gens = self.generators
-            z2_mask = np.sum(sym_gens.adjacency_matrix, axis=1) == sym_gens.n_terms
+            # z2_mask = np.sum(sym_gens.adjacency_matrix, axis=1) == sym_gens.n_terms
+            z2_mask = np.sum(sym_gens.commutes_termwise(sym_gens), axis=1) == sym_gens.n_terms
 
             Z2_incomplete = sym_gens[z2_mask]
             _, missing_mask = sym_gens.generator_reconstruction(Z2_incomplete)
@@ -342,25 +431,45 @@ class NoncontextualOp(PauliwordOp):
             _, z2_mask = self.generator_reconstruction(Z2_symmerties)
 
         remaining = self[~z2_mask]
-        self.decomposed = remaining.clique_cover('C')
 
-        self.n_cliques = len(self.decomposed)
-        if self.n_cliques > 0:
-            # choose clique representatives with the greatest coefficient
-            # see equation 3 of https://arxiv.org/pdf/2002.05693.pdf
-            clique_rep_list = [C.sort()[0] for C in self.decomposed.values()]
-            self.clique_operator = AntiCommutingOp.from_PauliwordOp(
-                sum(clique_rep_list)
+        if remaining.n_terms>0:
+            ## rather than doing graph coloring (line below)
+            #self.decomposed = remaining.clique_cover('C')
+
+            ## use noncon structure of disjoint cliques
+            # remaining must be disjoint union of commuting cliques...
+            # So find unique rows of adj matrix and check there is NO overlap between them (disjoint!)
+            adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
+                np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
             )
-            self.clique_operator.coeff_vec = np.ones_like(self.clique_operator.coeff_vec)
+            re_order_indices = np.argsort(adj_matrix_view.ravel())
+            # sort the adj matrix and vector of coefficients accordingly
+            sorted_terms = remaining.adjacency_matrix[re_order_indices]
+            # unique terms are those with non-zero entries in the adjacent row difference array
+            diff_adjacent = np.diff(sorted_terms, axis=0)
+            mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
+            clique_mask = sorted_terms[mask_unique_terms]
+            self.decomposed = {ind: remaining[c_mask] for ind, c_mask in enumerate(clique_mask)}
 
-            ## cliques can form new Z2 syms
-            sym_from_cliques = sum((self.decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
-                                   self.decomposed[n].n_terms > 1)
-            if sym_from_cliques:
-                Z2_symmerties = (sym_from_cliques + Z2_symmerties).generators
+            self.n_cliques = len(self.decomposed)
+            if self.n_cliques > 0:
+                # choose clique representatives with the greatest coefficient
+                # see equation 3 of https://arxiv.org/pdf/2002.05693.pdf
+                clique_rep_list = [C.sort()[0] for C in self.decomposed.values()]
+                self.clique_operator = AntiCommutingOp.from_PauliwordOp(
+                    sum(clique_rep_list)
+                )
+                self.clique_operator.coeff_vec = np.ones_like(self.clique_operator.coeff_vec)
+
+                ## cliques can form new Z2 syms
+                sym_from_cliques = sum((self.decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+                                       self.decomposed[n].n_terms > 1)
+                if sym_from_cliques:
+                    Z2_symmerties = (sym_from_cliques + Z2_symmerties).generators
         else:
             self.clique_operator = PauliwordOp.empty(self.n_qubits).cleanup()
+            self.decomposed = dict()
+            self.n_cliques=0
 
         self.symmetry_generators = IndependentOp.from_PauliwordOp(Z2_symmerties)
         _, Z2_mask = self.generator_reconstruction(Z2_symmerties)
