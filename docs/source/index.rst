@@ -16,6 +16,9 @@ Welcome to Symmer's documentation!
 .. image:: https://img.shields.io/badge/Supported%20By-UNITARY%20FUND-brightgreen.svg?style=for-the-badge
   :target: http://unitary.fund
   :alt: Unitary Fund
+.. image:: https://readthedocs.org/projects/symmer/badge/?version=latest
+    :target: https://symmer.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
 
 `symmer <https://github.com/UCL-CCS/symmer>`_ is an easy and **fast** python library
 for manipulations of *'Pauli operators and Quantum States'*. One of the primary
@@ -41,13 +44,13 @@ library, that form a base for all operations, are:
     .. grid-item-card::  QuantumState
 
         The :mod:`QuantumState` class contains tools for working with
-        **'quantum states'**. With this you can:
+        **quantum states**. With this you can:
 
         * resample a state :math:`10^{15}` times in nanoseconds (useful for bootstrapping)
         * evaluate expectation values with a :mod:`PauliwordOp` in linear time
         * compute various quantities including entanglement measures
         * Implement partial traces
-        * Plot quantum state
+        * Plot amplitudes
         * Make examining real NISQ data more streamlined
 
 
@@ -60,6 +63,7 @@ The following guides give a basic introduction to the various parts:
   :maxdepth: 1
 
   installation
+  HPC
 
 
 
