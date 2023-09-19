@@ -711,6 +711,29 @@ def test_to_sparse_matrix_2(
     P = PauliwordOp.from_dictionary(P_dict)
     assert np.all(P.to_sparse_matrix.toarray() == P_array)
 
+def test_to_sparse_matrix_large_operator():
+    """ Tests multiplication and the Qiskit conversion
+    """
+    H = PauliwordOp.from_dictionary({'ZIIIIIIIZIXXXIII': (-1.333664871035997-0.6347579982999967j),
+                                     'IIIIIYIIXYZZIXXI': (0.6121055433989232+2.0175827791182313j),
+                                     'IIIXIZZIIZIIXIZI': (-0.5187971729475656+1.2184045529704965j),
+                                     'ZIIXYYZZIYYXXIZY': (0.6788676757886678+1.867085666718753j),
+                                     'IZXIYIXYXIIIZZIX': (-1.0665060328185856-0.5702647494844407j),
+                                     'ZIXXIIIZIIIIZIXX': (0.17268863171166954-0.07117422292367692j),
+                                     'IIYXIIYIIIXIIZXI': (0.03704770372393225-0.21589376964746243j),
+                                     'IYIZXXIXZXXZIIII': (0.29998428856285453-0.9742733999161437j),
+                                     'YXIXIIZXZIIIIIYX': (0.3421035543407282-0.20273712913326358j),
+                                     'XXXYIIIIXIIXIXIZ': (1.1502457768722+1.3148268876228302j)})
+    mat_sparse = H.to_sparse_matrix
+
+    basis = H.copy()
+    basis.coeff_vec = np.ones_like(basis.coeff_vec)
+    out = PauliwordOp.from_matrix(mat_sparse,
+                                  strategy='full_basis',
+                                  operator_basis=basis,
+                                  disable_loading_bar=True)
+    assert H == out, 'to_sparse_matrix of large Pauli operator is failing'
+
 
 def test_QuantumState_overlap():
     for n_q in range(2,5):
