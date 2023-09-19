@@ -297,7 +297,7 @@ def _get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     """
     """
     nq = P_op.n_qubits
-    mat = PauliwordOp.empty(nq).to_sparse_matrix
+    mat = csr_matrix(([], ([],[])), shape=(2**nq,2**nq))
     for op in P_op:
         left_tensor = np.hstack((op.X_block[:, :nq // 2],
                                  op.Z_block[:, :nq // 2]))
