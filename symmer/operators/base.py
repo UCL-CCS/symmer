@@ -1099,6 +1099,13 @@ class PauliwordOp:
         """
         if self.n_terms < 4:
             return True
+        elif self.n_terms <= 2 * self.n_qubits + 1:
+            # check all operators anticommute
+            adj_mat = self.adjacency_matrix
+            adj_mat[np.diag_indices_from(adj_mat)] = False
+            if ~np.any(adj_mat):
+                # operator is an anticommuting set of Pauli operators
+                return True
 
         to_reduce = np.vstack([np.hstack([self.Z_block, self.X_block]), np.eye(2 * self.n_qubits, dtype=bool)])
         cref_matrix = _cref_binary(to_reduce)
@@ -1129,14 +1136,14 @@ class PauliwordOp:
                 # check for overlap (array of ones == no overlap)
                 return np.all(np.sum(clique_mask, axis=0) == 1)
         else:
-
-            _, mask = self.generator_reconstruction(Z2_terms)
-            missing = self[~mask]
-
             from symmer.utils import get_generators_including_xz_products
-            gens_xyz = get_generators_including_xz_products(missing)
-            gens = missing.generators
-            return check_adjmat_noncontextual(gens.adjacency_matrix) or check_adjmat_noncontextual(gens_xyz.adjacency_matrix)
+            gens_xyz = get_generators_including_xz_products(self)
+            gens = gens_xyz.generators
+            return check_adjmat_noncontextual(gens.adjacency_matrix) or check_adjmat_noncontextual(
+                gens_xyz.adjacency_matrix)
+
+
+        
 
 
     def _rotate_by_single_Pword(self,
