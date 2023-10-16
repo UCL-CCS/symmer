@@ -583,7 +583,8 @@ def test_adjacency_matrix(
         (['XZ', 'ZX', 'XX', 'YY'],True),
         (['XX', 'YY', 'ZZ', 'II'],True),
         (['II', 'ZZ', 'ZX', 'ZY', 'XZ', 'YZ', 'XX', 'XY', 'YX', 'YY'], False),
-        (['III','IIZ','ZII','IXZ','IYZ','YYZ'], False)
+        (['III','IIZ','ZII','IXZ','IYZ','YYZ'], False),
+        (['IZI', 'ZII','IIY','ZZY','XXZ','XYZ','YXZ','YYZ','XXX','XYX','YXX','YYX'], True)
     ]
 )
 def test_is_noncontextual(P_list, is_noncon):
