@@ -1132,7 +1132,6 @@ class PauliwordOp:
         else:
             from symmer.utils import get_generators_including_xz_products
             gens_xyz = get_generators_including_xz_products(self)
-            # gens = gens_xyz.generators
             gens = self.generators
             return check_adjmat_noncontextual(gens.adjacency_matrix) or check_adjmat_noncontextual(
                 gens_xyz.adjacency_matrix)
