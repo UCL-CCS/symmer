@@ -1098,6 +1098,7 @@ class PauliwordOp:
             bool: True if the operator is noncontextual, False if contextual.
         """
         if self.n_terms < 4:
+            # all operators with 3 or less P are noncontextual
             return True
 
         to_reduce = np.vstack([np.hstack([self.Z_block, self.X_block]), np.eye(2 * self.n_qubits, dtype=bool)])
@@ -1129,14 +1130,13 @@ class PauliwordOp:
                 # check for overlap (array of ones == no overlap)
                 return np.all(np.sum(clique_mask, axis=0) == 1)
         else:
-
-            _, mask = self.generator_reconstruction(Z2_terms)
-            missing = self[~mask]
-
+            gens = self.generators
+            if check_adjmat_noncontextual(gens.adjacency_matrix):
+                return True
             from symmer.utils import get_generators_including_xz_products
-            gens_xyz = get_generators_including_xz_products(missing)
-            gens = missing.generators
-            return check_adjmat_noncontextual(gens.adjacency_matrix) or check_adjmat_noncontextual(gens_xyz.adjacency_matrix)
+            gens_xyz = get_generators_including_xz_products(self)
+            return check_adjmat_noncontextual(gens_xyz.adjacency_matrix)
+
 
 
     def _rotate_by_single_Pword(self,
