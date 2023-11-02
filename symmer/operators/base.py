@@ -1,7 +1,7 @@
 import os
 import quimb
 from symmer.operators.utils import *
-import ray
+from ray import put, get, remote
 import numpy as np
 import pandas as pd
 import networkx as nx
@@ -829,8 +829,8 @@ class PauliwordOp:
         """
         if self.n_terms > 1:
             # parallelize if number of terms greater than one
-            psi_ray_store = ray.put(psi)
-            expvals = np.array(ray.get(
+            psi_ray_store = put(psi)
+            expvals = np.array(get(
                 [single_term_expval.remote(P, psi_ray_store) for P in self]))
         else:
             expvals = np.array(single_term_expval(self, psi))
@@ -2399,7 +2399,7 @@ def get_ij_operator(i:int, j:int, n_qubits:int,
     else:
         return ij_symp_matrix, coeffs
 
-@ray.remote(num_cpus=os.cpu_count(),
+@remote(num_cpus=os.cpu_count(),
             runtime_env={
                 "env_vars": {
                     "NUMBA_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),

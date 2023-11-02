@@ -4,7 +4,7 @@ import warnings
 import multiprocessing as mp
 from symmer.operators.utils import _rref_binary, _cref_binary, check_independent
 from symmer.operators import PauliwordOp, QuantumState, symplectic_to_string, single_term_expval
-import ray
+from ray import put, get, remote
 
 class IndependentOp(PauliwordOp):
     """ 
@@ -296,8 +296,8 @@ class IndependentOp(PauliwordOp):
         #     self.coeff_vec = np.array(
         #         list(pool.starmap(assign_value, [(S, ref_state, threshold) for S in self]))
         #     )
-        ref_state_ray_store = ray.put(ref_state)
-        self.coeff_vec = np.array(ray.get(
+        ref_state_ray_store = put(ref_state)
+        self.coeff_vec = np.array(get(
                         [single_term_expval.remote(S, ref_state_ray_store) for S in self]))
         # set anything below threshold to be zero
         self.coeff_vec[np.abs(self.coeff_vec)<threshold] = 0

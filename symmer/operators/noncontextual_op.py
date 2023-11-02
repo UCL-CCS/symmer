@@ -13,7 +13,7 @@ from matplotlib import pyplot as plt
 from scipy.optimize import differential_evolution, shgo
 from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
 from symmer.operators.utils import binomial_coefficient, perform_noncontextual_sweep
-import ray
+from ray import put, get, remote
 from symmer.utils import random_anitcomm_2n_1_PauliwordOp
 
 class NoncontextualOp(PauliwordOp):
@@ -748,8 +748,8 @@ class NoncontextualSolver:
             nu_list[:,~self.fixed_ev_mask] = np.array(list(itertools.product([-1,1],repeat=np.sum(~self.fixed_ev_mask))))
         
         # # optimize over all discrete value assignments of nu in parallel
-        noncon_H = ray.put(self.NC_op)
-        tracker = np.array(ray.get(
+        noncon_H = put(self.NC_op)
+        tracker = np.array(get(
             [get_noncon_energy.remote(noncon_H, nu_vec) for nu_vec in nu_list]))
 
         # with mp.Pool(mp.cpu_count()) as pool:
@@ -879,7 +879,7 @@ class NoncontextualSolver:
         return self.NC_op.get_energy(nu_vec), nu_vec
 
 
-@ray.remote(num_cpus=os.cpu_count(),
+@remote(num_cpus=os.cpu_count(),
             runtime_env={
                 "env_vars": {
                     "NUMBA_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
