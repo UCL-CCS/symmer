@@ -5,7 +5,7 @@ from symmer import QuantumState, PauliwordOp
 from symmer.operators.utils import (
     symplectic_to_string, safe_PauliwordOp_to_dict, safe_QuantumState_to_dict
 )
-from symmer.evolution import PauliwordOp_to_QuantumCircuit, get_CNOT_connectivity_graph
+from symmer.evolution import PauliwordOp_to_QuantumCircuit, get_CNOT_connectivity_graph, topology_match_score
 from networkx.algorithms.cycles import cycle_basis
 from scipy.optimize import minimize
 from copy import deepcopy
@@ -246,6 +246,8 @@ class ADAPT_VQE(VQE_Driver):
     TETRIS = False
     linearity_biased = True
     bias = 1/3
+    topology = None
+    subgraph_match_depth = 3
     
     def __init__(self,
         observable: PauliwordOp,
@@ -354,19 +356,13 @@ class ADAPT_VQE(VQE_Driver):
         scores = abs(self.pool_gradient())
 
         if self.linearity_biased:
+            assert self.topology is not None, 'No hardware topology specified'
             # linearity-biased-ADAPT-VQE favours circuits with linear qubit connectivity
             linearity_scores = []
             for index in range(self.excitation_pool.n_terms):
                 adapt_op_temp = self.adapt_operator.append(self.excitation_pool[index])
-                circuit_temp = PauliwordOp_to_QuantumCircuit(
-                    PwordOp=adapt_op_temp, ref_state=self.ref_state, bind_params=False)
-                connectivity = get_CNOT_connectivity_graph(circuit_temp)
-                # the presence of cycles in the CNOT connectivity graph is penalised in the score
-                # linear circuits result in a linearity of 1, hence their score is not affected here.
                 linearity_scores.append(
-                    (
-                        circuit_temp.num_qubits - len([a for b in cycle_basis(connectivity) for a in b])*self.bias
-                    ) / circuit_temp.num_qubits
+                    topology_match_score(adapt_op_temp, self.topology, max_depth=self.subgraph_match_depth)
                 )
             scores *= np.array(linearity_scores)
         
