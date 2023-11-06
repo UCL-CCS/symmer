@@ -1,9 +1,14 @@
 import os
+import sys
 import numpy as np
+import quimb
 from ray import remote, put, get
 from multiprocessing import Process, Queue, set_start_method
 
-set_start_method('fork', force = True)
+if sys.platform.lower() in ['linux', 'darwin']:
+    set_start_method('fork', force = True)
+else:
+    set_start_method('spawn', force = True)
 
 class ProcessHandler:
 
@@ -30,13 +35,13 @@ class ProcessHandler:
             print(f'*** executing in ray mode ***')
         # duplicate func with ray.remote wrapper :
         @remote(num_cpus=self.n_logical_cores,
-            # runtime_env={
-            #     "env_vars": {
-            #         "NUMBA_NUM_THREADS":   os.getenv("NUMBA_NUM_THREADS"),
-            #         "OMP_NUM_THREADS":     os.getenv("NUMBA_NUM_THREADS"),
-            #         "NUMEXPR_MAX_THREADS": str(self.n_logical_cores)
-            #     }
-            # }
+            runtime_env={
+                "env_vars": {
+                    "NUMBA_NUM_THREADS":   os.getenv("NUMBA_NUM_THREADS"),
+                    "OMP_NUM_THREADS":     os.getenv("NUMBA_NUM_THREADS"),
+                    "NUMEXPR_MAX_THREADS": str(self.n_logical_cores)
+                }
+            }
         )
         def _func(iter, shared):
             return func(iter, shared)
