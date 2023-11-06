@@ -1,7 +1,7 @@
 from cached_property import cached_property
 from qiskit.opflow import CircuitStateFn
 from qiskit import QuantumCircuit
-from symmer import QuantumState, PauliwordOp
+from symmer import process, QuantumState, PauliwordOp
 from symmer.operators.utils import (
     symplectic_to_string, safe_PauliwordOp_to_dict, safe_QuantumState_to_dict
 )
@@ -10,7 +10,6 @@ from networkx.algorithms.cycles import cycle_basis
 from scipy.optimize import minimize
 from copy import deepcopy
 import numpy as np
-import multiprocessing as mp
 from typing import *
 
 class VQE_Driver:
@@ -164,11 +163,11 @@ class VQE_Driver:
             Ansatz parameter gradient (np.array)
         """
         if self.expectation_eval.find('projector') == -1:
-            with mp.Pool(mp.cpu_count()) as pool:
-                grad_vec = pool.starmap(
-                    self.partial_derivative, 
-                    [(x, i) for i in range(self.circuit.num_parameters)]
-                )
+            @process.parallelize
+            def f(index, param):
+                return self.partial_derivative(param,index)
+            grad_vec = f(range(self.circuit.num_parameters), x)
+
         else:
             grad_vec = [self.partial_derivative(x, i) for i in range(self.circuit.num_parameters)]
         
@@ -278,9 +277,11 @@ class ADAPT_VQE(VQE_Driver):
         Returns:
             List of commutators [H, P]
         """
-        with mp.Pool(mp.cpu_count()) as pool:
-            commutators = pool.map(self.observable.commutator, self.excitation_pool)
-        return list(map(lambda x:x*1j, commutators))
+        @process.parallelize
+        def f(P, obs):
+            return obs.commutator(P)*1j
+        commutators = f(self.excitation_pool, self.observable)
+        return commutators
         
     def _derivative_from_commutators(self, index: int) -> float:
         """ 
@@ -332,8 +333,10 @@ class ADAPT_VQE(VQE_Driver):
                 self.current_state = self.get_state(circuit_temp, self.opt_parameters)
             if self.expectation_eval in ['sparse_array', 'symbolic_direct', 'observable_rotation']:
                 # the commutator method may be parallelized since the state is constant
-                with mp.Pool(mp.cpu_count()) as pool:
-                    gradient = pool.map(self._derivative_from_commutators, range(self.excitation_pool.n_terms))
+                @process.parallelize
+                def f(index, obs):
+                    return obs._derivative_from_commutators(index)
+                gradient = f(range(self.excitation_pool.n_terms), self)
             else:
                 # ... unless using symbolic_projector since this is multiprocessed
                 gradient = list(map(self._derivative_from_commutators, range(self.excitation_pool.n_terms)))
