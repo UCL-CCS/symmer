@@ -1,9 +1,7 @@
 import warnings
-import os
 import itertools
 import numpy as np
 import networkx as nx
-import multiprocessing as mp
 import qubovert as qv
 from cached_property import cached_property
 from time import time
@@ -13,8 +11,8 @@ from matplotlib import pyplot as plt
 from scipy.optimize import differential_evolution, shgo
 from symmer.operators import PauliwordOp, IndependentOp, AntiCommutingOp, QuantumState
 from symmer.operators.utils import binomial_coefficient, perform_noncontextual_sweep
-import ray
 from symmer.utils import random_anitcomm_2n_1_PauliwordOp
+from symmer import process
 
 class NoncontextualOp(PauliwordOp):
     """ 
@@ -748,14 +746,7 @@ class NoncontextualSolver:
             nu_list[:,~self.fixed_ev_mask] = np.array(list(itertools.product([-1,1],repeat=np.sum(~self.fixed_ev_mask))))
         
         # # optimize over all discrete value assignments of nu in parallel
-        noncon_H = ray.put(self.NC_op)
-        tracker = np.array(ray.get(
-            [get_noncon_energy.remote(noncon_H, nu_vec) for nu_vec in nu_list]))
-
-        # with mp.Pool(mp.cpu_count()) as pool:
-        #     tracker = pool.map(self.NC_op.get_energy, nu_list)
-        
-        # find the lowest energy eigenvalue assignment from the full list
+        tracker = get_noncon_energy(nu_list, self.NC_op)
         full_search_results = zip(tracker, nu_list)
         energy, fixed_nu = min(full_search_results, key=lambda x:x[0])
 
@@ -878,20 +869,9 @@ class NoncontextualSolver:
         
         return self.NC_op.get_energy(nu_vec), nu_vec
 
-
-@ray.remote(num_cpus=os.cpu_count(),
-            runtime_env={
-                "env_vars": {
-                    "NUMBA_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
-                    # "OMP_NUM_THREADS": str(os.cpu_count()),
-                    "OMP_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
-                    "NUMEXPR_MAX_THREADS": str(os.cpu_count())
-                }
-            }
-            )
-def get_noncon_energy(noncon_H:NoncontextualOp, nu: np.array) -> float:
+@process.parallelize
+def get_noncon_energy(nu: np.array, noncon_H:NoncontextualOp) -> float:
     """
     The classical objective function that encodes the noncontextual energies.
     """
-    s0, si = noncon_H.get_symmetry_contributions(nu)
-    return s0 - np.linalg.norm(si)
+    return noncon_H.get_energy(nu)
