@@ -1,7 +1,9 @@
 import os
 import numpy as np
 from ray import remote, put, get
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, set_start_method
+
+set_start_method('fork', force = True)
 
 class ProcessHandler:
 
