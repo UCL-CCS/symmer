@@ -1,23 +1,21 @@
-import os
-import quimb
-from symmer.operators.utils import *
+import warnings
 import numpy as np
 import pandas as pd
 import networkx as nx
+import matplotlib.pyplot as plt
+from symmer import process
+from symmer.operators.utils import *
+from symmer.operators.utils import _cref_binary
 from tqdm.auto import tqdm
 from copy import deepcopy
 from functools import reduce
 from typing import List, Union, Optional
 from numbers import Number
 from cached_property import cached_property
-from scipy.sparse import csr_matrix, csc_matrix, coo_matrix, dok_matrix
-from symmer import process
-from symmer.operators.utils import _cref_binary
-from openfermion import QubitOperator, count_qubits
-import matplotlib.pyplot as plt
-from qiskit.opflow import PauliSumOp as ibm_PauliSumOp
 from scipy.stats import unitary_group
-import warnings
+from scipy.sparse import csr_matrix, csc_matrix, coo_matrix, dok_matrix
+from openfermion import QubitOperator, count_qubits
+from qiskit.opflow import PauliSumOp as ibm_PauliSumOp
 warnings.simplefilter('always', UserWarning)
 
 from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning
@@ -66,6 +64,12 @@ class PauliwordOp:
         assert(self.n_terms==len(self.coeff_vec)), 'coeff list and Pauliwords not same length'
         self.X_block = self.symp_matrix[:, :self.n_qubits]
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
+
+    def set_processing_method(self, method):
+        """ Set the method to use when running parallelizable processes. 
+        Valid options are: mp, ray, single_thread.
+        """
+        process.method = method
         
     @classmethod
     def random(cls, 
