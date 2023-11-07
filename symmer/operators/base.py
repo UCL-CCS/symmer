@@ -1,25 +1,21 @@
-import os
-import quimb
-from symmer.operators.utils import *
-import ray
+import warnings
 import numpy as np
 import pandas as pd
 import networkx as nx
+import matplotlib.pyplot as plt
+from symmer import process
+from symmer.operators.utils import *
+from symmer.operators.utils import _cref_binary
 from tqdm.auto import tqdm
 from copy import deepcopy
 from functools import reduce
 from typing import List, Union, Optional
 from numbers import Number
-import multiprocessing as mp
 from cached_property import cached_property
-from scipy.sparse import csr_matrix, csc_matrix, coo_matrix, dok_matrix
-from symmer.operators.utils import _cref_binary
-
-from openfermion import QubitOperator, count_qubits
-import matplotlib.pyplot as plt
-from qiskit.opflow import PauliSumOp as ibm_PauliSumOp
 from scipy.stats import unitary_group
-import warnings
+from scipy.sparse import csr_matrix, csc_matrix, coo_matrix, dok_matrix
+from openfermion import QubitOperator, count_qubits
+from qiskit.opflow import PauliSumOp as ibm_PauliSumOp
 warnings.simplefilter('always', UserWarning)
 
 from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning
@@ -68,6 +64,12 @@ class PauliwordOp:
         assert(self.n_terms==len(self.coeff_vec)), 'coeff list and Pauliwords not same length'
         self.X_block = self.symp_matrix[:, :self.n_qubits]
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
+
+    def set_processing_method(self, method):
+        """ Set the method to use when running parallelizable processes. 
+        Valid options are: mp, ray, single_thread.
+        """
+        process.method = method
         
     @classmethod
     def random(cls, 
@@ -828,10 +830,11 @@ class PauliwordOp:
             complex: The expectation value.
         """
         if self.n_terms > 1:
-            # parallelize if number of terms greater than one
-            psi_ray_store = ray.put(psi)
-            expvals = np.array(ray.get(
-                [single_term_expval.remote(P, psi_ray_store) for P in self]))
+            @process.parallelize
+            def f(P, psi):
+                return single_term_expval(P, psi)
+
+            expvals = np.array(f(self, psi))
         else:
             expvals = np.array(single_term_expval(self, psi))
 
@@ -2399,16 +2402,7 @@ def get_ij_operator(i:int, j:int, n_qubits:int,
     else:
         return ij_symp_matrix, coeffs
 
-@ray.remote(num_cpus=os.cpu_count(),
-            runtime_env={
-                "env_vars": {
-                    "NUMBA_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
-                    # "OMP_NUM_THREADS": str(os.cpu_count()),
-                    "OMP_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
-                    "NUMEXPR_MAX_THREADS": str(os.cpu_count())
-                }
-            }
-            )
+
 def single_term_expval(P_op: PauliwordOp, psi: QuantumState) -> float:
     """ 
     Expectation value calculation for a single Pauli operator given a QuantumState psi

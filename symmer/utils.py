@@ -7,7 +7,6 @@ import py3Dmol
 from scipy.sparse import csr_matrix
 from scipy.sparse import kron as sparse_kron
 from symmer.operators.utils import _rref_binary
-import multiprocessing as mp
 import ray
 import os
 # from psutil import cpu_count

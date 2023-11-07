@@ -1,10 +1,9 @@
 import numpy as np
-from typing import Dict, List, Tuple, Union
 import warnings
-import multiprocessing as mp
+from typing import Dict, List, Tuple, Union
+from symmer import process
 from symmer.operators.utils import _rref_binary, _cref_binary, check_independent
 from symmer.operators import PauliwordOp, QuantumState, symplectic_to_string, single_term_expval
-import ray
 
 class IndependentOp(PauliwordOp):
     """ 
@@ -292,17 +291,7 @@ class IndependentOp(PauliwordOp):
         assert ref_state._is_normalized(), 'Reference state is not normalized.'
         
         ### update the stabilizers assignments in parallel
-        # with mp.Pool(mp.cpu_count()) as pool:
-        #     self.coeff_vec = np.array(
-        #         list(pool.starmap(assign_value, [(S, ref_state, threshold) for S in self]))
-        #     )
-        ref_state_ray_store = ray.put(ref_state)
-        self.coeff_vec = np.array(ray.get(
-                        [single_term_expval.remote(S, ref_state_ray_store) for S in self]))
-        # set anything below threshold to be zero
-        self.coeff_vec[np.abs(self.coeff_vec)<threshold] = 0
-        self.coeff_vec = np.sign(self.coeff_vec)
-        
+        self.coeff_vec = np.array(assign_value(self, ref_state))
         # raise a warning if any stabilizers are assigned a zero value
         if np.any(self.coeff_vec==0):
             S_zero = self[self.coeff_vec==0]; S_zero.coeff_vec[:]=1
@@ -366,8 +355,8 @@ class IndependentOp(PauliwordOp):
         """
         return iter([self[i] for i in range(self.n_terms)])
 
-
-def assign_value(S: PauliwordOp, ref_state: QuantumState, threshold: float) -> int:
+@process.parallelize
+def assign_value(S: PauliwordOp, ref_state: QuantumState) -> int:
     """
     Measure expectation value of stabilizer on input reference state.
     Args: 
@@ -378,6 +367,7 @@ def assign_value(S: PauliwordOp, ref_state: QuantumState, threshold: float) -> i
     Returns:
         Expectation Value (int) of stabilizer on input reference state.
     """
+    threshold = 0.5
     expval = single_term_expval(S, ref_state)
     # if this expval exceeds some predefined threshold then assign the corresponding 
     # ±1 eigenvalue. Otherwise, return 0 as insufficient evidence to fix the value.
