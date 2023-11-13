@@ -5,7 +5,7 @@ from symmer import process, QuantumState, PauliwordOp
 from symmer.operators.utils import (
     symplectic_to_string, safe_PauliwordOp_to_dict, safe_QuantumState_to_dict
 )
-from symmer.evolution import PauliwordOp_to_QuantumCircuit, get_CNOT_connectivity_graph
+from symmer.evolution import PauliwordOp_to_QuantumCircuit, get_CNOT_connectivity_graph, topology_match_score
 from networkx.algorithms.cycles import cycle_basis
 from scipy.optimize import minimize
 from copy import deepcopy
@@ -232,8 +232,8 @@ class ADAPT_VQE(VQE_Driver):
     Attributes:
         derivative_eval (str): Method which is to be used to calculate the operator pool derivatives.
         TETRIS (bool): If True, TETRIS-ADAPT-VQE is performed. By default it is set to False.
-        linearity_biased (bool): If True, linearity-biased-ADAPT-VQE is performed. By default it is set to True.
-        bias (float): Bias value used in linearity-biased-ADAPT-VQE. It's default value is 1/3.
+        topology_aware (bool): If True, Hardware-Aware ADAPT-VQE is performed. By default it is set to True.
+        topology_bias (float): Bias value used in Hardware-Aware ADAPT-VQE. It's default value is 1.
     """
     # method by which to calculate the operator pool derivatives, either
     # commutators: compute the commutator of the observable with each pool element
@@ -243,8 +243,10 @@ class ADAPT_VQE(VQE_Driver):
     # that aims to reduce circuit-depth in the ADAPT routine by adding multiple excitation terms
     # per cycle that are supported on distinct qubit positions.
     TETRIS = False
-    linearity_biased = True
-    bias = 1/3
+    topology_aware = True
+    topology_bias = 1
+    topology = None
+    subgraph_match_depth = 3
     
     def __init__(self,
         observable: PauliwordOp,
@@ -352,26 +354,20 @@ class ADAPT_VQE(VQE_Driver):
     
     def pool_score(self):
         """ 
-        Score the operator pool with respect to gradients and circuit linearity.
+        Score the operator pool with respect to gradients and topology likeness.
         """
         scores = abs(self.pool_gradient())
 
-        if self.linearity_biased:
-            # linearity-biased-ADAPT-VQE favours circuits with linear qubit connectivity
-            linearity_scores = []
+        if self.topology_aware:
+            assert self.topology is not None, 'No hardware topology specified'
+            # Hardware-Aware ADAPT-VQE favours circuits that match the target topology closely
+            topology_scores = []
             for index in range(self.excitation_pool.n_terms):
                 adapt_op_temp = self.adapt_operator.append(self.excitation_pool[index])
-                circuit_temp = PauliwordOp_to_QuantumCircuit(
-                    PwordOp=adapt_op_temp, ref_state=self.ref_state, bind_params=False)
-                connectivity = get_CNOT_connectivity_graph(circuit_temp)
-                # the presence of cycles in the CNOT connectivity graph is penalised in the score
-                # linear circuits result in a linearity of 1, hence their score is not affected here.
-                linearity_scores.append(
-                    (
-                        circuit_temp.num_qubits - len([a for b in cycle_basis(connectivity) for a in b])*self.bias
-                    ) / circuit_temp.num_qubits
+                topology_scores.append(
+                    topology_match_score(adapt_op_temp, self.topology, max_depth=self.subgraph_match_depth)
                 )
-            scores *= np.array(linearity_scores)
+            scores *= np.power(np.array(topology_scores), self.topology_bias)
         
         return scores
         
