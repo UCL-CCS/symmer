@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from symmer.operators import PauliwordOp, QuantumState
-from qiskit.opflow import PauliSumOp
+from qiskit.quantum_info import SparsePauliOp
 from openfermion import QubitOperator
 from scipy.sparse import rand, csr_matrix
 from symmer.utils import matrix_allclose
@@ -483,7 +483,8 @@ def test_from_qiskit():
                 'YY': 0.5+2j,
                 'IZ': -0.5,
                 'XZ': -0.5-3j}
-    qiskit_op = PauliSumOp.from_list(expected.items())
+    Pkeys, coeffs = zip(*expected.items())
+    qiskit_op = SparsePauliOp(Pkeys, coeffs=coeffs)
     Pop = PauliwordOp.from_qiskit(qiskit_op)
     assert Pop.to_dictionary == expected
     assert Pop.n_qubits == 2
@@ -495,7 +496,8 @@ def test_to_qiskit():
                 'YY': 0.5+2j,
                 'IZ': -0.5,
                 'XZ': -0.5-3j}
-    qiskit_op = PauliSumOp.from_list(expected.items())
+    Pkeys, coeffs = zip(*expected.items())
+    qiskit_op = SparsePauliOp(Pkeys, coeffs=coeffs)
     Pop = PauliwordOp.from_dictionary(expected)
     assert Pop.to_qiskit == qiskit_op
     assert Pop.n_qubits == 2
@@ -684,7 +686,8 @@ def test_multiplication_2():
     """
     P1 = PauliwordOp.random(3, 10)
     P2 = PauliwordOp.random(3, 10)
-    assert (P1 * P2).to_qiskit == P1.to_qiskit @ P2.to_qiskit
+    assert ((P1.to_qiskit.dot(P2.to_qiskit)).simplify() - (P1*P2).to_qiskit).simplify() == SparsePauliOp(['III'],
+                                                                                                          coeffs=[0.+0.j])
 
 def test_to_sparse_matrix_1():
     """ Tests multiplication and the Qiskit conversion
