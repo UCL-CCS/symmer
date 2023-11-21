@@ -1396,18 +1396,12 @@ class PauliwordOp:
         Convert to OpenFermion Pauli operator representation.
 
         Returns:
-            QubitOperator: The QubitOperator representation of the PauliwordOp.
+            open_f (QubitOperator): The QubitOperator representation of the PauliwordOp.
         """
-        pauli_terms = []
-        for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
-            pauli_terms.append(
-                QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(symp_vec)) if Pi!='I']),
-                coeff)
-            )
-        if len(pauli_terms) == 1:
-            return pauli_terms[0]
-        else:
-            return sum(pauli_terms)
+        open_f = QubitOperator()
+        for P_sym, coeff in zip(self.symp_matrix, self.coeff_vec):
+            open_f+=QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(P_sym)) if Pi!='I']), coeff)
+        return open_f
 
     @cached_property
     def to_qiskit(self) -> SparsePauliOp:
