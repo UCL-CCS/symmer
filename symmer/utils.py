@@ -417,38 +417,3 @@ def Get_AC_root(power: float, operator: AntiCommutingOp) -> PauliwordOp:
     AC_root = (rot.dagger * Ps_root * rot).multiply_by_constant(gamma_l ** power)
 
     return AC_root
-
-
-def get_generators_including_xz_products(operator: PauliwordOp) -> PauliwordOp:
-    """
-    Given an input operator perform similar process to finding generators (but do not use X,Z terms to generate Y terms)
-    i.e. the set can be dependent.
-
-    Args:
-        operator:
-
-    Returns:
-        PauliwordOp of generators build of X,Y,Z terms (note can have dependent terms!)
-
-    """
-    X_only = np.logical_and(operator.X_block, ~operator.Z_block)
-    Z_only = np.logical_and(~operator.X_block, operator.Z_block)
-    Y_only = np.logical_and(operator.Z_block, operator.X_block)
-
-    XZY_block = np.hstack((np.hstack((X_only, Z_only)), Y_only))
-
-    row_red_XYZ = _rref_binary(XZY_block)
-    non_zero_rows = row_red_XYZ[np.sum(row_red_XYZ, axis=1).astype(bool)]
-
-    X_new = non_zero_rows[:, :operator.X_block.shape[1]]
-    Z_new = non_zero_rows[:, operator.X_block.shape[1]:2 * operator.Z_block.shape[1]]
-    Y_new = non_zero_rows[:, 2 * operator.Z_block.shape[1]:]
-
-    sym_final = np.hstack((np.logical_or(X_new, Y_new),
-                           np.logical_or(Z_new, Y_new)))
-
-    # remove duplicates due to same X_new and Z_new positions
-    xyz_gens = PauliwordOp(sym_final, np.ones(sym_final.shape[0])).cleanup()
-    xyz_gens.coeff_vec = np.ones_like(xyz_gens.coeff_vec)
-
-    return xyz_gens
