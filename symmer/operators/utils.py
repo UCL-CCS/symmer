@@ -1,7 +1,7 @@
 import numpy as np
 import scipy as sp
 from typing import Tuple, Dict
-import openfermion as of
+from openfermion import QubitOperator
 from qiskit.opflow import PauliSumOp
 
 def symplectic_to_string(symp_vec) -> str:
@@ -244,18 +244,18 @@ def cref_binary(matrix: np.array) -> np.array:
     """
     return rref_binary(matrix.T).T        
 
-def QubitOperator_to_dict(op, num_qubits):
+def QubitOperator_to_dict(op: QubitOperator, num_qubits: int):
     """ 
     OpenFermion
 
     Args:
-        op: Qubit Operator
-        num_qubits: Number of qubiits.
+        op (QubitOperator): Qubit Operator
+        num_qubits (int) : Number of qubiits.
 
     Returns:
         Dictionary format of Qubit Operator.
     """
-    assert(type(op) == of.QubitOperator)
+    assert(type(op) == QubitOperator)
     op_dict = {}
     term_dict = op.terms
     terms = list(term_dict.keys())
@@ -403,21 +403,101 @@ def check_independent(operators):
 
 def check_jordan_independent(operators):
     """ 
-    Check if the input PauliwordOp contains algebraically dependent terms.
+    Check if the input PauliwordOp contains algebraically dependent terms under jordan product
+    (note input can be noncontextual, but contain dependent terms!)
 
     Args:
         operators (PauliwordOp): Operators.
     
     Returns:
         Returns True, if input operators contains algebraically dependent terms.
+
+    
+    test with : H ={
+                     'IIIZ': (1+0j),
+                     'IIZI': (1+0j),
+                     'ZIII': (1+0j),
+                     'IXII': (1+0j),
+                     'XIIX': (1+0j)
+                     }
+    # clique =  [IIIZ, XIIX]
+    # Z2     =  [IIZI, ZIIZ, IXII]
+
     """
-    mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
-    Symmetries = operators[mask_symmetries]
-    Anticommuting = operators[~mask_symmetries]
-    return (
-        check_independent(Symmetries) & 
-        np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
-    )
+    # mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
+    # Symmetries = operators[mask_symmetries]
+    # Anticommuting = operators[~mask_symmetries]
+    # return (
+    #     check_independent(Symmetries) & 
+    #     np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
+    # )
+
+    # if operators.n_terms<= 2*operators.n_qubits+1:
+    #     # check if input is fully anticommuting
+    #     adj_mat = operators.adjacency_matrix
+    #     adj_mat[np.diag_indices_from(adj_mat)] = False
+    #     if np.all(~adj_mat):
+    #         return True
+
+    # Z2_gen_mask = np.sum(operators.commutes_termwise(operators), axis=1) == operators.n_terms
+    # Z2_terms = operators[Z2_gen_mask]
+    #
+    # # find terms not generated these Z2 symmerties
+    # _, z2_mask = operators.generator_reconstruction(Z2_terms, override_independence_check=True)
+    #
+    # ac_terms = operators[~z2_mask]
+    # if ac_terms.n_terms > 0:
+    #     decomposed = ac_terms.clique_cover(edge_relation='C')
+    #     clique_rep_list = [C.sort()[0] for C in decomposed.values()]
+    #     ac_op = sum(clique_rep_list).cleanup()
+    #     # if ac_op.n_terms>0:
+    #     #     assert (np.sum(ac_op.adjacency_matrix.astype(int)
+    #     #                    - np.eye(ac_op.adjacency_matrix.shape[0])) == 0), f'ac_op is not anticommuting: {ac_op}'
+    #     # del ac_op
+    #     if ac_op.n_terms > 0:
+    #         # check all operators anticommute
+    #         adj_mat = ac_op.adjacency_matrix
+    #         adj_mat[np.diag_indices_from(adj_mat)] = False
+    #         if not np.all(~adj_mat):
+    #             return False
+    #
+    #     Z2_from_cliques = sum((decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
+    #                           decomposed[n].n_terms > 1)
+    #     if Z2_from_cliques:
+    #         Z2_terms += Z2_from_cliques
+    #
+    #     if not np.all(Z2_terms.commutes_termwise(ac_op)):
+    #         return False
+    #
+    # return check_independent(Z2_terms)
+
+    # get fully commuting terms
+    z2_mask = np.sum(operators.commutes_termwise(operators), axis=1) == operators.n_terms
+    Z2_symm = operators[z2_mask]
+
+    _, missing_mask = operators.generator_reconstruction(Z2_symm, override_independence_check=True)
+    remaining = operators[~missing_mask]
+
+    if remaining.n_terms > 0:
+        # for remaining to be jordan independent remaining must be disjoint union of cliques
+        # we can test for this below
+
+        adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
+            np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
+        )
+        re_order_indices = np.argsort(adj_matrix_view.ravel())
+        # sort the adj matrix and vector of coefficients accordingly
+        sorted_terms = remaining.adjacency_matrix[re_order_indices]
+        # unique terms are those with non-zero entries in the adjacent row difference array
+        diff_adjacent = np.diff(sorted_terms, axis=0)
+        mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
+        clique_mask = sorted_terms[mask_unique_terms]
+
+        # check for overlap (array of ones == no overlap)
+        return np.all(np.sum(clique_mask, axis=0) == 1)
+    else:
+        # operators is made up of pairwise commuting ops and thus must be jordan independent
+        return True
 
 def check_adjmat_noncontextual(adjmat) -> bool:
     """
@@ -443,10 +523,10 @@ def check_adjmat_noncontextual(adjmat) -> bool:
     # the resulting vector consists of all ones.
     return np.all(np.count_nonzero(unique_commutation_character, axis=0)==1)
 
-def perform_noncontextual_sweep(operator):
+
+def perform_noncontextual_sweep(operator) -> "PauliwordOp":
     """
-    Given an ordered operator, sweep over its terms and append 
-    to a list if the newly appended term maintains noncontextuality.
+    Given an ordered operator, sweep over its terms once in order keeping terms that are noncontextual
 
     Args:
         operator (PauliwordOp): Ordered operator.
@@ -454,20 +534,35 @@ def perform_noncontextual_sweep(operator):
     Returns:
         List of terms maintaining noncontextuality.
     """
-    # initialize noncontextual operator with first element of input operator
-    noncon_indices = np.array([0])
-    adjmat = np.array([[True]], dtype=bool)
-    for index, term in enumerate(operator[1:]):
-        # pad the adjacency matrix term-by-term - avoids full construction each time
-        adjmat_vector = np.append(term.commutes_termwise(operator[noncon_indices]), True)
-        adjmat_padded = np.pad(adjmat, pad_width=((0, 1), (0, 1)), mode='constant')
-        adjmat_padded[-1,:] = adjmat_vector; adjmat_padded[:,-1] = adjmat_vector
-        # check whether the adjacency matrix has a noncontextual structure
-        if check_adjmat_noncontextual(adjmat_padded):
-            noncon_indices = np.append(noncon_indices, index+1)
-            adjmat = adjmat_padded
 
-    return operator[noncon_indices] 
+    # # initialize noncontextual operator with first element of input operator
+    # noncon_indices = np.array([0])
+    # adjmat = np.array([[True]], dtype=bool)
+    # for index, term in enumerate(operator[1:]):
+    #     # pad the adjacency matrix term-by-term - avoids full construction each time
+    #     adjmat_vector = np.append(term.commutes_termwise(operator[noncon_indices]), True)
+    #     adjmat_padded = np.pad(adjmat, pad_width=((0, 1), (0, 1)), mode='constant')
+    #     adjmat_padded[-1,:] = adjmat_vector; adjmat_padded[:,-1] = adjmat_vector
+    #     # check whether the adjacency matrix has a noncontextual structure
+    #     if check_adjmat_noncontextual(adjmat_padded):
+    #         noncon_indices = np.append(noncon_indices, index+1)
+    #         adjmat = adjmat_padded
+
+    # return operator[noncon_indices] 
+
+    ## new method uses generators to speed up sweep
+    from symmer.operators import PauliwordOp
+    mask = np.zeros(operator.n_terms, dtype=bool)
+
+    for ind in range(operator.n_terms):
+        mask[ind] = ~mask[ind]
+        running_op = PauliwordOp(operator.symp_matrix[mask],
+                                 np.ones(np.sum(mask)))
+
+        if not running_op.is_noncontextual:
+            mask[ind] = ~mask[ind]
+
+    return operator[mask]
 
 def binary_array_to_int(bin_arr):
     """

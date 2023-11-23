@@ -3,7 +3,8 @@ from typing import Dict, List, Union
 from symmer.operators import PauliwordOp, QuantumState
 from symmer.evolution.gate_library import *
 from qiskit.circuit import QuantumCircuit, ParameterVector
-import networkx as nx
+from networkx import Graph, draw_spring
+from collections import Counter
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
 
@@ -200,27 +201,3 @@ def PauliwordOp_to_QuantumCircuit(
         qc.h(qiskit_ordering(i))
         
     return qc
-
-def get_CNOT_connectivity_graph(evolution_obj: Union[PauliwordOp, QuantumCircuit], print_graph=False):
-    """ 
-    Get the graph whoss edges denote nonlocal interaction between two qubits.
-    This is useful for device-aware ansatz construction to ensure the circuit connectiviy
-    may be accomodated by the topology of the target quantum processor. 
-
-    Args:
-        evolution_obj (Union[PauliwordOp, QuantumCircuit]): Evolution Object
-        print_graph (bool): If True, the graph is drawn. By default, it's set to False.
-    """
-    if isinstance(evolution_obj, PauliwordOp):
-        qc = PauliwordOp_to_QuantumCircuit(evolution_obj)
-    else:
-        assert isinstance(evolution_obj, QuantumCircuit)
-        qc = evolution_obj
-    nodes = [q.index for q in qc.qregs[0]]
-    edges = [[q.index for q in step[1]] for step in qc.data if step[0].name!='barrier' and len(step[1])>1]
-    G = nx.Graph()
-    G.add_nodes_from(nodes)
-    G.add_edges_from(edges)
-    if print_graph:
-        nx.draw_kamada_kawai(G)
-    return G

@@ -1,7 +1,7 @@
 import numpy as np
-from typing import Dict, List, Tuple, Union
 import warnings
-import multiprocessing as mp
+from typing import Dict, List, Tuple, Union
+from symmer import process
 from symmer.operators.utils import _rref_binary, _cref_binary, check_independent
 from symmer.operators import PauliwordOp, QuantumState, symplectic_to_string, single_term_expval
 
@@ -28,7 +28,7 @@ class IndependentOp(PauliwordOp):
             target_sqp (str): Target SQP (Single-Qubit Pauli). By default it is to 'Z'.
         """
         if coeff_vec is None:
-            coeff_vec = np.ones(symp_matrix.shape[0])
+            coeff_vec = np.ones(symp_matrix.shape[0], dtype=complex)
         super().__init__(symp_matrix, coeff_vec)
         self._check_stab()
         self.coeff_vec = self.coeff_vec.real.astype(int)
@@ -140,7 +140,7 @@ class IndependentOp(PauliwordOp):
                 S_commuting = S.clique_cover(edge_relation='C')[0]
                 warnings.warn('Greedy method may identify non-optimal commuting symmetry terms; might be able to taper again.')
             
-            return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms))
+            return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms, dtype=complex))
 
     def _check_stab(self) -> None:
         """ 
@@ -168,7 +168,7 @@ class IndependentOp(PauliwordOp):
         out_string = ''
         for pauli_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
             p_string = symplectic_to_string(pauli_vec)
-            out_string += (f'{coeff: d} {p_string} \n')
+            out_string += (f'{coeff} {p_string} \n')
         return out_string[:-2]
 
     def __repr__(self) -> str:
@@ -290,12 +290,8 @@ class IndependentOp(PauliwordOp):
             ref_state = QuantumState(ref_state)
         assert ref_state._is_normalized(), 'Reference state is not normalized.'
         
-        # update the stabilizers assignments in parallel
-        with mp.Pool(mp.cpu_count()) as pool:      
-            self.coeff_vec = np.array(
-                list(pool.starmap(assign_value, [(S, ref_state, threshold) for S in self]))
-            )
-        
+        ### update the stabilizers assignments in parallel
+        self.coeff_vec = np.array(assign_value(self, ref_state))
         # raise a warning if any stabilizers are assigned a zero value
         if np.any(self.coeff_vec==0):
             S_zero = self[self.coeff_vec==0]; S_zero.coeff_vec[:]=1
@@ -359,8 +355,8 @@ class IndependentOp(PauliwordOp):
         """
         return iter([self[i] for i in range(self.n_terms)])
 
-
-def assign_value(S: PauliwordOp, ref_state: QuantumState, threshold: float) -> int:
+@process.parallelize
+def assign_value(S: PauliwordOp, ref_state: QuantumState) -> int:
     """
     Measure expectation value of stabilizer on input reference state.
     Args: 
@@ -371,6 +367,7 @@ def assign_value(S: PauliwordOp, ref_state: QuantumState, threshold: float) -> i
     Returns:
         Expectation Value (int) of stabilizer on input reference state.
     """
+    threshold = 0.5
     expval = single_term_expval(S, ref_state)
     # if this expval exceeds some predefined threshold then assign the corresponding 
     # ±1 eigenvalue. Otherwise, return 0 as insufficient evidence to fix the value.

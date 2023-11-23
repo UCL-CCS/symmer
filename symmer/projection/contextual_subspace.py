@@ -1,7 +1,8 @@
 import numpy as np
 from symmer.operators import PauliwordOp, IndependentOp, NoncontextualOp, QuantumState
 from symmer.projection.utils import (
-    update_eigenvalues, StabilizerIdentification, ObservableBiasing, stabilizer_walk
+    update_eigenvalues, StabilizerIdentification, ObservableBiasing, stabilizer_walk,
+    # get_noncon_generators_from_commuting_stabilizers
 )
 from symmer.projection import S3_projection
 from symmer.evolution import trotter
@@ -36,6 +37,8 @@ class ContextualSubspace(S3_projection):
             noncontextual_expansion_order: int = 1
         ):
         """
+        When passing in a noncontextual_operator if noncontextual_strategy set to be 'solved' then noncontextual_solver will NOT be run.
+
         Args: 
             operator(PauliwordOp): Operator one wishes to enforce as stabilizers over the contextual subspace.
             noncontextual_strategy (str): Non-Contextual Strategy to be applied. Its default value is'diag'.
@@ -57,6 +60,8 @@ class ContextualSubspace(S3_projection):
         self.noncontextual_solver = noncontextual_solver
         self.num_anneals = num_anneals
         self.noncontextual_expansion_order = noncontextual_expansion_order
+        self.unitary_partitioning_method = unitary_partitioning_method
+
         # With the exception of the StabilizeFirst noncontextual strategy, here we build
         # the noncontextual Hamiltonian in line with the specified strategy
         self.operator = operator
@@ -64,10 +69,15 @@ class ContextualSubspace(S3_projection):
             self.noncontextual_operator = NoncontextualOp.from_hamiltonian(
                 operator, strategy=noncontextual_strategy
             )
+            # solve noncon problem
+            self._noncontextual_update()
+            noncontextual_strategy = 'solved'
         else:
             self.noncontextual_operator = noncontextual_operator
-        self.unitary_partitioning_method = unitary_partitioning_method
-        self._noncontextual_update()
+        
+        ## case for StabilizeFirst when need to solve noncon problem
+        if not noncontextual_strategy == 'solved':
+            self._noncontextual_update()
 
     def manual_stabilizers(self, S: Union[List[str], IndependentOp]) -> None:
         """ 

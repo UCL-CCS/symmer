@@ -5,6 +5,7 @@ from qiskit.opflow import PauliSumOp
 from openfermion import QubitOperator
 from scipy.sparse import rand, csr_matrix
 from symmer.utils import matrix_allclose
+from symmer.operators.utils import check_adjmat_noncontextual
 
 P_matrices ={
     'X': np.array([[0, 1],
@@ -580,6 +581,10 @@ def test_adjacency_matrix(
     [
         (['XZ', 'ZX', 'ZI', 'IZ'],False), 
         (['XZ', 'ZX', 'XX', 'YY'],True),
+        (['XX', 'YY', 'ZZ', 'II'],True),
+        (['II', 'ZZ', 'ZX', 'ZY', 'XZ', 'YZ', 'XX', 'XY', 'YX', 'YY'], False),
+        (['III','IIZ','ZII','IXZ','IYZ','YYZ'], False),
+        (['IZI', 'ZII','IIY','ZZY','XXZ','XYZ','YXZ','YYZ','XXX','XYX','YXX','YYX'], True)
     ]
 )
 def test_is_noncontextual(P_list, is_noncon):
@@ -604,6 +609,68 @@ def test_single_qubit_multiplication(
     P2   = PauliwordOp.from_dictionary(P2_dict)
     P1P2 = PauliwordOp.from_dictionary(P1P2_dict)
     assert P1 * P2 == P1P2
+
+def test_is_noncontextual_generators():
+    """
+    noncontextual test that breaks if only 2n generators are used rather than 3n generators
+    Returns:
+
+    """
+    Hnc = PauliwordOp.from_dictionary({'IIIZX': (0.04228614428142647-0j),
+                                        'IIIZY': (-0.30109670698419544-0j),
+                                        'IIZZX': (0.04228614428142647-0j),
+                                        'IIZZY': (-0.30109670698419544-0j),
+                                        'IZIZX': (0.04228614428142647-0j),
+                                        'IZIZY': (-0.30109670698419544-0j),
+                                        'IZZZX': (0.04228614428142647-0j),
+                                        'IZZZY': (-0.30109670698419544-0j),
+                                        'ZIIZX': (0.04228614428142647-0j),
+                                        'ZIIZY': (-0.30109670698419544-0j),
+                                        'ZIZZX': (0.04228614428142647-0j),
+                                        'ZIZZY': (-0.30109670698419544-0j),
+                                        'ZZIZX': (0.04228614428142647-0j),
+                                        'ZZIZY': (-0.30109670698419544-0j),
+                                        'ZZZZX': (0.04228614428142647-0j),
+                                        'ZZZZY': (-0.30109670698419544-0j),
+                                        'IIIXI': (-1.6377047626147634-0j),
+                                        'IIIYI': (-0.8887783867443338-0j),
+                                        'IIZXI': (-1.6377047626147634-0j),
+                                        'IIZYI': (-0.8887783867443338-0j),
+                                        'IZIXI': (-1.6377047626147634-0j),
+                                        'IZIYI': (-0.8887783867443338-0j),
+                                        'IZZXI': (-1.6377047626147634-0j),
+                                        'IZZYI': (-0.8887783867443338-0j),
+                                        'ZIIXI': (-1.6377047626147634-0j),
+                                        'ZIIYI': (-0.8887783867443338-0j),
+                                        'ZIZXI': (-1.6377047626147634-0j),
+                                        'ZIZYI': (-0.8887783867443338-0j),
+                                        'ZZIXI': (-1.6377047626147634-0j),
+                                        'ZZIYI': (-0.8887783867443338-0j),
+                                        'ZZZXI': (-1.6377047626147634-0j),
+                                        'ZZZYI': (-0.8887783867443338-0j)})
+
+    ## note this commented out method is gives incorrect answer
+    # assert check_adjmat_noncontextual(Hnc.generators.adjacency_matrix), 'noncontexutal operator is being correctly defined as noncontextual'
+    assert Hnc.is_noncontextual, 'noncontexutal operator is being incorrectly being defined as contextual'
+
+def test_is_noncontextual_anticommuting_H():
+    """
+    noncontextual test that breaks if only 2n generators are used rather than 3n generators
+    Returns:
+
+    """
+    Hnc = PauliwordOp.from_dictionary({
+             'ZZZI': (1.2532436410975218-0j),
+             'IIXI': (0.8935108507410493-0j),
+             'ZIYI': (-1.1362909076230914+0j),
+             'IXZI': (-0.05373661687140326+0j),
+             'ZYZI': (-1.0012312990477774+0j),
+             'XXYI': (-0.045809456087963205+0j),
+             'YXYZ': (0.21569499626612557-0j),
+             'YXYX': (-0.5806963175396661+0j),
+             'YXYY': (0.3218493853030614-0j)})
+
+    assert Hnc.is_noncontextual, 'noncontexutal operator is being correctly defined as noncontextual'
 
 def test_multiplication_1():
     """ Tests multiplication and the OpenFermion conversion
@@ -645,6 +712,29 @@ def test_to_sparse_matrix_2(
     ):
     P = PauliwordOp.from_dictionary(P_dict)
     assert np.all(P.to_sparse_matrix.toarray() == P_array)
+
+def test_to_sparse_matrix_large_operator():
+    """ Tests multiplication and the Qiskit conversion
+    """
+    H = PauliwordOp.from_dictionary({'ZIIIIIIIZIXXXIII': (-1.333664871035997-0.6347579982999967j),
+                                     'IIIIIYIIXYZZIXXI': (0.6121055433989232+2.0175827791182313j),
+                                     'IIIXIZZIIZIIXIZI': (-0.5187971729475656+1.2184045529704965j),
+                                     'ZIIXYYZZIYYXXIZY': (0.6788676757886678+1.867085666718753j),
+                                     'IZXIYIXYXIIIZZIX': (-1.0665060328185856-0.5702647494844407j),
+                                     'ZIXXIIIZIIIIZIXX': (0.17268863171166954-0.07117422292367692j),
+                                     'IIYXIIYIIIXIIZXI': (0.03704770372393225-0.21589376964746243j),
+                                     'IYIZXXIXZXXZIIII': (0.29998428856285453-0.9742733999161437j),
+                                     'YXIXIIZXZIIIIIYX': (0.3421035543407282-0.20273712913326358j),
+                                     'XXXYIIIIXIIXIXIZ': (1.1502457768722+1.3148268876228302j)})
+    mat_sparse = H.to_sparse_matrix
+
+    basis = H.copy()
+    basis.coeff_vec = np.ones_like(basis.coeff_vec)
+    out = PauliwordOp.from_matrix(mat_sparse,
+                                  strategy='full_basis',
+                                  operator_basis=basis,
+                                  disable_loading_bar=True)
+    assert H == out, 'to_sparse_matrix of large Pauli operator is failing'
 
 
 def test_QuantumState_overlap():

@@ -2,6 +2,8 @@ import numpy as np
 from copy import deepcopy
 from scipy.optimize import differential_evolution
 from symmer.operators import PauliwordOp, IndependentOp
+from typing import Union, Optional
+from symmer.utils import random_anitcomm_2n_1_PauliwordOp, product_list
 
 def norm(vector: np.array) -> float:
     """
@@ -269,3 +271,69 @@ def stabilizer_walk(
         print(f'Optimal score w(S)={stab_score} for HOMO/LUMO bias {bias_param}')
     
     return S
+
+def get_noncon_generators_from_commuting_stabilizers(stabilizers: Union[PauliwordOp, IndependentOp],
+                                                     weighting_operator: PauliwordOp,
+                                                     return_clique_only: Optional[bool] = False) -> IndependentOp:
+    """
+    Given a set of commuting stabilizers and weighting operator find best noncontextual generating set
+    (ie works out best anticommuting addition to generators that reconstructs most of the weighting_operator)
+
+    Args:
+        stabilizers (PauliwordOp): operator containing commuting symmetries
+        weighting_operator (PauliwordOp): operator to inform ac choice
+
+    Returns:
+        new_stabilizers (IndependentOp): noncontextual generators that contain ac component (generates noncon op under Jordan product)
+    """
+    if not np.all(stabilizers.commutes_termwise(stabilizers)):
+        # stabilizers already contain ac component
+        return stabilizers #, PauliwordOp.empty(stabilizers.n_qubits).cleanup()
+    else:
+        # below generates the generators of inout stabilizers
+        generators = stabilizers.generators
+
+    best_l1_norm = -1
+    # find qubits uniquely defined by generators
+    unique_q_inds = ~(np.sum(np.logical_xor(generators.Z_block, generators.X_block), axis=0)-1).astype(bool)
+    for stab in generators:
+        # find unique non identity positions
+        act_positions = np.logical_and(np.logical_xor(stab.Z_block, stab.X_block)[0], unique_q_inds)
+
+        # work out number of qubits on these positions
+        n_act_qubits = np.sum(act_positions)
+
+        # find AC clique of size 2n containing given stabilizer
+        ac_basis = random_anitcomm_2n_1_PauliwordOp(n_act_qubits, apply_clifford=False)[1:]
+        new_basis = PauliwordOp(np.zeros((n_act_qubits * 2, stab.n_qubits * 2), dtype=bool),
+                                np.ones(n_act_qubits * 2))
+
+        new_basis.symp_matrix[:, [*act_positions, *act_positions]] = ac_basis.symp_matrix
+
+        # ensure stab is in new_basis
+        gen, mask = stab.generator_reconstruction(new_basis)
+        required_products = gen[0].nonzero()[0][1:]
+        if len(required_products) > 0:
+            prod = product_list(new_basis[required_products])
+            new_basis = (new_basis * prod).cleanup()
+        new_basis.coeff_vec = np.ones_like(new_basis.coeff_vec)
+
+        # find best reconstruction
+        _, mask = weighting_operator.generator_reconstruction(new_basis)
+        success = weighting_operator[mask]
+        l1_norm = np.linalg.norm(success.coeff_vec, ord=1)
+
+        if l1_norm > best_l1_norm:
+            new_stabilizers = generators - stab + new_basis
+            best_l1_norm = l1_norm
+            stab_used = stab.copy()
+
+    assert new_stabilizers.is_noncontextual, 'new stabilizers are not noncontextual'
+
+    # commuting_stabs = IndependentOp.from_PauliwordOp(stabilizers)
+    # anticommuting_stabs = IndependentOp.from_PauliwordOp(new_stabilizers) - commuting_stabs
+    # return commuting_stabs, anticommuting_stabs
+    if return_clique_only:
+        return IndependentOp.from_PauliwordOp(new_stabilizers) - generators, stab_used
+    else:
+        return IndependentOp.from_PauliwordOp(new_stabilizers)

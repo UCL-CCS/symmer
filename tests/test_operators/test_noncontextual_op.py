@@ -220,13 +220,28 @@ def test_noncon_no_symmetry_generators():
     assert np.isclose(H_noncon.energy, E_ground)
 
 
+def test_noncon_noncommuting_Z2():
+    """
+    test operator that previously caused bug
+
+    Here we have a set of Z2 symmerties from H_noncon that don't termwise commute!
+    i.e.
+    Z2_symmerties = IndependentOp.symmetry_generators(H_noncon, commuting_override=True)
+    Z2_symmerties don't all pairwise commute. This can lead to problems if not handled correctly.
+
+    """
+    H_noncon = PauliwordOp.from_dictionary({'IIIIIIIIII': (-15.27681058613343+0j), 'IIIIIIIIIZ': (-0.2172743037258172+0j), 'IIIIIZIIII': (0.11405708903311647+0j), 'IIIIIZIIIZ': (0.22929933946046854+0j), 'IIIIZIIIII': (0.07618739164001126+0j), 'IIIIZIIIIZ': (0.10424432000703249+0j), 'IIIIZZIIII': (0.2458433632534619+0j), 'IIIZIIIIII': (0.07618739164001137+0j), 'IIIZIIIIIZ': (0.11790253563113795+0j), 'IIIZIZIIII': (0.2458433632534619+0j), 'IIIZZIIIII': (0.14846395230159326+0j), 'IIZIIIIIII': (0.17066279019288416+0j), 'IIZIIIIIIZ': (0.19577211156187402+0j), 'IIZIIZIIII': (0.220702612028004+0j), 'IIZIZIIIII': (0.10245792602520705+0j), 'IIZZIIIIII': (0.10964094999478652+0j), 'IZIIIIIIII': (0.2601827946303151+0j), 'IZIIIIIIIZ': (0.1060269619647709+0j), 'IZIIIZIIII': (0.21982388480817722+0j), 'IZIIZIIIII': (0.09485326000745692+0j), 'IZIZIIIIII': (0.1112840228980842+0j), 'IZZIIIIIII': (0.08389584977571822+0j), 'IZZIZZIIIZ': (-0.14917151435431195+0j), 'ZIIIIIIIII': (0.2601827946303149+0j), 'ZIIIIIIIIZ': (0.11944056365665429+0j), 'ZIIIIZIIII': (0.21982388480817722+0j), 'ZIIIZIIIII': (0.1112840228980842+0j), 'ZIIZIIIIII': (0.09485326000745692+0j), 'ZIZIIIIIII': (0.12042746433351019+0j), 'ZIZZIZIIIZ': (-0.14917151435431195+0j), 'ZZIIIIIIII': (0.12244309127472158+0j), 'IIZZZIXIXZ': (-0.0023524442663984376+0j), 'ZIZIZZXIXZ': (0.0023524442663984376+0j), 'ZIYIZZIXIY': (0.0023524442663984376+0j), 'ZZYIIIIXIY': (-0.0023524442663984376+0j)})
+    H_noncon_obj = NoncontextualOp.from_PauliwordOp(H_noncon)
+    assert H_noncon.n_terms == H_noncon_obj.n_terms
+
 ####################################
 # Testing noncontextual optimizers #
 ####################################
 
 def test_noncontextual_objective_function():
     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    nu = [-1, -1,  1]
+    H_noncon.symmetry_generators = H_noncon.symmetry_generators.sort()
+    nu = [1, -1,  -1]
     e_noncon = H_noncon.get_energy(nu)
     assert np.isclose(e_noncon, noncon_problem['E'])
 
@@ -373,6 +388,18 @@ def test_solve_annealing_QUSO_discrete_partial_ref():
                        ref_state=partial_reference_state,
                        num_anneals=1_000)
     assert np.isclose(H_noncon.energy, noncon_problem['E'])
+
+def test_init_Hnoncon1():
+    """
+    Check error is thrown if a contextual operator symplectic matrix is used as input to NoncontextualOp
+    Returns:
+
+    """
+    H_con = PauliwordOp.from_dictionary(H_con_dict)
+    symp_matrix = H_con.symp_matrix
+    coeff_vec = H_con.coeff_vec
+    with pytest.raises(AssertionError):
+        NoncontextualOp(symp_matrix, coeff_vec)
 
 
 # def test_get_qaoa_qubo_no_reference():

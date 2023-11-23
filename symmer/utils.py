@@ -1,4 +1,4 @@
-from symmer.operators import PauliwordOp, QuantumState
+from symmer.operators import PauliwordOp, QuantumState, AntiCommutingOp
 import numpy as np
 import scipy as sp
 from typing import List, Tuple, Union
@@ -6,7 +6,10 @@ from functools import reduce
 import py3Dmol
 from scipy.sparse import csr_matrix
 from scipy.sparse import kron as sparse_kron
-import multiprocessing as mp
+from symmer.operators.utils import _rref_binary
+import ray
+import os
+# from psutil import cpu_count
 
 def exact_gs_energy(
         sparse_matrix, 
@@ -260,7 +263,7 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     divides into two equally sized tensor products finds the sparse matrix of those and then does a sparse
     kron product to get the large matrix.
 
-    TODO:  Could also add how many junks to split problem into (e.g. three/four/... tensor products).
+    TODO:  Could also add how many chunks to split problem into (e.g. three/four/... tensor products).
 
     Args:
         P_op (PauliwordOp): Pauli operator to convert into sparse matrix
@@ -271,24 +274,46 @@ def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     if nq<16:
         mat = P_op.to_sparse_matrix
     else:
-        n_cpus = mp.cpu_count()
-        P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_cpus, P_op.n_terms))).astype(set).astype(int)
+        # n_cpus = mp.cpu_count()
+        # P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_cpus, P_op.n_terms))).astype(set).astype(int)
+        #
+        # # miss zero index out (as emtpy list)
+        # P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i+1]] for ind_i, _ in enumerate(P_op_chunks_inds[1:])]
+        # with mp.Pool(n_cpus) as pool:
+        #     tracker = pool.map(_get_sparse_matrix_large_pauliwordop, P_op_chunks)
 
-        # miss zero index out (as emtpy list)
-        P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i+1]] for ind_i, _ in enumerate(P_op_chunks_inds[1:])]
-        with mp.Pool(n_cpus) as pool:
-            tracker = pool.map(_get_sparse_matrix_large_pauliwordop, P_op_chunks)
-
-        mat = reduce(lambda x, y: x + y, tracker)
+        # plus one below due to indexing (actual number of chunks ignores this value)
+        n_chunks = os.cpu_count()
+        if (n_chunks<=1) or (P_op.n_terms<=1):
+            # no multiprocessing possible
+            mat = ray.get(_get_sparse_matrix_large_pauliwordop.remote(P_op))
+        else:
+            # plus one below due to indexing (actual number of chunks ignores this value)
+            n_chunks += 1
+            P_op_chunks_inds = np.rint(np.linspace(0, P_op.n_terms, min(n_chunks, P_op.n_terms+1))).astype(set).astype(int)
+            P_op_chunks = [P_op[P_op_chunks_inds[ind_i]: P_op_chunks_inds[ind_i + 1]] for ind_i, _ in
+                           enumerate(P_op_chunks_inds[1:])]
+            tracker = np.array(ray.get(
+                [_get_sparse_matrix_large_pauliwordop.remote(op) for op in P_op_chunks]))
+            mat = reduce(lambda x, y: x + y, tracker)
 
     return mat
 
-
+@ray.remote(num_cpus=os.cpu_count(),
+            runtime_env={
+                "env_vars": {
+                    "NUMBA_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
+                    # "OMP_NUM_THREADS": str(os.cpu_count()),
+                    "OMP_NUM_THREADS": os.getenv("NUMBA_NUM_THREADS"),
+                    "NUMEXPR_MAX_THREADS": str(os.cpu_count())
+                }
+            }
+            )
 def _get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     """
     """
     nq = P_op.n_qubits
-    mat = PauliwordOp.empty(nq).to_sparse_matrix
+    mat = csr_matrix(([], ([],[])), shape=(2**nq,2**nq))
     for op in P_op:
         left_tensor = np.hstack((op.X_block[:, :nq // 2],
                                  op.Z_block[:, :nq // 2]))
@@ -298,12 +323,9 @@ def _get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
                                   op.Z_block[:, nq // 2:]))
         right_coeff = np.array([1])
 
-        temp = sparse_kron(PauliwordOp(left_tensor, left_coeff).to_sparse_matrix,
+        mat += sparse_kron(PauliwordOp(left_tensor, left_coeff).to_sparse_matrix,
                            PauliwordOp(right_tensor, right_coeff).to_sparse_matrix,
                            format='csr')  # setting format makes this faster!
-
-        mat += temp
-        del temp
 
     return mat
 
@@ -331,3 +353,102 @@ def matrix_allclose(A: Union[csr_matrix, np.array], B:Union[csr_matrix, np.array
             B = B.toarray()
 
         return np.allclose(A, B, atol=tol)
+
+
+def get_PauliwordOp_root(power: int, pauli: PauliwordOp) -> PauliwordOp:
+    """
+    Get arbitrary power of a single Pauli operator. See eq1 in https://arxiv.org/pdf/2012.01667.pdf
+
+    Log(A) in paper given by = 1j*pi*(I-P)/2 here
+
+    P^{k} = e^{k i pi Q}
+
+    Q = (I-P)/2, where P in {X,Y,Z}
+
+    e^{k i pi (I-P)/2} = e^{k i pi/2 I} * e^{ - k i pi/2 P} <- expand product!
+
+    Args:
+        power (int): power to take
+        pauli (PauliwordOp): Pauli operator to take power of
+    Returns:
+        Pk (PauliwordOp): Pauli operator that is power of input
+
+    """
+    assert pauli.n_terms == 1, 'can only take power of single operators'
+
+    I_term = PauliwordOp.from_list(['I' * pauli.n_qubits])
+
+    cos_term = np.cos(power * np.pi / 2)
+    sin_term = np.sin(power * np.pi / 2)
+
+    Pk = (I_term.multiply_by_constant(cos_term ** 2 + 1j * cos_term * sin_term) +
+          pauli.multiply_by_constant(-1j * cos_term * sin_term + sin_term ** 2))
+
+    return Pk
+
+
+def Get_AC_root(power: float, operator: AntiCommutingOp) -> PauliwordOp:
+    """
+    Get arbitrary power of an anticommuting Pauli operator.
+
+    ** test **
+    from symmer.operators import AntiCommutingOp
+    from symmer.utils import random_anitcomm_2n_1_PauliwordOp, Get_AC_root
+
+    op = random_anitcomm_2n_1_PauliwordOp(3)
+    AC = AntiCommutingOp.from_PauliwordOp(op)
+
+    p = 0.25
+    root = Get_AC_root(p, AC)
+    print((root*root*root*root - AC).cleanup(zero_threshold=1e-12)
+
+    Args:
+        power (float): any power
+        operator (AntiCommutingOp) Anticommuting Pauli operator
+
+    Returns:
+        AC_root (PauliwordOp): operator representing power of AC input
+
+    """
+    Ps, rot, gamma_l, AC_normed = operator.unitary_partitioning(up_method='LCU')
+
+    Ps_root = get_PauliwordOp_root(power, Ps)
+
+    AC_root = (rot.dagger * Ps_root * rot).multiply_by_constant(gamma_l ** power)
+
+    return AC_root
+
+
+def get_generators_including_xz_products(operator: PauliwordOp) -> PauliwordOp:
+    """
+    Given an input operator perform similar process to finding generators (but do not use X,Z terms to generate Y terms)
+    i.e. the set can be dependent.
+
+    Args:
+        operator:
+
+    Returns:
+        PauliwordOp of generators build of X,Y,Z terms (note can have dependent terms!)
+
+    """
+    X_only = np.logical_and(operator.X_block, ~operator.Z_block)
+    Z_only = np.logical_and(~operator.X_block, operator.Z_block)
+    Y_only = np.logical_and(operator.Z_block, operator.X_block)
+
+    XZY_block = np.hstack((np.hstack((X_only, Z_only)), Y_only))
+
+    row_red_XYZ = _rref_binary(XZY_block)
+    non_zero_rows = row_red_XYZ[np.sum(row_red_XYZ, axis=1).astype(bool)]
+
+    X_new = non_zero_rows[:, :operator.X_block.shape[1]]
+    Z_new = non_zero_rows[:, operator.X_block.shape[1]:2 * operator.Z_block.shape[1]]
+    Y_new = non_zero_rows[:, 2 * operator.Z_block.shape[1]:]
+
+    sym_final = np.hstack((np.logical_or(X_new, Y_new),
+                           np.logical_or(Z_new, Y_new)))
+
+    # remove duplicates due to same X_new and Z_new positions
+    xyz_gens = PauliwordOp(sym_final, np.ones(sym_final.shape[0])).cleanup()
+    xyz_gens.coeff_vec = np.ones_like(xyz_gens.coeff_vec)
+
+    return xyz_gens

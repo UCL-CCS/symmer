@@ -28,7 +28,7 @@ class MPOOp:
             coeffList (List[complex]): List of complex coefficients
             Dmax (int): Maximum bond dimension. By default it is set to 'None'.
         """
-        self.mpo = pstrings_to_mpo(pauliList, coeffList, Dmax)
+        self.mpo = pstrings_to_mpo_optimized(pauliList, coeffList, Dmax)
 
     @classmethod
     def from_dictionary(cls,
@@ -151,6 +151,68 @@ def coefflist_to_complex(coefflist):
     arr = np.array(coefflist, dtype=complex)
 
     return arr[:, 0] + 1j*arr[:, 1]
+
+def pstrings_to_mpo_optimized(pstrings, coeffs=None, Dmax=None):
+    ''' 
+    Convert a list of Pauli Strings into an MPO. If coeff list is given,
+    rescale each Pauli string by the corresponding element of the coeff list.
+    Bond dim specifies the maximum bond dimension, if None, no maximum bond
+    dimension.
+    Optimization is achieved by constructing final sum terms directly from:
+        1) First letters of each Pauli string for the first term 
+        2) Last letters of each Pauli string for the last term 
+        3) Diagonal matrix per each part of 4D tensor with respective middle letters of Pauli strings 
+
+    Args:
+        pstrings (List[str]): List of Pauli Strings
+        coeffs (List[complex]): List of coefficients. By default it is set to 'None'. If coeff list is given, each Pauli string is rescaled by the corresponding element of the coeff list.
+        Dmax (int): Maximum bond dimension. By default it is set to 'None'.
+
+    Returns:
+        mpo: The Matrix Product Operator (MPO)
+    '''
+
+    if coeffs is None:
+        coeffs = np.ones(len(pstrings))
+
+    if Dmax is None:
+        Dmax = np.inf
+
+    summed = [None] * len(pstrings[0])
+    first_p = np.array([Paulis[pstr[0]] for pstr in pstrings])
+
+    for i in range(len(coeffs)):
+        first_p[i] = np.multiply(first_p[i], coeffs[i])
+
+    last_p = [pstr[-1] for pstr in pstrings]
+    p_i = [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+    first_sum = [ [ [[ ]], [[ ]] ], [ [[ ]], [[ ]] ]]
+    for p in first_p:
+        for x, y in p_i:
+            first_sum[x][y][0].extend([p[x][y]])
+
+    summed[0] = np.array(first_sum)
+    
+
+    last_sum = [ [ [ ], [ ] ], [ [ ], [ ] ]]
+    for p in last_p:
+        for x, y in p_i:
+            last_sum[x][y].append([ Paulis[p][x][y]])
+   
+    summed[-1] = np.array(last_sum)
+
+    
+    for i in range(1, len(pstrings[0]) - 1):
+        middle_p_i = [pstr[i] for pstr in pstrings]
+        new_tensor = [ [ [ ], [ ] ], [ [ ], [ ] ] ]
+
+        for x, y in p_i:
+            new_tensor[x][y] = np.diag(np.array([ Paulis[p][x][y] for p in middle_p_i ]))
+        summed[i] = np.array(new_tensor)
+
+    mpo = truncate_MPO(summed, Dmax)
+    return mpo
 
 def pstrings_to_mpo(pstrings, coeffs=None, Dmax=None):
     ''' 
