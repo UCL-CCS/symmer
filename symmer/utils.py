@@ -75,6 +75,23 @@ def exact_gs_energy(
         # if a solution is not found within the first n_eig eigenvalues then error
         raise RuntimeError('No eigenvector of the correct particle number was identified - try increasing n_eigs.')
 
+def get_entanglement_entropy(psi: QuantumState, qubits: List[int]) -> float:
+    """
+    Get the Von Neumann entropy of the biprtition defined by the specified subsystem 
+    qubit indices and those remaining (i.e. those that will be subsequently traced out)
+
+    Args:
+        psi (QuantumState): the quantum state for which we wish to extract the entanglement entropy
+        qubits (List[int]): the qubit indices to project onto (the remaining qubits will be traced over)
+    
+    Returns:
+        entropy (float): the Von Neumann entropy of the reduced subsystem
+    """
+    reduced = psi.get_rdm(qubits)
+    eigvals, eigvecs = np.linalg.eig(reduced)
+    eigvals = eigvals[eigvals>0]
+    entropy = -np.sum(eigvals*np.log(eigvals)).real
+    return entropy
 
 def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=False, apply_clifford=True):
     """ 
