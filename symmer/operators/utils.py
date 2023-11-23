@@ -2,7 +2,7 @@ import numpy as np
 import scipy as sp
 from typing import Tuple, Dict
 from openfermion import QubitOperator
-from qiskit.opflow import PauliSumOp
+from qiskit.quantum_info import SparsePauliOp
 
 def symplectic_to_string(symp_vec) -> str:
     """
@@ -269,20 +269,19 @@ def QubitOperator_to_dict(op: QubitOperator, num_qubits: int):
          
     return op_dict
 
-def PauliSumOp_to_dict(op:PauliSumOp) -> dict:
+def SparsePauliOp_to_dict(op:SparsePauliOp) -> dict:
     """ 
     Qiskit
     
     Args:
-        op (PauliSumOp): Pauli Sum Operator
+        op (SparsePauliOp): Pauli Sum Operator
 
     Returns:
         Dictionary format of Pauli Sum Operator.
     """
     H_dict = {}
-    for P_term in op.to_pauli_op():
-        Pstr = P_term.primitive.to_label()
-        H_dict[Pstr] = P_term._coeff
+    for Pstr, coeff in op.to_list():
+        H_dict[Pstr] = coeff
     return H_dict
 
 def safe_PauliwordOp_to_dict(op) -> Dict[str, Tuple[float, float]]:

@@ -15,7 +15,7 @@ from cached_property import cached_property
 from scipy.stats import unitary_group
 from scipy.sparse import csr_matrix, csc_matrix, coo_matrix, dok_matrix
 from openfermion import QubitOperator, count_qubits
-from qiskit.opflow import PauliSumOp as ibm_PauliSumOp
+from qiskit.quantum_info import SparsePauliOp
 warnings.simplefilter('always', UserWarning)
 
 from numba.core.errors import NumbaDeprecationWarning, NumbaPendingDeprecationWarning
@@ -195,19 +195,19 @@ class PauliwordOp:
 
     @classmethod
     def from_qiskit(cls,
-            qiskit_op: ibm_PauliSumOp
+            qiskit_op: SparsePauliOp
         ) -> "PauliwordOp":
         """ 
-        Initialize a PauliwordOp from Qiskit's PauliSumOp representation.
+        Initialize a PauliwordOp from Qiskit's SparsePauliOp representation.
 
         Args:
-            qiskit_op (ibm_PauliSumOp): The PauliSumOp to initialize from.
+            qiskit_op (SparsePauliOp): The SparsePauliOp to initialize from.
 
         Returns:
             PauliwordOp: A new PauliwordOp object.
         """
-        assert(isinstance(qiskit_op, ibm_PauliSumOp)), 'Must supply a PauliSumOp'
-        operator_dict = PauliSumOp_to_dict(
+        assert(isinstance(qiskit_op, SparsePauliOp)), 'Must supply a SparsePauliOp'
+        operator_dict = SparsePauliOp_to_dict(
             qiskit_op
         )
         return cls.from_dictionary(operator_dict)
@@ -1396,28 +1396,24 @@ class PauliwordOp:
         Convert to OpenFermion Pauli operator representation.
 
         Returns:
-            QubitOperator: The QubitOperator representation of the PauliwordOp.
+            open_f (QubitOperator): The QubitOperator representation of the PauliwordOp.
         """
-        pauli_terms = []
-        for symp_vec, coeff in zip(self.symp_matrix, self.coeff_vec):
-            pauli_terms.append(
-                QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(symp_vec)) if Pi!='I']),
-                coeff)
-            )
-        if len(pauli_terms) == 1:
-            return pauli_terms[0]
-        else:
-            return sum(pauli_terms)
+        open_f = QubitOperator()
+        for P_sym, coeff in zip(self.symp_matrix, self.coeff_vec):
+            open_f+=QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(P_sym)) if Pi!='I']), coeff)
+        return open_f
 
     @cached_property
-    def to_qiskit(self) -> ibm_PauliSumOp:
+    def to_qiskit(self) -> SparsePauliOp:
         """ 
         Convert to Qiskit Pauli operator representation.
 
         Returns:
             PauliSumOp: The PauliSumOp representation of the PauliwordOp.
         """
-        return ibm_PauliSumOp.from_list(self.to_dictionary.items())
+        Pstr_list = np.apply_along_axis(symplectic_to_string, 1, self.symp_matrix).tolist()
+
+        return SparsePauliOp(Pstr_list, coeffs=self.coeff_vec.tolist())
 
     @cached_property
     def to_dictionary(self) -> Dict[str, complex]:
