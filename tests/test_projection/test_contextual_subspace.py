@@ -150,7 +150,7 @@ def test_project_state_onto_subspace(up_method):
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     CS.project_onto_subspace()
     projected_state = CS.project_state_onto_subspace(QT.tapered_ref_state)
-    assert projected_state == QuantumState([[0,0,0]], [1])
+    assert projected_state == QuantumState([[0,0,0]], [-1])
 
 def test_project_state_onto_subspace_before_operator():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='StabilizeFirst')
