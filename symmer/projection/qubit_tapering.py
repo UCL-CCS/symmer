@@ -19,6 +19,8 @@ class QubitTapering(S3Projection):
 
     Steps 1-2 are handled in this class whereas we defer to the parent S3Projection for 3-5.
     """
+    name = 'qubit_tapering' # for reference in QubitSubspaceManager
+
     def __init__(self,
             operator: PauliwordOp, 
             target_sqp: str = 'Z'

@@ -26,6 +26,8 @@ class ContextualSubspace(S3Projection):
     5. drop the corresponding qubits from the Hamiltonian whilst
     6. fixing the +/-1 eigenvalues
     """
+    name = 'contextual_subspace' # for reference in QubitSubspaceManager
+
     def __init__(self,
             operator: PauliwordOp,
             noncontextual_strategy: str = 'diag',
