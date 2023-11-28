@@ -4,7 +4,7 @@ from symmer.operators import PauliwordOp, IndependentOp, QuantumState
 from symmer.evolution import trotter, Had
 from functools import reduce
 
-class S3_projection:
+class S3Projection:
     """ 
     Base class for enabling qubit reduction techniques derived from
     the Stabilizer SubSpace (S3) projection framework, such as tapering

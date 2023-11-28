@@ -4,11 +4,11 @@ from symmer.projection.utils import (
     update_eigenvalues, StabilizerIdentification, ObservableBiasing, stabilizer_walk,
     # get_noncon_generators_from_commuting_stabilizers
 )
-from symmer.projection import S3_projection
+from symmer.projection import S3Projection
 from symmer.evolution import trotter
 from typing import List, Union, Optional
 
-class ContextualSubspace(S3_projection):
+class ContextualSubspace(S3Projection):
     """ 
     Class for performing contextual subspace methods as per https://quantum-journal.org/papers/q-2021-05-14-456/.
     Reduces the number of qubits in the problem while aiming to control the systematic error incurred along the way.
@@ -21,11 +21,13 @@ class ContextualSubspace(S3_projection):
     NOTE: the order in which (1) and (2) are performed depends on the noncontextual strategy specified
     3. Apply unitary partitioning (either sequence of rotations or linear combination of unitaries) to collapse noncontextual cliques
     
-    The remaining steps are handled by the parent S3_projection class:
+    The remaining steps are handled by the parent S3Projection class:
     4. rotate each stabilizer onto a single-qubit Pauli operator, 
     5. drop the corresponding qubits from the Hamiltonian whilst
     6. fixing the +/-1 eigenvalues
     """
+    name = 'contextual_subspace' # for reference in QubitSubspaceManager
+
     def __init__(self,
             operator: PauliwordOp,
             noncontextual_strategy: str = 'diag',
@@ -320,7 +322,7 @@ class ContextualSubspace(S3_projection):
         # if there are no stabilizers, return the input operator
         if self.stabilizers is None:
             return operator_to_project   
-        # instantiate the parent S3_projection class that handles the subspace projection
+        # instantiate the parent S3Projection class that handles the subspace projection
         super().__init__(self.stabilizers)
         self.S3_initialized = True
         # perform unitary partitioning
