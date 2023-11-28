@@ -21,7 +21,7 @@ class QubitTapering(S3_projection):
     """
     def __init__(self,
             operator: PauliwordOp, 
-            target_sqp: str = 'X'
+            target_sqp: str = 'Z'
         ) -> None:
         """ 
         Input the PauliwordOp we wish to taper.
