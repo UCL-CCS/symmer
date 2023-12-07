@@ -1367,7 +1367,7 @@ class PauliwordOp:
         """
         open_f = QubitOperator()
         for P_sym, coeff in zip(self.symp_matrix, self.coeff_vec):
-            open_f+=QubitOperator(' '.join([Pi+str(i) for i,Pi in enumerate(symplectic_to_string(P_sym)) if Pi!='I']), coeff)
+            open_f+=symplectic_to_openfermion(P_sym, coeff)
         return open_f
 
     @cached_property

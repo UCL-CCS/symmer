@@ -33,6 +33,37 @@ def symplectic_to_string(symp_vec) -> str:
 
     return Pword_string
 
+def symplectic_to_openfermion(symp_vec, coeff) -> str:
+    """Returns string form of symplectic vector defined as (X | Z).
+
+    Args:
+        symp_vec (array): symplectic Pauliword array
+
+    Returns:
+        Pword_string (str): String version of symplectic array
+    """
+    n_qubits = len(symp_vec) // 2
+
+    X_block = symp_vec[:n_qubits]
+    Z_block = symp_vec[n_qubits:]
+
+    Y_loc = np.logical_and(X_block, Z_block)
+    X_loc = np.logical_xor(Y_loc, X_block)
+    Z_loc = np.logical_xor(Y_loc, Z_block)
+
+    char_aray = np.array(list("I" * n_qubits), dtype=str)
+
+    char_aray[Y_loc] = "Y"
+    char_aray[X_loc] = "X"
+    char_aray[Z_loc] = "Z"
+
+    indices = np.array(range(n_qubits), dtype=str)
+    char_aray = np.char.add(char_aray, indices)[np.where(char_aray != "I")[0]]
+
+    Pword_string = " ".join(char_aray)
+
+    return QubitOperator(Pword_string, coeff)
+
 def string_to_symplectic(pauli_str, n_qubits):
     """
     Args:
