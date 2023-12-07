@@ -17,9 +17,9 @@
 
 # -- Project information -----------------------------------------------------
 
-project = "Symmer"
-copyright = "2023, Alexis Ralli, Tim Weaving"
-author = "Alexis Ralli, Tim Weaving"
+project = 'Symmer'
+copyright = '2023, Alexis Ralli, Tim Weaving'
+author = 'Alexis Ralli, Tim Weaving'
 
 
 # -- General configuration ---------------------------------------------------
@@ -28,14 +28,14 @@ author = "Alexis Ralli, Tim Weaving"
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
-    "sphinx.ext.intersphinx",
-    "sphinx.ext.extlinks",
-    "sphinx.ext.napoleon",
-    "sphinx.ext.linkcode",
-    "myst_nb",
+    'sphinx.ext.intersphinx',
+    'sphinx.ext.extlinks',
+    'sphinx.ext.napoleon',
+    'sphinx.ext.linkcode',
+    'myst_nb',
     "sphinx_design",
-    "sphinx_copybutton"
-    #    'autoapi.extension',
+    'sphinx_copybutton'
+#    'autoapi.extension',
 ]
 
 # msyt_nb configuration
@@ -50,7 +50,7 @@ myst_enable_extensions = [
 ]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ["_templates"]
+templates_path = ['_templates']
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -63,18 +63,17 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "alabaster"
+html_theme = 'alabaster'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ["_static"]
-
+html_static_path = ['_static']
 
 def linkcode_resolve(domain, info):
-    if domain != "py":
+    if domain != 'py':
         return None
-    if not info["module"]:
+    if not info['module']:
         return None
-    filename = info["module"].replace(".", "/")
+    filename = info['module'].replace('.', '/')
     return "https://somesite/sourcerepo/%s.py" % filename
