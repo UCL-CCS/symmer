@@ -1,14 +1,15 @@
-from symmer.operators import PauliwordOp
-import numpy as np
-from typing import Dict, List, Optional, Tuple, Union
 import warnings
+from typing import Dict, List, Optional, Tuple, Union
 
-warnings.simplefilter('always', UserWarning)
+import numpy as np
+
+from symmer.operators import PauliwordOp
+
+warnings.simplefilter("always", UserWarning)
+
+
 class AntiCommutingOp(PauliwordOp):
-
-    def __init__(self,
-                 AC_op_symp_matrix: np.array,
-                 coeff_list: np.array):
+    def __init__(self, AC_op_symp_matrix: np.array, coeff_list: np.array):
         """
         Args:
             AC_op_symp_matrix (np.array): The symmetric matrix representation of the anti-commuting operator.
@@ -22,16 +23,17 @@ class AntiCommutingOp(PauliwordOp):
         # check all operators anticommute
         adj_mat = self.adjacency_matrix
         adj_mat[np.diag_indices_from(adj_mat)] = False
-        assert ~np.any(adj_mat), 'operator needs to be made of anti-commuting Pauli operators'
+        assert ~np.any(
+            adj_mat
+        ), "operator needs to be made of anti-commuting Pauli operators"
 
         self.X_sk_rotations = []
         self.R_LCU = None
 
     @classmethod
-    def from_list(cls,
-            pauli_terms :List[str],
-            coeff_vec:   List[complex] = None
-        ) -> "AntiCommutingOp":
+    def from_list(
+        cls, pauli_terms: List[str], coeff_vec: List[complex] = None
+    ) -> "AntiCommutingOp":
         """
         Args:
             pauli_terms (List[str]): A list of Pauli terms represented as strings.
@@ -45,10 +47,8 @@ class AntiCommutingOp(PauliwordOp):
         return cls.from_PauliwordOp(PwordOp)
 
     @classmethod
-    def from_dictionary(cls,
-            operator_dict: Dict[str, complex]
-        ) -> "AntiCommutingOp":
-        """ 
+    def from_dictionary(cls, operator_dict: Dict[str, complex]) -> "AntiCommutingOp":
+        """
         Initialize a PauliwordOp from its dictionary representation {pauli:coeff, ...}
 
         Args:
@@ -62,9 +62,7 @@ class AntiCommutingOp(PauliwordOp):
         return cls.from_PauliwordOp(PwordOp)
 
     @classmethod
-    def from_PauliwordOp(cls,
-            PwordOp: PauliwordOp
-        ) -> 'AntiCommutingOp':
+    def from_PauliwordOp(cls, PwordOp: PauliwordOp) -> "AntiCommutingOp":
         """
         Args:
             PwordOp (PauliwordOp): The PauliwordOp instance to initialize the AntiCommutingOp from.
@@ -73,7 +71,6 @@ class AntiCommutingOp(PauliwordOp):
             AntiCommutingOp: An AntiCommutingOp instance initialized from the given PauliwordOp.
         """
         return cls(PwordOp.symp_matrix, PwordOp.coeff_vec)
-
 
     def get_least_dense_term_index(self):
         """
@@ -90,15 +87,18 @@ class AntiCommutingOp(PauliwordOp):
         # int_list = pos_terms_occur @ (1 << np.arange(pos_terms_occur.shape[1], dtype=object)[::-1])
         # s_index = np.argmin(int_list)
 
-        pos_terms_occur = np.logical_or(self.symp_matrix[:, :self.n_qubits], self.symp_matrix[:, self.n_qubits:])
+        pos_terms_occur = np.logical_or(
+            self.symp_matrix[:, : self.n_qubits], self.symp_matrix[:, self.n_qubits :]
+        )
         symp_matrix_view = np.ascontiguousarray(pos_terms_occur).view(
-            np.dtype((np.void, pos_terms_occur.dtype.itemsize * pos_terms_occur.shape[1]))
+            np.dtype(
+                (np.void, pos_terms_occur.dtype.itemsize * pos_terms_occur.shape[1])
+            )
         )
         sort_order = np.argsort(symp_matrix_view.ravel())
         s_index = sort_order[0]
 
         return s_index
-
 
     def _recursive_seq_rotations(self, AC_op: PauliwordOp) -> "PauliwordOp":
         """
@@ -127,7 +127,9 @@ class AntiCommutingOp(PauliwordOp):
                 theta_sk = theta_sk + np.pi
 
             # check
-            assert (np.isclose((β_k * np.cos(theta_sk) - β_s * np.sin(theta_sk)), 0)), 'term not zeroing out'
+            assert np.isclose(
+                (β_k * np.cos(theta_sk) - β_s * np.sin(theta_sk)), 0
+            ), "term not zeroing out"
 
             # -X_sk = -1j * Ps @ Pk
             jP_k = PauliwordOp(op_for_rotation.symp_matrix[k_index], [-1j])
@@ -139,19 +141,27 @@ class AntiCommutingOp(PauliwordOp):
             self.X_sk_rotations.append((X_sk, theta_sk))
 
             # update coeffs
-            op_for_rotation.coeff_vec[s_index] = np.sqrt(β_s ** 2 + β_k ** 2)
+            op_for_rotation.coeff_vec[s_index] = np.sqrt(β_s**2 + β_k**2)
             op_for_rotation.coeff_vec[k_index] = 0
 
             # build op without k term and (included modified s term)
-            AC_op_rotated = PauliwordOp(np.delete(op_for_rotation.symp_matrix, k_index, axis=0),
-                                        np.delete(op_for_rotation.coeff_vec, k_index, axis=0))
+            AC_op_rotated = PauliwordOp(
+                np.delete(op_for_rotation.symp_matrix, k_index, axis=0),
+                np.delete(op_for_rotation.coeff_vec, k_index, axis=0),
+            )
 
             ## know how operator acts therefore don't need to actually do rotations
 
             return self._recursive_seq_rotations(AC_op_rotated)
 
-    def unitary_partitioning(self, s_index: int=None, up_method: Optional[str]='seq_rot') \
-            -> Tuple[PauliwordOp, Union[PauliwordOp, List[Tuple[PauliwordOp, float]]], float, "AntiCommutingOp"]:
+    def unitary_partitioning(
+        self, s_index: int = None, up_method: Optional[str] = "seq_rot"
+    ) -> Tuple[
+        PauliwordOp,
+        Union[PauliwordOp, List[Tuple[PauliwordOp, float]]],
+        float,
+        "AntiCommutingOp",
+    ]:
         """
         Apply unitary partitioning on anticommuting operator (self)
 
@@ -166,7 +176,10 @@ class AntiCommutingOp(PauliwordOp):
             gamma_l (float): normalization constant of clique (anticommuting operator)
             AC_op (AntiCommutingOp): normalized clique - i.e. self == gamma_l * AC_op
         """
-        assert up_method in ['LCU', 'seq_rot'], f'unknown unitary partitioning method: {up_method}'
+        assert up_method in [
+            "LCU",
+            "seq_rot",
+        ], f"unknown unitary partitioning method: {up_method}"
         AC_op = self.copy()
 
         if AC_op.n_terms == 1:
@@ -178,7 +191,9 @@ class AntiCommutingOp(PauliwordOp):
 
         else:
 
-            assert np.isclose(np.sum(AC_op.coeff_vec.imag), 0), 'cannot apply unitary partitioning to operator with complex coeffs'
+            assert np.isclose(
+                np.sum(AC_op.coeff_vec.imag), 0
+            ), "cannot apply unitary partitioning to operator with complex coeffs"
 
             gamma_l = np.linalg.norm(AC_op.coeff_vec)
             AC_op.coeff_vec = AC_op.coeff_vec / gamma_l
@@ -186,33 +201,39 @@ class AntiCommutingOp(PauliwordOp):
             if s_index is None:
                 s_index = self.get_least_dense_term_index()
 
-            if s_index!=0:
+            if s_index != 0:
                 # re-order so s term is ALWAYS at top of symplectic matrix and thus is index as 0!
                 ### assert s_index <= AC_op.n_terms-1, 's_index out of range'
                 AC_op.coeff_vec[[0, s_index]] = AC_op.coeff_vec[[s_index, 0]]
                 AC_op.symp_matrix[[0, s_index]] = AC_op.symp_matrix[[s_index, 0]]
-                AC_op = AntiCommutingOp(AC_op.symp_matrix, AC_op.coeff_vec) # need to reinit otherwise Z and X blocks wrong
+                AC_op = AntiCommutingOp(
+                    AC_op.symp_matrix, AC_op.coeff_vec
+                )  # need to reinit otherwise Z and X blocks wrong
 
             # assert not np.isclose(AC_op.coeff_vec[0], 0), f's_index cannot have zero coefficent: {AC_op.coeff_vec[0]}'
             if np.isclose(AC_op[0].coeff_vec, 0):
                 # need to correct for s_index having zero coeff... then need to swap to nonzero index
                 non_zero_index = np.argmax(abs(AC_op.coeff_vec))
-                AC_op.coeff_vec[[0, non_zero_index]] = AC_op.coeff_vec[[non_zero_index, 0]]
-                AC_op.symp_matrix[[0, non_zero_index]] = AC_op.symp_matrix[[non_zero_index, 0]]
+                AC_op.coeff_vec[[0, non_zero_index]] = AC_op.coeff_vec[
+                    [non_zero_index, 0]
+                ]
+                AC_op.symp_matrix[[0, non_zero_index]] = AC_op.symp_matrix[
+                    [non_zero_index, 0]
+                ]
 
-            if up_method=='seq_rot':
-                if len(self.X_sk_rotations)!=0:
+            if up_method == "seq_rot":
+                if len(self.X_sk_rotations) != 0:
                     self.X_sk_rotations = []
                 Ps = self._recursive_seq_rotations(AC_op)
                 rotations = self.X_sk_rotations
-            elif up_method=='LCU':
+            elif up_method == "LCU":
                 if self.R_LCU is not None:
                     self.R_LCU = None
 
                 Ps = self.generate_LCU_operator(AC_op)
                 rotations = self.R_LCU
             else:
-                raise ValueError(f'unknown unitary partitioning method: {up_method}!')
+                raise ValueError(f"unknown unitary partitioning method: {up_method}!")
 
             return Ps, rotations, gamma_l, AC_op
 
@@ -238,13 +259,12 @@ class AntiCommutingOp(PauliwordOp):
         # need to remove zero coeff terms
         AC_op_cpy = AC_op.copy()
         before_cleanup = AC_op_cpy.n_terms
-        AC_op = AC_op_cpy[np.where(abs(AC_op.coeff_vec)>1e-15)[0]]
+        AC_op = AC_op_cpy[np.where(abs(AC_op.coeff_vec) > 1e-15)[0]]
         post_cleanup = AC_op.n_terms
         # AC_op = AC_op.cleanup(zero_threshold=1e-15)  ## cleanup re-orders which is BAD for s_index
 
-
-        if (before_cleanup>1 and post_cleanup==1):
-            if AC_op.coeff_vec[0]<0:
+        if before_cleanup > 1 and post_cleanup == 1:
+            if AC_op.coeff_vec[0] < 0:
                 # need to fix neg sign (use Pauli multiplication)
 
                 # as s index defaults to 0, take the next term (in CS-VQE this will commute with symmetries)!
@@ -252,19 +272,22 @@ class AntiCommutingOp(PauliwordOp):
                     # need to correct for s_index having zero coeff... then need to swap to nonzero index
                     non_zero_index = np.argmax(abs(AC_op_cpy.coeff_vec))
 
-                    AC_op_cpy.coeff_vec[[0, non_zero_index]] = AC_op_cpy.coeff_vec[[non_zero_index, 0]]
-                    AC_op_cpy.symp_matrix[[0, non_zero_index]] = AC_op_cpy.symp_matrix[[non_zero_index, 0]]
+                    AC_op_cpy.coeff_vec[[0, non_zero_index]] = AC_op_cpy.coeff_vec[
+                        [non_zero_index, 0]
+                    ]
+                    AC_op_cpy.symp_matrix[[0, non_zero_index]] = AC_op_cpy.symp_matrix[
+                        [non_zero_index, 0]
+                    ]
 
-
-                sign_correction = PauliwordOp(AC_op_cpy.symp_matrix[1],[1])
+                sign_correction = PauliwordOp(AC_op_cpy.symp_matrix[1], [1])
 
                 self.R_LCU = sign_correction
                 Ps_LCU = PauliwordOp(AC_op.symp_matrix, [1])
             else:
-                self.R_LCU = PauliwordOp.from_list(['I'*AC_op.n_qubits])
+                self.R_LCU = PauliwordOp.from_list(["I" * AC_op.n_qubits])
                 Ps_LCU = PauliwordOp(AC_op.symp_matrix, AC_op.coeff_vec)
         else:
-            s_index=0
+            s_index = 0
 
             # note gamma_l norm applied on init!
             Ps_LCU = PauliwordOp(AC_op.symp_matrix[s_index], [1])
@@ -279,11 +302,11 @@ class AntiCommutingOp(PauliwordOp):
 
             phi_n_1 = np.arccos(βs)
             # require sin(𝜙_{𝑛−1}) to be positive...
-            if (phi_n_1 > np.pi):
+            if phi_n_1 > np.pi:
                 phi_n_1 = 2 * np.pi - phi_n_1
 
             alpha = phi_n_1
-            I_term = 'I' * Ps_LCU.n_qubits
+            I_term = "I" * Ps_LCU.n_qubits
             self.R_LCU = PauliwordOp.from_dictionary({I_term: np.cos(alpha / 2)})
 
             sin_term = -np.sin(alpha / 2)
@@ -293,6 +316,7 @@ class AntiCommutingOp(PauliwordOp):
                 self.R_LCU += dk_PkPs.multiply_by_constant(sin_term)
 
         return Ps_LCU
+
 
 def LCU_as_seq_rot(AC_op: PauliwordOp, include_global_phase_correction=False):
     """
@@ -327,8 +351,8 @@ def LCU_as_seq_rot(AC_op: PauliwordOp, include_global_phase_correction=False):
     print(check == rotations_LCU)
     """
 
-    assert AC_op.n_terms > 1, 'AC_op must have more than 1 term'
-    assert np.isclose(np.linalg.norm(AC_op.coeff_vec), 1), 'AC_op must be l2 normalized'
+    assert AC_op.n_terms > 1, "AC_op must have more than 1 term"
+    assert np.isclose(np.linalg.norm(AC_op.coeff_vec), 1), "AC_op must be l2 normalized"
 
     expon_p_terms = []
 
@@ -336,7 +360,7 @@ def LCU_as_seq_rot(AC_op: PauliwordOp, include_global_phase_correction=False):
     coeff_vec = AC_op.coeff_vec.real + AC_op.coeff_vec.imag
     for k, c_k in enumerate(coeff_vec):
         P_k = AC_op[k]
-        theta_k = np.arcsin(c_k / np.linalg.norm(coeff_vec[:(k + 1)]))
+        theta_k = np.arcsin(c_k / np.linalg.norm(coeff_vec[: (k + 1)]))
         P_k.coeff_vec[0] = 1
         expon_p_terms.append(tuple((P_k, theta_k)))
 
@@ -354,13 +378,14 @@ def LCU_as_seq_rot(AC_op: PauliwordOp, include_global_phase_correction=False):
 
     if include_global_phase_correction:
         ## multiply by -1j Identity term!
-        phase_rot = (PauliwordOp.from_dictionary({'I' * AC_op.n_qubits: 1}), -np.pi)
+        phase_rot = (PauliwordOp.from_dictionary({"I" * AC_op.n_qubits: 1}), -np.pi)
         expon_p_terms.append(phase_rot)
 
         # check1 = reduce(lambda a,b: a*b, [exponentiate_single_Pop(x.multiply_by_constant(1j*y/2)) for x, y in expon_p_terms])
         # assert check1 == AC_op
 
     return expon_p_terms
+
 
 # from symmer.operators.utils import mul_symplectic
 # def conjugate_Pop_with_R(Pop:PauliwordOp,
