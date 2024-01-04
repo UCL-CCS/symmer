@@ -32,11 +32,9 @@ class ContextualSubspace(S3Projection):
             operator: PauliwordOp,
             noncontextual_strategy: str = 'diag',
             noncontextual_solver: str = 'brute_force',
-            num_anneals:Optional[int] = 1000,
             unitary_partitioning_method: str = 'seq_rot',
             reference_state: Union[np.array, QuantumState] = None,
-            noncontextual_operator: NoncontextualOp = None,
-            noncontextual_expansion_order: int = 1
+            noncontextual_operator: NoncontextualOp = None
         ):
         """
         When passing in a noncontextual_operator if noncontextual_strategy set to be 'solved' then noncontextual_solver will NOT be run.
@@ -45,11 +43,9 @@ class ContextualSubspace(S3Projection):
             operator(PauliwordOp): Operator one wishes to enforce as stabilizers over the contextual subspace.
             noncontextual_strategy (str): Non-Contextual Strategy to be applied. Its default value is'diag'.
             noncontextual_solver (str): Non-contextual solver to be applied. Its default value is'brute_force'.
-            num_anneals (int): Number of simulated anneals to do. By default, it is set to 1000.
             unitary_partitioning_method (str): Unitary Partitioning Method to be applied. Its default value is'seq_rot'.
             reference_state (QuantumState): Reference State. By default, it is set to None.
-            noncontextual_operator (NoncontextualOp): Non-contextual Operator. By default, it is set to None.
-            noncontextual_expansion_order (int): Non-contextual Expansion Order. Its default value is 1.       
+            noncontextual_operator (NoncontextualOp): Non-contextual Operator. By default, it is set to None.    
         """
         # noncontextual startegy will have the form x_y, where x is the actual strategy
         # and y is some supplementary method indicating a sorting key such as magnitude
@@ -60,8 +56,6 @@ class ContextualSubspace(S3Projection):
         extract_noncon_strat = noncontextual_strategy.split('_')
         self.nc_strategy = extract_noncon_strat[0]
         self.noncontextual_solver = noncontextual_solver
-        self.num_anneals = num_anneals
-        self.noncontextual_expansion_order = noncontextual_expansion_order
         self.unitary_partitioning_method = unitary_partitioning_method
 
         # With the exception of the StabilizeFirst noncontextual strategy, here we build
@@ -158,9 +152,7 @@ class ContextualSubspace(S3Projection):
                 raise ValueError('The Hamiltonian is noncontextual, the contextual subspace is empty.')
             self.noncontextual_operator.solve(
                 strategy=self.noncontextual_solver, 
-                ref_state=self.ref_state, 
-                num_anneals=self.num_anneals,
-                expansion_order=self.noncontextual_expansion_order
+                ref_state=self.ref_state
             )
             self.n_cliques = self.noncontextual_operator.n_cliques
         

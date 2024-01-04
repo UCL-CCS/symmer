@@ -249,8 +249,7 @@ def test_solve_brute_force_discrete_no_ref():
     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
     
     H_noncon.solve(strategy='brute_force',
-                   ref_state=None,
-                   num_anneals=None)
+                   ref_state=None)
     assert np.isclose(H_noncon.energy, noncon_problem['E'])
 
 
@@ -258,57 +257,19 @@ def test_solve_binary_relaxation_no_ref():
     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
     
     H_noncon.solve(strategy='binary_relaxation',
-                      ref_state=None,
-                      num_anneals=None)
+                      ref_state=None)
     assert noncon_problem['E']<=H_noncon.energy
     if not np.isclose(H_noncon.energy, noncon_problem['E']):
         warnings.warn('binary relaxation method not finding correct energy')
     else:
         assert np.isclose(H_noncon.energy, noncon_problem['E'])
 
-
-def test_solve_brute_force_PUSO_discrete_no_ref():
-    H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-    H_noncon.solve(strategy='brute_force_PUSO',
-                   ref_state=None,
-                   num_anneals=None)
-    assert np.isclose(H_noncon.energy, noncon_problem['E'])
-
-
-def test_solve_brute_force_QUSO_discrete_no_ref():
-    H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-    H_noncon.solve(strategy='brute_force_QUSO',
-                   ref_state=None,
-                   num_anneals=None)
-    assert np.isclose(H_noncon.energy, noncon_problem['E'])
-
-def test_solve_annealing_PUSO_discrete_no_ref():
-    H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-    H_noncon.solve(strategy='annealing_PUSO',
-                   ref_state=None,
-                   num_anneals=1_000)
-    assert np.isclose(H_noncon.energy, noncon_problem['E'])
-
-
-def test_solve_annealing_QUSO_discrete_no_ref():
-    H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-    H_noncon.solve(strategy='annealing_QUSO',
-                   ref_state=None,
-                   num_anneals=1_000)
-    assert np.isclose(H_noncon.energy, noncon_problem['E'])
-
-
 def test_solve_full_reference_state():
     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
     reference = noncon_problem['reference_state']
 
     H_noncon.solve(strategy='brute_force',
-                   ref_state=reference,
-                   num_anneals=None)
+                   ref_state=reference)
     assert np.isclose(H_noncon.energy, noncon_problem['E'])
 
 
@@ -320,74 +281,9 @@ def test_solve_brute_force_discrete_partial_ref():
     with pytest.warns():
         # capture warning when Z stabilizers measured give zero expec value
         H_noncon.solve(strategy='brute_force',
-                       ref_state=partial_reference_state,
-                       num_anneals=None)
+                       ref_state=partial_reference_state)
     assert np.isclose(H_noncon.energy, noncon_problem['E'])
 
-
-# def test_solve_binary_relaxation_partial_ref():
-#     H_noncon = PauliwordOp.from_dictionary(noncon_problem['H_dict'])
-#     H_noncon = NoncontextualOp.from_PauliwordOp(H_noncon)
-#
-#     partial_reference_state = noncon_problem['partial_reference_state']
-#
-#     H_noncon.solve(strategy='binary_relaxation',
-#                       ref_state=partial_reference_state,
-#                       discrete_optimization_order=None,
-#                       num_anneals=None)
-#     assert np.isclose(H_noncon.energy, noncon_problem['E'])
-
-
-def test_solve_brute_force_PUSO_discrete_partial_ref():
-    H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-    partial_reference_state = noncon_problem['partial_reference_state']
-
-    with pytest.warns():
-        # capture warning when Z stabilizers measured give zero expec value
-        H_noncon.solve(strategy='brute_force_PUSO',
-                       ref_state=partial_reference_state,
-                       num_anneals=None)
-    assert np.isclose(H_noncon.energy, noncon_problem['E'])
-
-
-def test_solve_brute_force_QUSO_discrete_partial_ref():
-    H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-    partial_reference_state = noncon_problem['partial_reference_state']
-
-    with pytest.warns():
-        # capture warning when Z stabilizers measured give zero expec value
-        H_noncon.solve(strategy='brute_force_QUSO',
-                       ref_state=partial_reference_state,
-                       num_anneals=None)
-    assert np.isclose(H_noncon.energy, noncon_problem['E'])
-
-
-def test_solve_annealing_PUSO_discrete_partial_ref():
-    H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-    partial_reference_state = noncon_problem['partial_reference_state']
-
-    with pytest.warns():
-        # capture warning when Z stabilizers measured give zero expec value
-        H_noncon.solve(strategy='annealing_PUSO',
-                       ref_state=partial_reference_state,
-                       num_anneals=1_000)
-    assert np.isclose(H_noncon.energy, noncon_problem['E'])
-
-
-def test_solve_annealing_QUSO_discrete_partial_ref():
-    H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-    partial_reference_state = noncon_problem['partial_reference_state']
-
-    with pytest.warns():
-        # capture warning when Z stabilizers measured give zero expec value
-        H_noncon.solve(strategy='annealing_QUSO',
-                       ref_state=partial_reference_state,
-                       num_anneals=1_000)
-    assert np.isclose(H_noncon.energy, noncon_problem['E'])
 
 def test_init_Hnoncon1():
     """
@@ -400,194 +296,3 @@ def test_init_Hnoncon1():
     coeff_vec = H_con.coeff_vec
     with pytest.raises(AssertionError):
         NoncontextualOp(symp_matrix, coeff_vec)
-
-
-# def test_get_qaoa_qubo_no_reference():
-#     """
-#     checks qaoa qubo with no reference state (compare exact brute force approach)
-#     """
-#     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-#     QAOA_dict = H_noncon.get_qaoa(ref_state=None, type='qubo')
-
-#     for key in QAOA_dict.keys():
-#         exp = QAOA_dict[key]
-#         qaoa_H = exp['H']
-
-#         e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
-
-#         # brute force check ground state for a fixed r_vec!!!
-#         NC_solver = NoncontextualSolver(H_noncon)
-#         NC_solver.metheod = 'brute_force'
-#         NC_solver.x = 'Q'
-
-#         energy, nu_vec, = NC_solver.energy_xUSO()
-
-#         assert np.isclose(e_qaoq, energy)
-
-
-# def test_get_qaoa_qubo_with_full_reference():
-#     """
-#     checks qaoa qubo with full reference state (compare exact brute force approach)
-#     """
-#     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-#     reference = noncon_problem['reference_state']
-
-#     H_noncon.symmetry_generators.update_sector(reference)
-#     ev_assignment = H_noncon.symmetry_generators.coeff_vec
-#     fixed_ev_mask = ev_assignment != 0
-#     fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
-
-#     QAOA_dict = H_noncon.get_qaoa(ref_state=reference, type='qubo')
-
-#     for key in QAOA_dict.keys():
-#         exp = QAOA_dict[key]
-#         qaoa_H = exp['H']
-
-#         e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
-
-#         # brute force check ground state for a fixed r_vec!!!
-#         NC_solver = NoncontextualSolver(H_noncon,
-#                                         fixed_ev_mask,
-#                                         fixed_eigvals)
-#         NC_solver.metheod = 'brute_force'
-#         NC_solver.x = 'Q'
-
-#         energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
-
-#         assert np.isclose(e_qaoq, energy)
-
-
-# def test_get_qaoa_qubo_with_partial_reference():
-#     """
-#     checks qaoa qubo with partial reference state (compare exact brute force approach)
-#     """
-#     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-#     reference = noncon_problem['partial_reference_state']
-
-#     with pytest.warns():
-#         # capture warning when Z stabilizers measured give zero expec value
-#         H_noncon.symmetry_generators.update_sector(reference)
-
-#     ev_assignment = H_noncon.symmetry_generators.coeff_vec
-#     fixed_ev_mask = ev_assignment != 0
-#     fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
-
-#     with pytest.warns():
-#         # capture warning when Z stabilizers measured give zero expec value
-#         QAOA_dict = H_noncon.get_qaoa(ref_state=reference, type='qubo')
-
-#     for key in QAOA_dict.keys():
-#         exp = QAOA_dict[key]
-#         qaoa_H = exp['H']
-
-#         e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
-
-#         # brute force check ground state for a fixed r_vec!!!
-#         NC_solver = NoncontextualSolver(H_noncon, fixed_ev_mask, fixed_eigvals)
-#         NC_solver.metheod = 'brute_force'
-#         NC_solver.x = 'Q'
-
-#         energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
-
-#         assert np.isclose(e_qaoq, energy)
-
-
-# def test_get_qaoa_pubo_no_reference():
-#     """
-#     checks qaoa pubo with no reference state (compare exact brute force approach)
-#     """
-#     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-    
-#     QAOA_dict = H_noncon.get_qaoa(ref_state=None, type='pubo')
-
-#     for key in QAOA_dict.keys():
-#         exp = QAOA_dict[key]
-#         qaoa_H = exp['H']
-
-#         e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
-
-#         # brute force check ground state for a fixed r_vec!!!
-#         NC_solver = NoncontextualSolver(H_noncon)
-#         NC_solver.metheod = 'brute_force'
-#         NC_solver.x = 'Q'
-
-#         energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
-
-#         assert np.isclose(e_qaoq, energy)
-
-
-# def test_get_qaoa_pubo_with_full_reference():
-#     """
-#     checks qaoa pubo with full reference state (compare exact brute force approach)
-#     """
-#     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-#     reference = noncon_problem['reference_state']
-
-#     H_noncon.symmetry_generators.update_sector(reference)
-#     ev_assignment = H_noncon.symmetry_generators.coeff_vec
-#     fixed_ev_mask = ev_assignment != 0
-#     fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
-
-#     QAOA_dict = H_noncon.get_qaoa(ref_state=reference, type='pubo')
-
-#     for key in QAOA_dict.keys():
-#         exp = QAOA_dict[key]
-#         qaoa_H = exp['H']
-
-#         e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
-
-#         # brute force check ground state for a fixed r_vec!!!
-#         NC_solver = NoncontextualSolver(H_noncon,
-#                                         fixed_ev_mask,
-#                                         fixed_eigvals)
-#         NC_solver.metheod = 'brute_force'
-#         NC_solver.x = 'Q'
-
-#         energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
-
-#         assert np.isclose(e_qaoq, energy)
-
-
-# def test_get_qaoa_pubo_with_partial_reference():
-#     """
-#     checks qaoa pubo with partial reference state (compare exact brute force approach)
-#     """
-#     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-#     reference = noncon_problem['partial_reference_state']
-
-#     with pytest.warns():
-#         # capture warning when Z stabilizers measured give zero expec value
-#         H_noncon.symmetry_generators.update_sector(reference)
-
-#     ev_assignment = H_noncon.symmetry_generators.coeff_vec
-#     fixed_ev_mask = ev_assignment != 0
-#     fixed_eigvals = (ev_assignment[fixed_ev_mask]).astype(int)
-
-#     with pytest.warns():
-#         # capture warning when Z stabilizers measured give zero expec value
-#         QAOA_dict = H_noncon.get_qaoa(ref_state=reference, type='pubo')
-
-#     for key in QAOA_dict.keys():
-#         exp = QAOA_dict[key]
-#         qaoa_H = exp['H']
-
-#         e_qaoq, gs_qaoa = exact_gs_energy(qaoa_H.to_sparse_matrix)
-
-#         # brute force check ground state for a fixed r_vec!!!
-#         NC_solver = NoncontextualSolver(H_noncon, fixed_ev_mask, fixed_eigvals)
-#         NC_solver.metheod = 'brute_force'
-#         NC_solver.x = 'Q'
-
-#         energy, nu_vec, _ = NC_solver._energy_xUSO(exp['r_vec'])
-
-#         assert np.isclose(e_qaoq, energy)
-
-
-# def test_get_qaoa_error():
-#     """
-#     checks for type if type is not pubo or qubo
-#     """
-#     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
-#     with pytest.raises(AssertionError):
-#         H_noncon.get_qaoa(type='INCORRECT_STRING')

@@ -1098,7 +1098,8 @@ class PauliwordOp:
     def is_noncontextual(self) -> bool:
         """ 
         Returns True if the operator is noncontextual, False if contextual
-        Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
+        Scales as O(M^2), compared with the O(M^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
+        where M is the number of terms in the operator.
         Constructing the adjacency matrix is by far the most expensive part - very fast once that has been built.
 
         Returns:
