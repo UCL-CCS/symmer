@@ -222,6 +222,19 @@ class AntiCommutingOp(PauliwordOp):
         AC_op_copy = self.copy()
         AC_op_copy.coeff_vec *= constant
         return AC_op_copy
+    
+    @classmethod
+    def random(cls, n_qubits: int, n_terms: Union[None, int]=None, apply_clifford=True) -> "AntiCommutingOp":
+        """
+        generate a random real coefficient anticommuting op
+
+        """
+        from symmer.utils import random_anitcomm_2n_1_PauliwordOp
+        if n_terms is None:
+            n_terms = 2*n_qubits+1
+
+        assert n_terms<= 2*n_qubits+1, f'cannot have {n_terms} Pops on {n_qubits} qubits'
+        return cls.from_PauliwordOp( random_anitcomm_2n_1_PauliwordOp(n_qubits, apply_clifford=apply_clifford)[:n_terms])
 
     def generate_LCU_operator(self, AC_op) -> PauliwordOp:
         """

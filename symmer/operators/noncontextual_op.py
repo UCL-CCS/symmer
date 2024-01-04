@@ -331,7 +331,7 @@ class NoncontextualOp(PauliwordOp):
         for _ in range(n_qubits * 5):
             P_rand = PauliwordOp.random(H_nc.n_qubits, n_terms=1)
             P_rand.coeff_vec = [1]
-            U_cliff_rotations.append((P_rand, None))
+            U_cliff_rotations.append((P_rand, np.random.choice([np.pi/2, -np.pi/2])))
 
         H_nc = H_nc.perform_rotations(U_cliff_rotations)
 
