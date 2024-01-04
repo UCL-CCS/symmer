@@ -597,6 +597,7 @@ class NoncontextualOp(PauliwordOp):
         assert UP_method in ['LCU', 'seq_rot']
 
         if UP_method == 'LCU':
+            rotations_LCU = self.clique_operator.R_LCU
             Ps, rotations_LCU, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,
                                                                                                   up_method='LCU')
         else:
@@ -624,13 +625,13 @@ class NoncontextualOp(PauliwordOp):
 
         ## undo clifford rotations
         from symmer.evolution.exponentiation import exponentiate_single_Pop
-        for op, _ in clifford_rots:
+        for op, _ in clifford_rots[::-1]:
             rot = exponentiate_single_Pop(op.multiply_by_constant(1j * np.pi / 4))
             state = rot.dagger * state
 
         ## undo unitary partitioning step
         if UP_method == 'LCU':
-            state = rotations_LCU.dagger * state
+            state = self.clique_operator.R_LCU.dagger * state
         else:
             for op, angle in rotations_SEQ[::-1]:
                 state = exponentiate_single_Pop(op.multiply_by_constant(1j * angle / 2)).dagger * state

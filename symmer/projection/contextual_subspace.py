@@ -319,16 +319,7 @@ class ContextualSubspace(S3Projection):
         self.S3_initialized = True
         # perform unitary partitioning
         if self.perform_unitary_partitioning:
-            # the rotation is implemented differently depending on the choice of LCU or seq_rot
-            if self.noncontextual_operator.up_method=='LCU':
-                # linear-combination-of-unitaries approach
-                rotated_op = (self.noncontextual_operator.unitary_partitioning_rotations * operator_to_project
-                        * self.noncontextual_operator.unitary_partitioning_rotations.dagger).cleanup()
-            elif self.noncontextual_operator.up_method=='seq_rot':
-                # sequence-of-rotations approach
-                rotated_op = operator_to_project.perform_rotations(self.noncontextual_operator.unitary_partitioning_rotations)
-            else:
-                raise ValueError('Unrecognised unitary partitioning rotation method, must be one of LCU or seq_rot.')
+            rotated_op = operator_to_project.perform_rotations(self.noncontextual_operator.unitary_partitioning_rotations)
         else:
             rotated_op = operator_to_project
         # finally, project the operator before returning
@@ -365,10 +356,9 @@ class ContextualSubspace(S3Projection):
             state_to_project = self.ref_state
 
         if self.perform_unitary_partitioning:
-            # behaviour is different whether using the LCU or seq_rot UP methods
-            if self.noncontextual_operator.up_method == 'LCU':
-                rotation = self.noncontextual_operator.unitary_partitioning_rotations
-            elif self.noncontextual_operator.up_method == 'seq_rot':
+            if self.noncontextual_operator.unitary_partitioning_rotations == []:
+                rotation = PauliwordOp.from_list(['I'*self.operator.n_qubits])
+            else:
                 rotation_generator = sum([R*angle*.5*1j for R,angle in self.noncontextual_operator.unitary_partitioning_rotations])
                 rotation = trotter(rotation_generator)
             return self.project_state(rotation * state_to_project)
