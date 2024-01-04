@@ -62,7 +62,7 @@ def test_unitary_partitioning_no_s_index_seq_rot():
     Ps, rotations, gamma_l, AC_op = AcOp_real.unitary_partitioning(s_index=None, up_method='seq_rot')
 
     assert Ps.n_terms==1, 'can only rotate onto single Pauli operator'
-    assert gamma_l == np.linalg.norm(list(anti_commuting_real.values())), 'normalization wrong'
+    assert np.isclose(gamma_l, np.linalg.norm(list(anti_commuting_real.values()))), 'normalization wrong'
     assert len(rotations) == AcOp_real.n_terms-1, 'seq of rotation number incorrect'
 
     P_red = AcOp_real.perform_rotations(rotations)
@@ -91,15 +91,10 @@ def test_unitary_partitioning_no_s_index_LCU():
     Ps, rotations, gamma_l, AC_op = AcOp_real.unitary_partitioning(s_index=None, up_method='LCU')
 
     assert Ps.n_terms==1, 'can only rotate onto single Pauli operator'
-    assert gamma_l == np.linalg.norm(list(anti_commuting_real.values())), 'normalization wrong'
+    assert np.isclose(gamma_l, np.linalg.norm(list(anti_commuting_real.values()))), 'normalization wrong'
 
-    assert isinstance(rotations, PauliwordOp)
-    assert rotations.n_terms == AcOp_real.n_terms, 'LCU op contains too many pauli operators'
-
-    R_AC_op_Rdag = rotations * AcOp_real * rotations.dagger
+    R_AC_op_Rdag = AcOp_real.perform_rotations(rotations)
     assert R_AC_op_Rdag == Ps.multiply_by_constant(gamma_l)
-    assert rotations*rotations.dagger == PauliwordOp.from_dictionary({'I'*AcOp_real.n_qubits : 1}), 'R not unitary'
-
 
 def test_unitary_partitioning_s_index_seq_rot():
     AcOp_real = AntiCommutingOp.from_dictionary(anti_commuting_real)
@@ -109,7 +104,7 @@ def test_unitary_partitioning_s_index_seq_rot():
                                                                        up_method='seq_rot')
 
         assert Ps.n_terms==1, 'can only rotate onto single Pauli operator'
-        assert gamma_l == np.linalg.norm(list(anti_commuting_real.values())), 'normalization wrong'
+        assert np.isclose(gamma_l, np.linalg.norm(list(anti_commuting_real.values()))), 'normalization wrong'
         assert len(rotations) == AcOp_real.n_terms-1, 'seq of rotation number incorrect'
 
         P_red = AcOp_real.perform_rotations(rotations)
@@ -141,15 +136,10 @@ def test_unitary_partitioning_s_index_LCU():
                                                                        up_method='LCU')
 
         assert Ps.n_terms==1, 'can only rotate onto single Pauli operator'
-        assert gamma_l == np.linalg.norm(list(anti_commuting_real.values())), 'normalization wrong'
+        assert np.isclose(gamma_l, np.linalg.norm(list(anti_commuting_real.values()))), 'normalization wrong'
 
-        assert isinstance(rotations, PauliwordOp)
-        assert rotations.n_terms == AcOp_real.n_terms, 'LCU op contains too many pauli operators'
-
-        R_AC_op_Rdag = rotations * AcOp_real * rotations.dagger
+        R_AC_op_Rdag = AcOp_real.perform_rotations(rotations)
         assert R_AC_op_Rdag == Ps.multiply_by_constant(gamma_l)
-        assert rotations*rotations.dagger == PauliwordOp.from_dictionary({'I'*AcOp_real.n_qubits : 1}), 'R not unitary'
-
 
 def test_unitary_partitioning_seq_rot_complex():
     AcOp_comp = AntiCommutingOp.from_dictionary(anti_commuting_complex)
@@ -206,7 +196,7 @@ def test_ac_set_with_zero_ceoffs():
     Ps_LCU, rotations_LCU, gamma_l, AC_normed = AcOp_real.unitary_partitioning(s_index=1,
                                                                         up_method='LCU')
 
-    LCU_output = (rotations_LCU * AC_normed * rotations_LCU.dagger).cleanup()
+    LCU_output = AC_normed.perform_rotations(rotations_LCU).cleanup()
     assert LCU_output.n_terms==1
     assert np.isclose(LCU_output.coeff_vec[0], 1)
     assert Ps_LCU == LCU_output
@@ -218,13 +208,13 @@ def test_ac_set_with_negative_and_zero_ceoffs():
                                                                         up_method='seq_rot')
     seq_rot_output = AC_normed.perform_rotations(rotations_seq_rot)
     assert seq_rot_output.n_terms==1
-    assert np.isclose(seq_rot_output.coeff_vec[0], 1)
+    assert np.isclose(seq_rot_output.coeff_vec[0], -1)
     assert Ps_seq_rot == seq_rot_output
 
     Ps_LCU, rotations_LCU, gamma_l, AC_normed = AcOp_real.unitary_partitioning(s_index=0,
                                                                         up_method='LCU')
 
-    LCU_output = (rotations_LCU * AC_normed * rotations_LCU.dagger).cleanup()
+    LCU_output = AC_normed.perform_rotations(rotations_LCU)
     assert LCU_output.n_terms==1
-    assert np.isclose(LCU_output.coeff_vec[0], 1)
+    assert np.isclose(LCU_output.coeff_vec[0], -1)
     assert Ps_LCU == LCU_output

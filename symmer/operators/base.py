@@ -945,7 +945,7 @@ class PauliwordOp:
         elif isinstance(key, (list, np.ndarray)):
             mask = np.asarray(key)
         else:
-            raise ValueError('Unrecognised input, must be an integer, slice, list or np.array')
+            raise ValueError(f'Unrecognised input {type(key)}, must be an integer, slice, list or np.array')
         
         symp_items = self.symp_matrix[mask]
         coeff_items = self.coeff_vec[mask]
@@ -1098,7 +1098,8 @@ class PauliwordOp:
     def is_noncontextual(self) -> bool:
         """ 
         Returns True if the operator is noncontextual, False if contextual
-        Scales as O(N^2), compared with the O(N^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
+        Scales as O(M^2), compared with the O(M^3) algorithm of https://doi.org/10.1103/PhysRevLett.123.200501
+        where M is the number of terms in the operator.
         Constructing the adjacency matrix is by far the most expensive part - very fast once that has been built.
 
         Returns:
@@ -1111,7 +1112,8 @@ class PauliwordOp:
 
     def _rotate_by_single_Pword(self,
             Pword: "PauliwordOp", 
-            angle: float = None
+            angle: float = None,
+            threshold: float = 1e-18
         ) -> "PauliwordOp":
         """ 
         Let R(t) = e^{i t/2 Q} = cos(t/2)*I + i*sin(t/2)*Q, then one of the following can occur:
@@ -1127,10 +1129,17 @@ class PauliwordOp:
         Args:
             Pword (PauliwordOp): The Pauliword to rotate by.
             angle (float): The rotation angle in radians. If None, a Clifford rotation (angle=pi/2) is assumed.
-
+            threshold (float): Angle threshold for Clifford rotation (precision to which the angle is a multiple of pi/2)
         Returns:
             PauliwordOp: The rotated operator.
         """
+        if angle is None: # for legacy compatibility
+            angle = np.pi/2
+
+        if angle.imag != 0:
+            warnings.warn('Complex component in angle: this will be ignored.')
+        angle = angle.real
+
         assert(Pword.n_terms==1), 'Only rotation by single Pauliword allowed here'
         if Pword.coeff_vec[0] != 1:
             # non-1 coefficients will affect the sign and angle in the exponent of R(t)
@@ -1150,15 +1159,25 @@ class PauliwordOp:
             commute_self = PauliwordOp(self.symp_matrix[commute_vec], self.coeff_vec[commute_vec])
             anticom_self = PauliwordOp(self.symp_matrix[~commute_vec], self.coeff_vec[~commute_vec])
 
-            if angle is None:
-                # assumes pi/2 rotation so Clifford
-                anticom_part = (anticom_self*Pword_copy).multiply_by_constant(-1j)
+            multiple = angle * 2 / np.pi
+            int_part = round(multiple)
+            if abs(int_part - multiple)<=threshold:
+                if int_part % 2 == 0:
+                    # no rotation for angle congruent to 0 or pi disregarding sign, fixed in next line
+                    anticom_part = anticom_self
+                else:
+                    # rotation of -pi/2 disregarding sign, fixed in next line
+                    anticom_part = (anticom_self*Pword_copy).multiply_by_constant(-1j)
+                if int_part in [2,3]:
+                    anticom_part = anticom_part.multiply_by_constant(-1)
                 # if rotation is Clifford cannot produce duplicate terms so cleanup not necessary
                 return PauliwordOp(
                     np.vstack([anticom_part.symp_matrix, commute_self.symp_matrix]), 
                     np.hstack([anticom_part.coeff_vec, commute_self.coeff_vec])
                 )
             else:
+                if abs(angle)>1e6:
+                    warnings.warn('Large angle can lead to precision errors: recommend using high-precision math library such as mpmath or redefine angle in range [-pi, pi]')
                 # if angle is specified, performs non-Clifford rotation
                 anticom_part = (anticom_self.multiply_by_constant(np.cos(angle)) + 
                                 (anticom_self*Pword_copy).multiply_by_constant(-1j*np.sin(angle)))
@@ -1182,9 +1201,12 @@ class PauliwordOp:
             PauliwordOp: The operator after performing the rotations.
         """
         op_copy = self.copy()
-        for pauli_rotation, angle in rotations:
-            op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle).cleanup()
-        return op_copy
+        if rotations == []:
+            return op_copy.cleanup()
+        else:
+            for pauli_rotation, angle in rotations:
+                op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle).cleanup()
+            return op_copy
 
     def tensor(self, right_op: "PauliwordOp") -> "PauliwordOp":
         """ 

@@ -141,10 +141,10 @@ def random_anitcomm_2n_1_PauliwordOp(n_qubits, complex_coeff=False, apply_cliffo
     if apply_clifford:
         # apply clifford rotations to get rid of structure
         U_cliff_rotations = []
-        for _ in range(n_qubits + 5):
+        for _ in range(n_qubits * 5):
             P_rand = PauliwordOp.random(n_qubits, n_terms=1)
             P_rand.coeff_vec = [1]
-            U_cliff_rotations.append((P_rand, None))
+            U_cliff_rotations.append((P_rand, np.random.choice([np.pi/2, -np.pi/2])))
 
         P_anticomm = P_anticomm.perform_rotations(U_cliff_rotations)
 
