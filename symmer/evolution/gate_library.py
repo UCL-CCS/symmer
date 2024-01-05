@@ -111,6 +111,22 @@ def CX(n_qubits:int, control:int, target:int) -> PauliwordOp:
     _Had = Had(n_qubits, target)
     return _Had * CZ(n_qubits, control, target) * _Had
 
+def CY(n_qubits:int, control:int, target:int) -> PauliwordOp:
+    """ 
+    Controlled Y gate
+
+    Args:
+        n_qubits (int): Number of qubits.
+        control (int): Qubit index at which will act as a control qubit.
+        target (int): Qubit index at which the operation 'X' has to be applied if the control qubit is in |1> state.
+
+    Returns:
+        PauliwordOp representing the Controlled-X (CX) gate applied to the specified control and target qubits in a system of 'n_qubits' qubits.
+    """
+    _Had = Had(n_qubits, target)
+    _S   = S(n_qubits, target)
+    return _S * _Had * CZ(n_qubits, control, target) * _Had * _S.dagger
+
 def RX(n_qubits:int, index:int, angle:float) -> PauliwordOp:
     """ 
     Rotation-X gate
