@@ -1,6 +1,29 @@
+import pytest
+import numpy as np
+from symmer import PauliwordOp
 from symmer.evolution.gate_library import *
 from symmer.evolution.circuit_symmerlator import CircuitSymmerlator
-import pytest
+from qiskit.quantum_info import Statevector, random_clifford
+
+def test_random_cliffords():
+    """ Test the simulator on lots of random 5-qubit Clifford circuits
+    """
+    for _ in range(50):
+        n_q = 5
+        # generate random Clifford circuit
+        qc = random_clifford(n_q).to_circuit()
+        sv = Statevector(qc).data.reshape(-1,1)
+        # ... and a random observable
+        observable = PauliwordOp.random(n_q, 100, complex_coeffs=False)
+        observable_matrix = observable.reindex(list(range(0,n_q))[::-1]).to_sparse_matrix.toarray() # reverse order because qiskit
+        # Than, intialize the circuit simulator and check it matches direct statevector calculation.
+        CS = CircuitSymmerlator.from_qiskit(qc)
+        assert np.isclose(
+            (sv.conj().T @ observable_matrix @ sv)[0,0],
+            CS.evaluate(observable)
+        )
+
+#### INDIVIDUAL GATE TESTS BELOW ####
 
 one_qubit_paulis = [
     'I', 'X', 'Y', 'Z'

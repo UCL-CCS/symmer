@@ -829,7 +829,7 @@ class PauliwordOp:
         Returns:
             complex: The expectation value.
         """
-        if self.n_terms > psi.n_terms:
+        if self.n_terms > psi.n_terms and psi.n_terms > 10:
             return (psi.dagger * self * psi).real
         else:
             if self.n_terms > 1:
