@@ -1227,15 +1227,28 @@ class PauliwordOp:
         return left_factor * right_factor
 
     def get_graph(self, 
-            edge_relation = 'C'
+            edge_relation: Optional[str]='C',
+             label_nodes: Optional[bool]=False
         ) -> nx.graph:
-        """ 
-        Build a graph based on edge relation C (commuting), 
-        AC (anticommuting) or QWC (qubitwise commuting).
+        """
+        Build a graph based on edge relation C (commuting), AC (anticommuting) or QWC (qubitwise commuting).
+        Note if label_nodes set to True then node names are pauli operators.
+
+        To draw:
+        import networkx as nx
+        H = PauliwordOp.random(3, 10)
+        graph = H.get_graph(edge_relation='C', label_nodes=True)
+        nx.draw(graph,
+                with_labels = True,
+                alpha=0.75,
+                node_color="skyblue",
+                width=0.1,
+                node_size=750
+        )
 
         Args:
             edge_relation (str): The edge relation to consider. Options are 'C' for commuting, 'AC' for anticommuting, and 'QWC' for qubitwise commuting. Defaults to 'C'.
-
+            label_nodes (bool): flag to label nodes of graph
         Returns:
             nx.Graph: The graph representing the edge relation.
         """
@@ -1251,6 +1264,12 @@ class PauliwordOp:
         np.fill_diagonal(adjmat,False) # avoids self-adjacency
         # convert to a networkx graph and perform colouring on complement
         graph = nx.from_numpy_array(adjmat)
+
+        if label_nodes:
+            node_list = np.apply_along_axis(symplectic_to_string, 1, self.symp_matrix).tolist()
+            mapping = dict(zip(range(len(node_list)), node_list))
+            graph = nx.relabel_nodes(graph, mapping)
+
         return graph
 
     def largest_clique(self,

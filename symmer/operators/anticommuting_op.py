@@ -287,10 +287,12 @@ class AntiCommutingOp(PauliwordOp):
 
         return Ps_LCU
 
-def LCU_as_seq_rot(R_LCU: PauliwordOp):
+def LCU_as_seq_rot(R_LCU: PauliwordOp) -> List[Tuple[PauliwordOp, float]]:
     """
     Convert a unitary composed of a
     See equations 18 and 19 of https://arxiv.org/pdf/1907.09040.pdf
+
+    number of rotations is 2*(R_LCU.n_terms-1), which can at most be 4*n_qubits
 
     Args:
         R_LCU (PauliwordOp): unitary composed as a normalized linear combination of imaginary anticommuting Pauli operators (excluding identity)
@@ -302,20 +304,18 @@ def LCU_as_seq_rot(R_LCU: PauliwordOp):
     from symmer.utils import random_anitcomm_2n_1_PauliwordOp
     from symmer.operators import AntiCommutingOp
     from symmer.evolution.exponentiation import exponentiate_single_Pop
-    from functools import reduce
+    from symmer.utils import product_list
 
     nq = 3 # change (do not make too large as has exp checking cost)
 
     AC_2n1 = random_anitcomm_2n_1_PauliwordOp(nq)
     AC_op = AntiCommutingOp.from_PauliwordOp(AC_2n1)
     Ps_LCU, rotations_LCU, gamma_l, AC_normed = AC_op.unitary_partitioning(s_index=0, up_method= 'LCU')
-    exp_terms = LCU_as_seq_rot(rotations_LCU, include_global_phase_correction=True)
-    print(AC_normed.perform_rotations(exp_terms) == Ps_LCU)
+    print(AC_normed.perform_rotations(rotations_LCU) == Ps_LCU)
 
-    # needs global phase correction here!
-    ## This is expensive operation!
-    check = reduce(lambda a,b: a*b, [exponentiate_single_Pop(x.multiply_by_constant(1j*y/2)) for x, y in exp_terms])
-    print(check == rotations_LCU)
+    ## expensive check to see if operation is identical! should NOT do this when using
+    a2 = product_list([exponentiate_single_Pop(P.multiply_by_constant(1j*angle/2)) for P, angle in rotations_LCU])
+    print(AC_op.R_LCU == a2)
     """
     if isinstance(R_LCU, list) and len(R_LCU)==0:
         # case where there are no rotations
@@ -326,24 +326,25 @@ def LCU_as_seq_rot(R_LCU: PauliwordOp):
 
     expon_p_terms = []
 
-    # IF imaginary components the this makes real (but need phase correction later!)
+    # # IF imaginary components the this makes real (but need phase correction later!)
     coeff_vec = R_LCU.coeff_vec.real + R_LCU.coeff_vec.imag
-    for k, c_k in enumerate(coeff_vec):
+
+    # for k, c_k in enumerate(coeff_vec):
+    #     P_k = R_LCU[k]
+    #     theta_k = np.arcsin(c_k / np.linalg.norm(coeff_vec[:(k + 1)]))
+    #     P_k.coeff_vec[0] = 1
+    #     expon_p_terms.append(tuple((P_k, theta_k)))
+    # ## phase correction - change angle by -pi in first rotation!
+    # expon_p_terms[0] = (expon_p_terms[0][0], expon_p_terms[0][1]-np.pi)
+
+    for k in range(1, R_LCU.n_terms):
         P_k = R_LCU[k]
+        c_k = coeff_vec[k]
         theta_k = np.arcsin(c_k / np.linalg.norm(coeff_vec[:(k + 1)]))
         P_k.coeff_vec[0] = 1
         expon_p_terms.append(tuple((P_k, theta_k)))
 
     expon_p_terms = [*expon_p_terms, *expon_p_terms[::-1]]
-
-    ##### manual phase correction with a rotation!
-    # if include_global_phase_correction:
-    #     ## multiply by -1j Identity term!
-    #     phase_rot = (PauliwordOp.from_dictionary({'I' * R_LCU.n_qubits: 1}), -np.pi)
-    #     expon_p_terms.append(phase_rot)
-    
-    ## phase correction - change angle by -pi in first rotation!
-    expon_p_terms[0] = (expon_p_terms[0][0], expon_p_terms[0][1]-np.pi)
     
     return expon_p_terms
 
