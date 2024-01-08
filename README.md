@@ -45,22 +45,13 @@ Qubit reduction techniques such as [tapering](https://arxiv.org/abs/1701.08213) 
 
 ## Performance
 
-Why should you use Symmer? It has been designed for high efficiency when manipulating large Pauli operators -- addition, multiplication, Clifford/general rotations, commutativity/contextuality checks, symmetry basis identification, basis reconstruction and subspace projections have all been reformulated in the symplectic representation and implemented carefully to avoid unnecessary operations and redundancy. But don't just take our word for it, see these benchmarks against various popular quantum computing packages:
+Why should you use Symmer? It has been designed for high efficiency when manipulating large Pauli operators -- addition, multiplication, Clifford/general rotations, commutativity/contextuality checks, symmetry generation, basis reconstruction and subspace projections have all been reformulated in the symplectic representation and implemented carefully to avoid unnecessary operations and redundancy. It also has a QASM simulator for evaluating expectation values, which is efficient when restricted to Clifford operations. 
 
-Single Pauli Multiplication |  Squaring Linear Combinations
-:--------------------------:|:-----------------------------:
-![](https://github.com/UCL-CCS/symmer/blob/main/images/single_pauli_mult.png) | ![](https://github.com/UCL-CCS/symmer/blob/main/images/squaring_100q_linear_combs.png)
-Runtime for phased multiplication of single Pauli operators $P,Q \in \mathcal{P}_N$ with $N \leq 10^8$. Symmer and Qiskit are comparable throughout, with the latter slightly favourable for large numbers of qubits; Stim excels here as it is highly optimized for such operations. | Squaring 100-qubit Pauli operators with increasing numbers of terms. This benchmark is particularly challenging as it probes the efficiency of multiplication, addition and the subsequent collection of like-terms.
-
-Clifford Rotations          |  General Rotations
-:--------------------------:|:-----------------------------:
-![](https://github.com/UCL-CCS/symmer/blob/main/images/100q_clifford_rotations.png) | ![](https://github.com/UCL-CCS/symmer/blob/main/images/100q_general_rotations.png)
-Clifford rotation of 100-qubit Pauli operators with increasing numbers of terms; this tests commutativity checks and multiplication. Symmer has been optimized with this in mind since it is one of the core operations necessary for stabilizer subspace projection techniques. | General (non-Clifford) rotations of 100-qubit Pauli operators with increasing numbers of terms; this tests commutativity checks and multiplication, as well as addition and the subsequent cleanup operation. This is relevant for performing [unitary partitioning](https://arxiv.org/abs/2207.03451) in [CS-VQE](https://quantum-journal.org/papers/q-2021-05-14-456/).
-
-### To conclude, what can Symmer do on a standard i5 laptop in just _one_ second?
-- Multiply two 100,000,000-qubit Pauli terms together.
-- Square a 100-qubit Pauli operator with 1,000 terms, involving a cleanup procedure over 1,000,000 cross terms.
+### What can Symmer do on a standard i5 laptop in just _one_ second?
+- Evaluate the expectation value of a 1,000-qubit Clifford circuit with a depth of 2,000.
 - Perform a unitary rotation of a 100-qubit Pauli operator with 1,000,000 terms.
+- Square a 100-qubit Pauli operator with 1,000 terms, involving a cleanup procedure over 1,000,000 cross terms.
+- Multiply two 100,000,000-qubit Pauli terms together.
 
 All this allows us to approach significantly larger systems than was previously possible, including those exceeding the realm of classical tractibility.
 
