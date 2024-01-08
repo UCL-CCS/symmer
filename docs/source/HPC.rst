@@ -2,14 +2,40 @@
 Multiprocessing and HPC
 =======================
 
-Currently `symmer <https://github.com/UCL-CCS/symmer>`_ uses `ray <https://github.com/ray-project/ray>`_ to accelerate
+Currently `symmer <https://github.com/UCL-CCS/symmer>`_ uses `ray <https://github.com/ray-project/ray>`_ by default to accelerate
 the codebase by distributing problems over multiple cores if available. For standard use this works seamlessly and the user
 doesn't need to do anything. However, when deploying on HPC systems a couple of things
 need to be set. For further information see `link <https://docs.ray.io/en/latest/cluster/vms/user-guides/community/slurm.html>`_.
-Below we comment on how to implement these tools on a SLURM system.
+Below we comment on how to implement these tools on a SLURM system when ray is used. However, first we show an easier fix that will work on all linux based systems,
+but can have issues with windows OS.
 
 +++++
-SLURM
+Easy fix
++++++
+Note these fixes can be implemented for local use on a laptop/desktop too. When importing symmer the following code
+should be run before any other symmer functionality is used:
+
+.. code-block:: bash
+
+    from symmer import process
+    process.method = 'mp' # for multiprocessing to be used instead of ray
+
+An alternate fix is to turn multiprocessing off via:
+
+.. code-block:: bash
+
+    from symmer import process
+    process.method = 'single_thread'  # stops all multiprocessing
+
+Finally, ray can be turned back by doing
+
+.. code-block:: bash
+
+    from symmer import process
+    process.method = 'ray'  # makes ray the multiprocessing library (set to this by default)
+
++++++
+Ray and SLURM
 +++++
 Note these steps are **NOT** required for local use on a laptop/desktop.
 
