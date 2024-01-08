@@ -47,10 +47,10 @@ Qubit reduction techniques such as [tapering](https://arxiv.org/abs/1701.08213) 
 
 Why should you use Symmer? It has been designed for high efficiency when manipulating large Pauli operators -- addition, multiplication, Clifford/general rotations, commutativity/contextuality checks, symmetry generation, basis reconstruction and subspace projections have all been reformulated in the symplectic representation and implemented carefully to avoid unnecessary operations and redundancy. It also has a QASM simulator for evaluating expectation values, which is efficient when restricted to Clifford operations. 
 
-### What can Symmer do on a standard i5 laptop in just _one_ second?
+### What can Symmer do on a standard laptop in just _one_ second?
 - Evaluate the expectation value of a 1,000-qubit Clifford circuit with a depth of 2,000.
-- Perform a unitary rotation of a 100-qubit Pauli operator with 1,000,000 terms.
-- Square a 100-qubit Pauli operator with 1,000 terms, involving a cleanup procedure over 1,000,000 cross terms.
+- Perform a non-Clifford unitary rotation of a 1,000-qubit operator with 100,000 Pauli terms.
+- Square a 1,000-qubit operator with 500 Pauli terms, involving a cleanup procedure over 250,000 cross terms.
 - Multiply two 100,000,000-qubit Pauli terms together.
 
 All this allows us to approach significantly larger systems than was previously possible, including those exceeding the realm of classical tractibility.
@@ -59,10 +59,10 @@ All this allows us to approach significantly larger systems than was previously 
 
 When you use in a publication or other work, please cite as:
 
-> William M. Kirby, Andrew Tranter, and Peter J. Love, *Contextual Subspace Variational Quantum Eigensolver*, [Quantum 5, 456](https://doi.org/10.22331/q-2021-05-14-456) (2021).
-
-> Tim Weaving, Alexis Ralli, William M. Kirby, Andrew Tranter, Peter J. Love, and Peter V. Coveney. *A Stabilizer Framework for the Contextual Subspace Variational Quantum Eigensolver and the Noncontextual Projection Ansatz.* [J. Chem. Theory Comput. 2023, 19, 3, 808–821](https://doi.org/10.1021/acs.jctc.2c00910) (2023).
+> Tim Weaving, Alexis Ralli, Peter J. Love, Sauro Succi, and Peter V. Coveney. *Contextual Subspace Variational Quantum Eigensolver Calculation of the Dissociation Curve of Molecular Nitrogen on a Superconducting Quantum Computer.* [arXiv preprint arXiv:2312.04392](https://arxiv.org/abs/2312.04392) (2023).
 
 > Alexis Ralli, Tim Weaving, Andrew Tranter, William M. Kirby, Peter J. Love, and Peter V. Coveney. *Unitary partitioning and the contextual subspace variational quantum eigensolver.* [Phys. Rev. Research 5, 013095](https://doi.org/10.1103/PhysRevResearch.5.013095) (2023).
 
-> Tim Weaving, Alexis Ralli, Peter J. Love, Sauro Succi, and Peter V. Coveney. *Contextual Subspace Variational Quantum Eigensolver Calculation of the Dissociation Curve of Molecular Nitrogen on a Superconducting Quantum Computer.* [arXiv preprint arXiv:2312.04392](https://arxiv.org/abs/2312.04392) (2023).
+> Tim Weaving, Alexis Ralli, William M. Kirby, Andrew Tranter, Peter J. Love, and Peter V. Coveney. *A Stabilizer Framework for the Contextual Subspace Variational Quantum Eigensolver and the Noncontextual Projection Ansatz.* [J. Chem. Theory Comput. 2023, 19, 3, 808–821](https://doi.org/10.1021/acs.jctc.2c00910) (2023).
+
+> William M. Kirby, Andrew Tranter, and Peter J. Love, *Contextual Subspace Variational Quantum Eigensolver*, [Quantum 5, 456](https://doi.org/10.22331/q-2021-05-14-456) (2021).
