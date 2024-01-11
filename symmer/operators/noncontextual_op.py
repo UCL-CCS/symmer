@@ -249,65 +249,70 @@ class NoncontextualOp(PauliwordOp):
             _, noncontextual_terms_mask = H.generator_reconstruction(generators, override_independence_check=True)
 
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
-
     @classmethod
     def random(cls,
             n_qubits: int,
             n_cliques:Optional[int]=3,
             complex_coeffs:Optional[bool]=False,
             n_commuting_terms:Optional[int]=None,
+            apply_clifford: Optional[bool] = True,
         ) -> "NoncontextualOp":
         """
         Generate a random Noncontextual operator with normally distributed coefficients.
         Note to maximise size choose number of n_cliques to be 3 (and for 2<= n_cliques <= 5 the operator
         will be larger than only using commuting generators).
-        WARNING: this function can generates an exponentially large Hamiltonian unless n_terms set.
-        size when NOT set is: n_cliques * [ 2**(n_qubits -  int(np.ceil((n_cliques - 1) / 2))) ]
 
-        Note: The number of terms in output will be: n_cliques*n_commuting_terms
+        WARNING: this function can generates an exponentially large Hamiltonian unless n_terms set.
+        size when NOT set is: n_cliques * [ 2**(n_qubits -  int(np.ceil((n_cliques - 1) / 2))) ] + n_commuting_terms
+
+        Note: The number of terms in output will be: n_cliques*n_commuting_terms + n_commuting_terms
+              apart from when n_commuting_terms=0 in which case = n_cliques
 
         Args:
             n_qubits (int): Number of qubits noncontextual operator defined on
             n_cliques (int): Number of cliques representives in operator
             complex_coeffs (bool): Whether to generate complex coefficients (default: True).
             n_commuting_terms (int): Optional int for number of commuting terms. if not set then it will be: 2**(n_qubits -  int(np.ceil((n_cliques - 1) / 2))) (i.e. exponentially large)
-
+            apply_clifford (bool): Whether to apply clifford before output (to get rid of structure used to build Hnc)
         Returns:
             NoncontextualOp: A random NoncontextualOp object.
         """
-        assert n_cliques > 1, 'number of cliques must be set to 2 or more (cannot have one anticommuting term)'
+        assert n_cliques > 1 or n_cliques == 0, 'number of cliques must be zero or set to 2 or more (cannot have one anticommuting term)'
         n_clique_qubits = int(np.ceil((n_cliques - 1) / 2))
-        assert n_clique_qubits <= n_qubits, 'cannot have {n_cliques} anticommuting cliques on {n_qubits} qubits'
+        assert n_clique_qubits <= n_qubits, f'cannot have {n_cliques} anticommuting cliques on {n_qubits} qubits'
 
         remaining_qubits = n_qubits - n_clique_qubits
 
         if n_commuting_terms:
-            assert n_commuting_terms<= 2**remaining_qubits, f'cannot have {n_commuting_terms} commuting operators on {remaining_qubits} qubits'
+            assert n_commuting_terms <= 2 ** remaining_qubits, f'cannot have {n_commuting_terms} commuting operators on {remaining_qubits} qubits'
+        elif n_qubits == n_clique_qubits:
+            n_commuting_terms = 0
 
-        if remaining_qubits>=1:
-            if n_commuting_terms==None:
+        if remaining_qubits >= 1:
+            if n_commuting_terms == None:
                 n_commuting_terms = 2 ** (remaining_qubits)
                 XZ_block = (((np.arange(n_commuting_terms)[:, None] & (1 << np.arange(2 * remaining_qubits))[
-                                                                            ::-1])) > 0).astype(bool)
+                                                                      ::-1])) > 0).astype(bool)
+            elif n_commuting_terms == 0:
+                XZ_block = np.zeros(2 * remaining_qubits, dtype=bool).reshape([1, -1])
             else:
                 # randomly chooise Z bitstrings in symp matrix:
                 indices = np.unique(np.random.random_integers(0,
-                                                              high=2**remaining_qubits-1,
-                                                              size=10*n_commuting_terms))
+                                                              high=2 ** remaining_qubits - 1,
+                                                              size=10 * n_commuting_terms))
                 while len(indices) < n_commuting_terms:
                     indices = np.unique(np.append(indices,
                                                   np.unique(np.random.random_integers(0,
                                                                                       high=2 ** remaining_qubits - 1,
-                                                                                      size=10*n_commuting_terms)))
+                                                                                      size=10 * n_commuting_terms)))
                                         )
 
                 indices = indices[:n_commuting_terms]
                 XZ_block = (((indices[:, None] & (1 << np.arange(2 * remaining_qubits))[
-                                                                        ::-1])) > 0).astype(bool)
+                                                 ::-1])) > 0).astype(bool)
 
         if n_cliques == 0:
             H_nc = PauliwordOp(XZ_block, np.ones(XZ_block.shape[0]))
-
         else:
             AC = random_anitcomm_2n_1_PauliwordOp(n_clique_qubits,
                                                   apply_clifford=True)[:n_cliques]
@@ -318,22 +323,28 @@ class NoncontextualOp(PauliwordOp):
                 diag_H = PauliwordOp.from_list(['I' * remaining_qubits])
 
             AC_full = PauliwordOp.from_list(['I' * remaining_qubits]).tensor(AC)
+
             H_sym = diag_H.tensor(PauliwordOp.from_list(['I' * n_clique_qubits]))
-            H_nc = AC_full * H_sym
-            assert AC.n_terms * n_commuting_terms == H_nc.n_terms, 'operator not largest it can be'
+            if n_commuting_terms > 0:
+                H_nc = AC_full * H_sym + H_sym
+                assert n_commuting_terms*n_cliques + n_commuting_terms == H_nc.n_terms, 'operator not largest it can be'
+            else:
+                H_nc = AC_full * H_sym + H_sym
+                assert AC.n_terms + 1 == H_nc.n_terms, 'operator not largest it can be'
 
         coeff_vec = np.random.randn(H_nc.n_terms).astype(complex)
         if complex_coeffs:
             coeff_vec += 1j * np.random.randn(H_nc.n_terms)
 
-        # apply clifford rotations to get rid of some of generation structure
-        U_cliff_rotations = []
-        for _ in range(n_qubits * 5):
-            P_rand = PauliwordOp.random(H_nc.n_qubits, n_terms=1)
-            P_rand.coeff_vec = [1]
-            U_cliff_rotations.append((P_rand, np.random.choice([np.pi/2, -np.pi/2])))
+        if apply_clifford:
+            # apply clifford rotations to get rid of some of generation structure
+            U_cliff_rotations = []
+            for _ in range(n_qubits * 5):
+                P_rand = PauliwordOp.random(H_nc.n_qubits, n_terms=1)
+                P_rand.coeff_vec = [1]
+                U_cliff_rotations.append((P_rand, (np.pi/2)*np.random.choice([1,3])))
 
-        H_nc = H_nc.perform_rotations(U_cliff_rotations)
+            H_nc = H_nc.perform_rotations(U_cliff_rotations)
 
         return cls(H_nc.symp_matrix, coeff_vec)
 
