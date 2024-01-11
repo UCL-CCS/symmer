@@ -4,12 +4,15 @@ import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 from symmer import process
-from symmer.operators.utils import *
-from symmer.operators.utils import _cref_binary
+from symmer.operators.utils import (
+    matmul_GF2, random_symplectic_matrix, string_to_symplectic, QubitOperator_to_dict, SparsePauliOp_to_dict,
+    symplectic_to_string, cref_binary, check_independent, check_jordan_independent, symplectic_cleanup,
+    check_adjmat_noncontextual, symplectic_to_openfermion, binary_array_to_int, count1_in_int_bitstring
+)
 from tqdm.auto import tqdm
 from copy import deepcopy
 from functools import reduce
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Dict, Tuple
 from numbers import Number
 from cached_property import cached_property
 from scipy.stats import unitary_group
@@ -751,42 +754,16 @@ class PauliwordOp:
         """
         return PauliwordOp(self.symp_matrix, self.coeff_vec*const)
 
-    def _mul_symplectic(self, 
-            symp_vec: np.array, 
-            coeff: complex, 
-            Y_count_in: np.array
-        ) -> Tuple[np.array, np.array]:
-        """ 
-        Performs Pauli multiplication with phases at the level of the symplectic 
-        matrices to avoid superfluous PauliwordOp initializations. The phase compensation 
-        is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
-
-        Args:
-            symp_vec (np.array): The symplectic vector representing the Pauli operator to be multiplied with.
-            coeff (complex): The complex coefficient of the Pauli operator.
-            Y_count_in (np.array): The Y-counts of the input Pauli operator.
-
-        Returns:
-            Tuple[np.array, np.array]: The resulting symplectic vector and coefficient vector after multiplication.
-        """
-        # phaseless multiplication is binary addition in symplectic representation
-        phaseless_prod = np.bitwise_xor(self.symp_matrix, symp_vec)
-        # phase is determined by Y counts plus additional sign flip
-        Y_count_out = np.sum(np.bitwise_and(*np.hsplit(phaseless_prod,2)), axis=1)
-        sign_change = (-1) ** (
-            np.sum(np.bitwise_and(self.X_block, np.hsplit(symp_vec,2)[1]), axis=1) % 2
-        ) # mod 2 as only care about parity
-        # final phase modification
-        phase_mod = sign_change * (1j) ** ((3*Y_count_in + Y_count_out) % 4) # mod 4 as roots of unity
-        coeff_vec = phase_mod * self.coeff_vec * coeff
-        return phaseless_prod, coeff_vec
-
     def _multiply_by_operator(self, 
             PwordOp: Union["PauliwordOp", "QuantumState", complex],
             zero_threshold: float = 1e-15
         ) -> "PauliwordOp":
         """ 
         Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
+
+        Performs Pauli multiplication with phases at the level of the symplectic 
+        matrices to avoid superfluous PauliwordOp initializations. The phase compensation 
+        is implemented as per https://doi.org/10.1103/PhysRevA.68.042318.
 
         Args:
             PwordOp (Union["PauliwordOp", "QuantumState", complex]): The operator or ket to multiply by.
@@ -796,27 +773,18 @@ class PauliwordOp:
             PauliwordOp: The resulting PauliwordOp after multiplication.
         """
         assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
-
-        if PwordOp.n_terms == 1:
-            # no cleanup if multiplying by a single term (faster)
-            symp_stack, coeff_stack = self._mul_symplectic(
-                symp_vec=PwordOp.symp_matrix, 
-                coeff=PwordOp.coeff_vec, 
-                Y_count_in=self.Y_count+PwordOp.Y_count
+        Q_symp_matrix = PwordOp.symp_matrix.reshape([PwordOp.n_terms, 1, 2*PwordOp.n_qubits])
+        termwise_phaseless_prod = self.symp_matrix ^ Q_symp_matrix
+        Y_count_in  = self.Y_count + PwordOp.Y_count.reshape(-1,1)
+        Y_count_out = np.sum(termwise_phaseless_prod[:,:,:PwordOp.n_qubits] & termwise_phaseless_prod[:,:,PwordOp.n_qubits:], axis=2)
+        sign_change = (-1) ** (np.sum(self.X_block & Q_symp_matrix[:,:,PwordOp.n_qubits:], axis=2) % 2)
+        phase_mod = sign_change * (1j) ** ((3*Y_count_in + Y_count_out) % 4)
+        return PauliwordOp(
+            *symplectic_cleanup(
+                termwise_phaseless_prod.reshape(-1,2*self.n_qubits), 
+                (phase_mod * np.outer(self.coeff_vec, PwordOp.coeff_vec).T).reshape(-1), zero_threshold=zero_threshold
             )
-            pauli_mult_out = PauliwordOp(symp_stack, coeff_stack)
-        else:
-            # multiplication is performed at the symplectic level, before being stacked and cleaned
-            symp_stack, coeff_stack = zip(
-                *[self._mul_symplectic(symp_vec=symp_vec, coeff=coeff, Y_count_in=self.Y_count+Y_count) 
-                for symp_vec, coeff, Y_count in zip(PwordOp.symp_matrix, PwordOp.coeff_vec, PwordOp.Y_count)]
-            )
-            pauli_mult_out = PauliwordOp(
-                *symplectic_cleanup(
-                    np.vstack(symp_stack), np.hstack(coeff_stack), zero_threshold=zero_threshold
-                )
-            )
-        return pauli_mult_out
+        )
     
     def expval(self, psi: "QuantumState") -> complex:
         """ 
@@ -990,8 +958,10 @@ class PauliwordOp:
         # return np.logical_not(adjacency_matrix.toarray())
 
         ### dense code
-        Omega_PwordOp_symp = np.hstack((PwordOp.Z_block,  PwordOp.X_block)).astype(int)
-        return (self.symp_matrix @ Omega_PwordOp_symp.T) % 2 == 0
+        # Omega_PwordOp_symp = np.hstack((PwordOp.Z_block,  PwordOp.X_block)).astype(int)
+        # return (self.symp_matrix @ Omega_PwordOp_symp.T) % 2 == 0
+        
+        return ~matmul_GF2(self.symp_matrix, np.hstack((PwordOp.Z_block,  PwordOp.X_block)).T)
 
     def anticommutes_termwise(self,
             PwordOp: "PauliwordOp"
@@ -1218,8 +1188,8 @@ class PauliwordOp:
         Returns:
             PauliwordOp: The resulting Pauli operator after the tensor product.
         """
-        identity_block_right = np.zeros([right_op.n_terms, self.n_qubits]).astype(int)
-        identity_block_left  = np.zeros([self.n_terms,  right_op.n_qubits]).astype(int)
+        identity_block_right = np.zeros([right_op.n_terms, self.n_qubits], dtype=bool)#.astype(int)
+        identity_block_left  = np.zeros([self.n_terms,  right_op.n_qubits], dtype=bool)#.astype(int)
         padded_left_symp = np.hstack([self.X_block, identity_block_left, self.Z_block, identity_block_left])
         padded_right_symp = np.hstack([identity_block_right, right_op.X_block, identity_block_right, right_op.Z_block])
         left_factor = PauliwordOp(padded_left_symp, self.coeff_vec)
