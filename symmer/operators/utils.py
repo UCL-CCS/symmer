@@ -3,6 +3,42 @@ import scipy as sp
 from typing import Tuple, Dict
 from openfermion import QubitOperator
 from qiskit.quantum_info import SparsePauliOp
+import numba as nb
+
+@nb.njit(fastmath=True, parallel=True, cache=True)
+def matmul_GF2(A: np.array, B: np.array) -> np.array:
+    """
+    custom GF(2) multiplication using numba. i.e. C = (A@B) mod 2.
+    
+    Note function uses fact that multiplication over GF2 doesn't require sums for each matrix element in C
+    instead it uses and AND operation (same as elementwise multiplicaiton of row,col pairs) 
+    followed by XOR operation (same as taking sum of row,col multiplied pairs)
+    
+    Args:
+        A (np.array): numpy boolean array
+        B (np.array): numpy boolean array
+    Returns:
+        C (np.array): numpy boolean array of (A@B) mod 2
+    """
+    C = np.empty((A.shape[0], B.shape[1]), dtype=np.bool_)
+    for i in nb.prange(C.shape[0]):
+        for j in range(C.shape[1]):
+
+            ## logical version 1 (slower) 
+            # C[i, j] = bool(np.sum(np.logical_and(A[i, :], B[:, j]))%2)
+
+            # # logical version 2 (slower) 
+            # parity = False
+            # for bit in np.logical_and(A[i, :], B[:, j]):
+            #     parity^=bit
+            # C[i, j] = parity
+
+            ## faster loop
+            acc = False
+            for k in range(B.shape[0]):
+                acc ^= A[i, k] & B[k, j]
+            C[i, j] = acc
+    return C
 
 def symplectic_to_string(symp_vec) -> str:
     """
