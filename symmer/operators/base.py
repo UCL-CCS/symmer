@@ -461,6 +461,8 @@ class PauliwordOp:
         """
         if by == 'magnitude':
             sort_order = np.argsort(-abs(self.coeff_vec))
+        elif by == 'lex':
+            sort_order = np.lexsort(self.symp_matrix.T)
         elif by == 'weight':
             sort_order = np.argsort(-np.sum(self.symp_matrix.astype(int), axis=1))
         elif by == 'support':
@@ -644,8 +646,8 @@ class PauliwordOp:
         Returns:
             bool: True if the two PauliwordOp objects are equal, False otherwise.
         """
-        check_1 = self.cleanup()
-        check_2 = Pword.cleanup()
+        check_1 = self.cleanup().sort('lex')
+        check_2 = Pword.cleanup().sort('lex')
         if check_1.n_qubits != check_2.n_qubits:
             raise ValueError('Operators defined over differing numbers of qubits.')
         elif check_1.n_terms != check_2.n_terms:
