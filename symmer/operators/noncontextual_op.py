@@ -586,7 +586,7 @@ class NoncontextualOp(PauliwordOp):
         if self.n_cliques > 0:
             self.update_clique_representative_operator()
 
-    def noncon_state(self, UP_method:Optional[str]= 'LCU') -> Tuple[QuantumState, np.array]:
+    def noncon_state(self, UP_method = 'LCU') -> Tuple[QuantumState, np.array]:
         """
         Method to generate noncontextual state for current symmetry generators assignments. Note by default
         UP_method is set to LCU as this avoids generating exponentially large states (which seq_rot can do!)
@@ -600,55 +600,43 @@ class NoncontextualOp(PauliwordOp):
 
         """
         nu_assignment = self.symmetry_generators.coeff_vec.copy()
-
         ## update clique coeffs from nu assignment!
         _, si = self.get_symmetry_contributions(nu_assignment)
         self.clique_operator.coeff_vec = si
-
         assert UP_method in ['LCU', 'seq_rot']
-
         if UP_method == 'LCU':
             rotations_LCU = self.clique_operator.R_LCU
-            Ps, rotations_LCU, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,
-                                                                                                  up_method='LCU')
+            Ps, rotations_LCU, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,up_method='LCU')
         else:
-            Ps, rotations_SEQ, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,
-                                                                                   up_method='seq_rot')
-
+            Ps, rotations_SEQ, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,up_method='seq_rot')
         # choose negative value for clique operator (to minimize energy)
         Ps.coeff_vec[0] = -1
-
         ### to find ground state, need to map noncontextual stabilizers to single qubit Pauli Zs
         independent_stabilizers = self.symmetry_generators + Ps
-
         # rotate onto computational basis
         independent_stabilizers.target_sqp = 'Z'
-
         rotated_stabs = independent_stabilizers.rotate_onto_single_qubit_paulis()
         clifford_rots = independent_stabilizers.stabilizer_rotations
-
         ## get stabilizer state for the rotated stabilizers
-        Z_indices = np.sum(rotated_stabs.Z_block, axis=0)
-        Z_vals = np.sum(rotated_stabs.Z_block[:, Z_indices.astype(bool)] * rotated_stabs.coeff_vec, axis=1)
-        Z_indices[Z_indices.astype(bool)] = ((Z_vals - 1) * -0.5).astype(int)
-
-        state = QuantumState(Z_indices.reshape(1, -1))
-
+        nc_vec = np.zeros(self.n_qubits, dtype=int)
+        for val,row in zip(rotated_stabs.coeff_vec, rotated_stabs.Z_block):
+            assert np.count_nonzero(row) == 1
+            nc_vec[row] = (1-val)/2
+        state = QuantumState(nc_vec)
         ## undo clifford rotations
         from symmer.evolution.exponentiation import exponentiate_single_Pop
         for op, _ in clifford_rots[::-1]:
             rot = exponentiate_single_Pop(op.multiply_by_constant(1j * np.pi / 4))
             state = rot.dagger * state
-
         ## undo unitary partitioning step
         if UP_method == 'LCU':
             state = self.clique_operator.R_LCU.dagger * state
         else:
             for op, angle in rotations_SEQ[::-1]:
                 state = exponentiate_single_Pop(op.multiply_by_constant(1j * angle / 2)).dagger * state
-
         # TODO: could return clifford and UP rotations here too!
-        return state, nu_assignment    
+        return state, nu_assignment
+
 ###############################################################################
 ################### NONCONTEXTUAL SOLVERS BELOW ###############################
 ###############################################################################
