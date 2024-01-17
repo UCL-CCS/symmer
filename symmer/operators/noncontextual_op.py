@@ -249,65 +249,70 @@ class NoncontextualOp(PauliwordOp):
             _, noncontextual_terms_mask = H.generator_reconstruction(generators, override_independence_check=True)
 
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
-
     @classmethod
     def random(cls,
             n_qubits: int,
             n_cliques:Optional[int]=3,
             complex_coeffs:Optional[bool]=False,
             n_commuting_terms:Optional[int]=None,
+            apply_clifford: Optional[bool] = True,
         ) -> "NoncontextualOp":
         """
         Generate a random Noncontextual operator with normally distributed coefficients.
         Note to maximise size choose number of n_cliques to be 3 (and for 2<= n_cliques <= 5 the operator
         will be larger than only using commuting generators).
-        WARNING: this function can generates an exponentially large Hamiltonian unless n_terms set.
-        size when NOT set is: n_cliques * [ 2**(n_qubits -  int(np.ceil((n_cliques - 1) / 2))) ]
 
-        Note: The number of terms in output will be: n_cliques*n_commuting_terms
+        WARNING: this function can generates an exponentially large Hamiltonian unless n_terms set.
+        size when NOT set is: n_cliques * [ 2**(n_qubits -  int(np.ceil((n_cliques - 1) / 2))) ] + n_commuting_terms
+
+        Note: The number of terms in output will be: n_cliques*n_commuting_terms + n_commuting_terms
+              apart from when n_commuting_terms=0 in which case = n_cliques
 
         Args:
             n_qubits (int): Number of qubits noncontextual operator defined on
             n_cliques (int): Number of cliques representives in operator
             complex_coeffs (bool): Whether to generate complex coefficients (default: True).
             n_commuting_terms (int): Optional int for number of commuting terms. if not set then it will be: 2**(n_qubits -  int(np.ceil((n_cliques - 1) / 2))) (i.e. exponentially large)
-
+            apply_clifford (bool): Whether to apply clifford before output (to get rid of structure used to build Hnc)
         Returns:
             NoncontextualOp: A random NoncontextualOp object.
         """
-        assert n_cliques > 1, 'number of cliques must be set to 2 or more (cannot have one anticommuting term)'
+        assert n_cliques > 1 or n_cliques == 0, 'number of cliques must be zero or set to 2 or more (cannot have one anticommuting term)'
         n_clique_qubits = int(np.ceil((n_cliques - 1) / 2))
-        assert n_clique_qubits <= n_qubits, 'cannot have {n_cliques} anticommuting cliques on {n_qubits} qubits'
+        assert n_clique_qubits <= n_qubits, f'cannot have {n_cliques} anticommuting cliques on {n_qubits} qubits'
 
         remaining_qubits = n_qubits - n_clique_qubits
 
         if n_commuting_terms:
-            assert n_commuting_terms<= 2**remaining_qubits, f'cannot have {n_commuting_terms} commuting operators on {remaining_qubits} qubits'
+            assert n_commuting_terms <= 2 ** remaining_qubits, f'cannot have {n_commuting_terms} commuting operators on {remaining_qubits} qubits'
+        elif n_qubits == n_clique_qubits:
+            n_commuting_terms = 0
 
-        if remaining_qubits>=1:
-            if n_commuting_terms==None:
+        if remaining_qubits >= 1:
+            if n_commuting_terms == None:
                 n_commuting_terms = 2 ** (remaining_qubits)
                 XZ_block = (((np.arange(n_commuting_terms)[:, None] & (1 << np.arange(2 * remaining_qubits))[
-                                                                            ::-1])) > 0).astype(bool)
+                                                                      ::-1])) > 0).astype(bool)
+            elif n_commuting_terms == 0:
+                XZ_block = np.zeros(2 * remaining_qubits, dtype=bool).reshape([1, -1])
             else:
                 # randomly chooise Z bitstrings in symp matrix:
                 indices = np.unique(np.random.random_integers(0,
-                                                              high=2**remaining_qubits-1,
-                                                              size=10*n_commuting_terms))
+                                                              high=2 ** remaining_qubits - 1,
+                                                              size=10 * n_commuting_terms))
                 while len(indices) < n_commuting_terms:
                     indices = np.unique(np.append(indices,
                                                   np.unique(np.random.random_integers(0,
                                                                                       high=2 ** remaining_qubits - 1,
-                                                                                      size=10*n_commuting_terms)))
+                                                                                      size=10 * n_commuting_terms)))
                                         )
 
                 indices = indices[:n_commuting_terms]
                 XZ_block = (((indices[:, None] & (1 << np.arange(2 * remaining_qubits))[
-                                                                        ::-1])) > 0).astype(bool)
+                                                 ::-1])) > 0).astype(bool)
 
         if n_cliques == 0:
             H_nc = PauliwordOp(XZ_block, np.ones(XZ_block.shape[0]))
-
         else:
             AC = random_anitcomm_2n_1_PauliwordOp(n_clique_qubits,
                                                   apply_clifford=True)[:n_cliques]
@@ -318,22 +323,28 @@ class NoncontextualOp(PauliwordOp):
                 diag_H = PauliwordOp.from_list(['I' * remaining_qubits])
 
             AC_full = PauliwordOp.from_list(['I' * remaining_qubits]).tensor(AC)
+
             H_sym = diag_H.tensor(PauliwordOp.from_list(['I' * n_clique_qubits]))
-            H_nc = AC_full * H_sym
-            assert AC.n_terms * n_commuting_terms == H_nc.n_terms, 'operator not largest it can be'
+            if n_commuting_terms > 0:
+                H_nc = AC_full * H_sym + H_sym
+                assert n_commuting_terms*n_cliques + n_commuting_terms == H_nc.n_terms, 'operator not largest it can be'
+            else:
+                H_nc = AC_full * H_sym + H_sym
+                assert AC.n_terms + 1 == H_nc.n_terms, 'operator not largest it can be'
 
         coeff_vec = np.random.randn(H_nc.n_terms).astype(complex)
         if complex_coeffs:
             coeff_vec += 1j * np.random.randn(H_nc.n_terms)
 
-        # apply clifford rotations to get rid of some of generation structure
-        U_cliff_rotations = []
-        for _ in range(n_qubits * 5):
-            P_rand = PauliwordOp.random(H_nc.n_qubits, n_terms=1)
-            P_rand.coeff_vec = [1]
-            U_cliff_rotations.append((P_rand, np.random.choice([np.pi/2, -np.pi/2])))
+        if apply_clifford:
+            # apply clifford rotations to get rid of some of generation structure
+            U_cliff_rotations = []
+            for _ in range(n_qubits * 5):
+                P_rand = PauliwordOp.random(H_nc.n_qubits, n_terms=1)
+                P_rand.coeff_vec = [1]
+                U_cliff_rotations.append((P_rand, (np.pi/2)*np.random.choice([1,3])))
 
-        H_nc = H_nc.perform_rotations(U_cliff_rotations)
+            H_nc = H_nc.perform_rotations(U_cliff_rotations)
 
         return cls(H_nc.symp_matrix, coeff_vec)
 
@@ -575,7 +586,7 @@ class NoncontextualOp(PauliwordOp):
         if self.n_cliques > 0:
             self.update_clique_representative_operator()
 
-    def noncon_state(self, UP_method:Optional[str]= 'LCU') -> Tuple[QuantumState, np.array]:
+    def noncon_state(self, UP_method = 'LCU') -> Tuple[QuantumState, np.array]:
         """
         Method to generate noncontextual state for current symmetry generators assignments. Note by default
         UP_method is set to LCU as this avoids generating exponentially large states (which seq_rot can do!)
@@ -589,55 +600,43 @@ class NoncontextualOp(PauliwordOp):
 
         """
         nu_assignment = self.symmetry_generators.coeff_vec.copy()
-
         ## update clique coeffs from nu assignment!
         _, si = self.get_symmetry_contributions(nu_assignment)
         self.clique_operator.coeff_vec = si
-
         assert UP_method in ['LCU', 'seq_rot']
-
         if UP_method == 'LCU':
             rotations_LCU = self.clique_operator.R_LCU
-            Ps, rotations_LCU, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,
-                                                                                                  up_method='LCU')
+            Ps, rotations_LCU, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,up_method='LCU')
         else:
-            Ps, rotations_SEQ, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,
-                                                                                   up_method='seq_rot')
-
+            Ps, rotations_SEQ, gamma_l, AC_normed = self.clique_operator.unitary_partitioning(s_index=0,up_method='seq_rot')
         # choose negative value for clique operator (to minimize energy)
         Ps.coeff_vec[0] = -1
-
         ### to find ground state, need to map noncontextual stabilizers to single qubit Pauli Zs
         independent_stabilizers = self.symmetry_generators + Ps
-
         # rotate onto computational basis
         independent_stabilizers.target_sqp = 'Z'
-
         rotated_stabs = independent_stabilizers.rotate_onto_single_qubit_paulis()
         clifford_rots = independent_stabilizers.stabilizer_rotations
-
         ## get stabilizer state for the rotated stabilizers
-        Z_indices = np.sum(rotated_stabs.Z_block, axis=0)
-        Z_vals = np.sum(rotated_stabs.Z_block[:, Z_indices.astype(bool)] * rotated_stabs.coeff_vec, axis=1)
-        Z_indices[Z_indices.astype(bool)] = ((Z_vals - 1) * -0.5).astype(int)
-
-        state = QuantumState(Z_indices.reshape(1, -1))
-
+        nc_vec = np.zeros(self.n_qubits, dtype=int)
+        for val,row in zip(rotated_stabs.coeff_vec, rotated_stabs.Z_block):
+            assert np.count_nonzero(row) == 1
+            nc_vec[row] = (1-val)/2
+        state = QuantumState(nc_vec)
         ## undo clifford rotations
         from symmer.evolution.exponentiation import exponentiate_single_Pop
         for op, _ in clifford_rots[::-1]:
             rot = exponentiate_single_Pop(op.multiply_by_constant(1j * np.pi / 4))
             state = rot.dagger * state
-
         ## undo unitary partitioning step
         if UP_method == 'LCU':
             state = self.clique_operator.R_LCU.dagger * state
         else:
             for op, angle in rotations_SEQ[::-1]:
                 state = exponentiate_single_Pop(op.multiply_by_constant(1j * angle / 2)).dagger * state
-
         # TODO: could return clifford and UP rotations here too!
-        return state, nu_assignment    
+        return state, nu_assignment
+
 ###############################################################################
 ################### NONCONTEXTUAL SOLVERS BELOW ###############################
 ###############################################################################

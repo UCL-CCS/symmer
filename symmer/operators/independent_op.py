@@ -137,7 +137,7 @@ class IndependentOp(PauliwordOp):
                 S_commuting = S.largest_clique(edge_relation='C')    
             else:
                 # greedy graph-colouring approach when symmetry basis is large
-                S_commuting = S.clique_cover(edge_relation='C')[0]
+                S_commuting = S.clique_cover(edge_relation='C', strategy='independent_set')[0]
                 warnings.warn('Greedy method may identify non-optimal commuting symmetry terms; might be able to taper again.')
             
             return cls(S_commuting.symp_matrix, np.ones(S_commuting.n_terms, dtype=complex))

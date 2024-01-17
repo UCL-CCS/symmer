@@ -3,6 +3,43 @@ import scipy as sp
 from typing import Tuple, Dict
 from openfermion import QubitOperator
 from qiskit.quantum_info import SparsePauliOp
+from qiskit._accelerate.sparse_pauli_op import unordered_unique
+import numba as nb
+
+@nb.njit(fastmath=True, parallel=True, cache=True)
+def matmul_GF2(A: np.array, B: np.array) -> np.array:
+    """
+    custom GF(2) multiplication using numba. i.e. C = (A@B) mod 2.
+    
+    Note function uses fact that multiplication over GF2 doesn't require sums for each matrix element in C
+    instead it uses and AND operation (same as elementwise multiplicaiton of row,col pairs) 
+    followed by XOR operation (same as taking sum of row,col multiplied pairs)
+    
+    Args:
+        A (np.array): numpy boolean array
+        B (np.array): numpy boolean array
+    Returns:
+        C (np.array): numpy boolean array of (A@B) mod 2
+    """
+    C = np.empty((A.shape[0], B.shape[1]), dtype=np.bool_)
+    for i in nb.prange(C.shape[0]):
+        for j in range(C.shape[1]):
+
+            ## logical version 1 (slower) 
+            # C[i, j] = bool(np.sum(np.logical_and(A[i, :], B[:, j]))%2)
+
+            # # logical version 2 (slower) 
+            # parity = False
+            # for bit in np.logical_and(A[i, :], B[:, j]):
+            #     parity^=bit
+            # C[i, j] = parity
+
+            ## faster loop
+            acc = False
+            for k in range(B.shape[0]):
+                acc ^= A[i, k] & B[k, j]
+            C[i, j] = acc
+    return C
 
 def symplectic_to_string(symp_vec) -> str:
     """
@@ -171,28 +208,38 @@ def symplectic_cleanup(
     Returns: 
         Reduced symplectic matrix and reduced coefficient vector.
     """
-    # order lexicographically using a fast void view implementation...
-    # this scales to large numbers of qubits more favourably than np.lexsort
-    symp_matrix_view = np.ascontiguousarray(symp_matrix).view(
-        np.dtype((np.void, symp_matrix.dtype.itemsize * symp_matrix.shape[1]))
-    )
-    re_order_indices = np.argsort(symp_matrix_view.ravel())
-    # sort the symplectic matrix and vector of coefficients accordingly
-    sorted_terms = symp_matrix[re_order_indices]
-    sorted_coeff = coeff_vec[re_order_indices]
-    # unique terms are those with non-zero entries in the adjacent row difference array
-    diff_adjacent = np.diff(sorted_terms, axis=0)
-    mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
-    reduced_symp_matrix = sorted_terms[mask_unique_terms]
-    # mask the term indices such that those which are skipped are summed under np.reduceat
-    summing_indices = np.arange(symp_matrix.shape[0])[mask_unique_terms]
-    reduced_coeff_vec = np.add.reduceat(sorted_coeff, summing_indices, axis=0)
-    # if a zero threshold is specified terms with sufficiently small coefficient will be dropped
+    # # order lexicographically using a fast void view implementation...
+    # # this scales to large numbers of qubits more favourably than np.lexsort
+    # symp_matrix_view = np.ascontiguousarray(symp_matrix).view(
+    #     np.dtype((np.void, symp_matrix.dtype.itemsize * symp_matrix.shape[1]))
+    # )
+    # re_order_indices = np.argsort(symp_matrix_view.ravel())
+    # # sort the symplectic matrix and vector of coefficients accordingly
+    # sorted_terms = symp_matrix[re_order_indices]
+    # sorted_coeff = coeff_vec[re_order_indices]
+    # # unique terms are those with non-zero entries in the adjacent row difference array
+    # diff_adjacent = np.diff(sorted_terms, axis=0)
+    # mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
+    # reduced_symp_matrix = sorted_terms[mask_unique_terms]
+    # # mask the term indices such that those which are skipped are summed under np.reduceat
+    # summing_indices = np.arange(symp_matrix.shape[0])[mask_unique_terms]
+    # reduced_coeff_vec = np.add.reduceat(sorted_coeff, summing_indices, axis=0)
+    # # if a zero threshold is specified terms with sufficiently small coefficient will be dropped
+    # if zero_threshold is not None:
+    #     mask_nonzero = abs(reduced_coeff_vec)>zero_threshold
+    #     reduced_symp_matrix = reduced_symp_matrix[mask_nonzero]
+    #     reduced_coeff_vec = reduced_coeff_vec[mask_nonzero]
+
+    # return reduced_symp_matrix, reduced_coeff_vec
+
+    unique_locations, inverse_map = unordered_unique(symp_matrix.astype('uint16'))
+    reduced_symp_matrix = symp_matrix[unique_locations]
+    reduced_coeff_vec = np.zeros(unique_locations.shape[0], dtype=complex)
+    np.add.at(reduced_coeff_vec, inverse_map, coeff_vec)
     if zero_threshold is not None:
         mask_nonzero = abs(reduced_coeff_vec)>zero_threshold
         reduced_symp_matrix = reduced_symp_matrix[mask_nonzero]
         reduced_coeff_vec = reduced_coeff_vec[mask_nonzero]
-
     return reduced_symp_matrix, reduced_coeff_vec
 
 def random_symplectic_matrix(n_qubits,n_terms, diagonal=False, density=0.3):

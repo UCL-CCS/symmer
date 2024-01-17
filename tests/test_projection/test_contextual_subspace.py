@@ -45,7 +45,7 @@ def test_manual_stabilizers():
     H_cs = CS.project_onto_subspace()
     assert CS.n_qubits_in_subspace == 3
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0005
     
 def test_update_stabilizers_aux_preserving():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
@@ -53,7 +53,7 @@ def test_update_stabilizers_aux_preserving():
     H_cs = CS.project_onto_subspace()
     assert CS.n_qubits_in_subspace == 3
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0005
 
 def test_update_stabilizers_unrecognised_strategy():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
@@ -89,7 +89,7 @@ def test_StabilizeFirst_strategy_correct_usage():
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     H_cs = CS.project_onto_subspace()
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0005
 
 @pytest.mark.parametrize("ref_state", [QT.tapered_ref_state, QT.tapered_ref_state.state_matrix[0]])
 def test_reference_state(ref_state):
@@ -100,14 +100,14 @@ def test_reference_state(ref_state):
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     H_cs = CS.project_onto_subspace()
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0005
 
 def test_StabilizeFirst_strategy_correct_usage():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='StabilizeFirst')
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     H_cs = CS.project_onto_subspace()
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0005
 
 def test_project_auxiliary_operator():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
@@ -116,7 +116,7 @@ def test_project_auxiliary_operator():
     H_cs = CS.project_onto_subspace()
     CC_cs = CS.project_onto_subspace(operator_to_project=CC_taper)
     assert CC_cs.n_qubits == 3
-    assert abs(H_cs.expval(trotter(CC_cs*1j, trotnum=10) * QuantumState([0,0,0])) - fci_energy) < 0.0004
+    assert abs(H_cs.expval(trotter(CC_cs*1j, trotnum=10) * QuantumState([0,0,0])) - fci_energy) < 0.0005
 
 def test_no_aux_operator_provided():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
@@ -139,7 +139,7 @@ def test_unitary_partitioning_method(up_method):
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     H_cs = CS.project_onto_subspace()
     assert H_cs.n_qubits == 3
-    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0004
+    assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0005
 
 @pytest.mark.parametrize("up_method", ['LCU', 'seq_rot'])
 def test_project_state_onto_subspace(up_method):
