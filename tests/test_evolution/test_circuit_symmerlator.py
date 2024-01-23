@@ -15,7 +15,7 @@ def test_random_cliffords():
         sv = Statevector(qc).data.reshape(-1,1)
         # ... and a random observable
         observable = PauliwordOp.random(n_q, 100, complex_coeffs=False)
-        observable_matrix = observable.reindex(list(range(0,n_q))[::-1]).to_sparse_matrix.toarray() # reverse order because qiskit
+        observable_matrix = observable.to_sparse_matrix.toarray() # reverse order because qiskit
         # Than, intialize the circuit simulator and check it matches direct statevector calculation.
         CS = CircuitSymmerlator.from_qiskit(qc)
         assert np.isclose(
