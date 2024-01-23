@@ -195,4 +195,4 @@ class CircuitSymmerlator:
     def from_qiskit(cls, circuit: QuantumCircuit) -> "CircuitSymmerlator":
         """ Initialize the simulator from a Qiskit QuantumCircuit
         """
-        return cls.from_qasm(circuit.qasm(), angle_factor=-1)
+        return cls.from_qasm(circuit.reverse_bits().qasm(), angle_factor=-1)

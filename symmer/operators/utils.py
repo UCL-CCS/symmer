@@ -612,34 +612,20 @@ def perform_noncontextual_sweep(operator) -> "PauliwordOp":
         List of terms maintaining noncontextuality.
     """
 
-    # # initialize noncontextual operator with first element of input operator
-    # noncon_indices = np.array([0])
-    # adjmat = np.array([[True]], dtype=bool)
-    # for index, term in enumerate(operator[1:]):
-    #     # pad the adjacency matrix term-by-term - avoids full construction each time
-    #     adjmat_vector = np.append(term.commutes_termwise(operator[noncon_indices]), True)
-    #     adjmat_padded = np.pad(adjmat, pad_width=((0, 1), (0, 1)), mode='constant')
-    #     adjmat_padded[-1,:] = adjmat_vector; adjmat_padded[:,-1] = adjmat_vector
-    #     # check whether the adjacency matrix has a noncontextual structure
-    #     if check_adjmat_noncontextual(adjmat_padded):
-    #         noncon_indices = np.append(noncon_indices, index+1)
-    #         adjmat = adjmat_padded
+    # initialize noncontextual operator with first element of input operator
+    noncon_indices = np.array([0])
+    adjmat = np.array([[True]], dtype=bool)
+    for index, term in enumerate(operator[1:]):
+        # pad the adjacency matrix term-by-term - avoids full construction each time
+        adjmat_vector = np.append(term.commutes_termwise(operator[noncon_indices]), True)
+        adjmat_padded = np.pad(adjmat, pad_width=((0, 1), (0, 1)), mode='constant')
+        adjmat_padded[-1,:] = adjmat_vector; adjmat_padded[:,-1] = adjmat_vector
+        # check whether the adjacency matrix has a noncontextual structure
+        if check_adjmat_noncontextual(adjmat_padded):
+            noncon_indices = np.append(noncon_indices, index+1)
+            adjmat = adjmat_padded
 
-    # return operator[noncon_indices] 
-
-    ## new method uses generators to speed up sweep
-    from symmer.operators import PauliwordOp
-    mask = np.zeros(operator.n_terms, dtype=bool)
-
-    for ind in range(operator.n_terms):
-        mask[ind] = ~mask[ind]
-        running_op = PauliwordOp(operator.symp_matrix[mask],
-                                 np.ones(np.sum(mask)))
-
-        if not running_op.is_noncontextual:
-            mask[ind] = ~mask[ind]
-
-    return operator[mask]
+    return operator[noncon_indices] 
 
 def binary_array_to_int(bin_arr):
     """
