@@ -145,7 +145,7 @@ class S3Projection:
                 )[0]
         ]
         # Projections onto the stabilizer subspace
-        #transformation_list += list(map(lambda x:(x**2 + x)*.5,self.stabilizers.rotate_onto_single_qubit_paulis()))
+        transformation_list += list(map(lambda x:(x**2 + x)*.5,self.stabilizers.rotate_onto_single_qubit_paulis()))
         # Rotations mapping stabilizers onto single-qubit Pauli operators
         transformation_list += list(map(lambda s:trotter(s[0]*(np.pi/4*1j)), self.stabilizers.stabilizer_rotations))
         # Product over the transformation list yields final transformation operator
