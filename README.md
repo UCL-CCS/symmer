@@ -26,11 +26,11 @@ For basic usage see [readthedocs](https://symmer.readthedocs.io/en/latest/) and 
 Qubit reduction techniques such as [tapering](https://arxiv.org/abs/1701.08213) and [Contextual-Subspace VQE](https://doi.org/10.22331/q-2021-05-14-456) are effected by the underlying [stabilizer subspace projection mechanism](https://arxiv.org/abs/2204.02150); such methods may be differentiated by the approach taken to selecting the stabilizers one wishes to project over. 
 
 `.operators` contains the following classes (in resolution order):
-- [`PauliwordOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/base.py) for representing general Pauli operators.
-- [`QuantumState`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/base.py) for representing quantum statevectors.
-- [`IndependentOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/independent_op.py) represents algebraically independent sets of Pauli operators for stabilizer manipulation/projections.
-- [`AnticommutingOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/anticommuting_op.py) represents sets of anticommuting Pauli operators for the purposes of Unitary Partitioning and Linear Combination of Unitaries as in [this](https://arxiv.org/abs/2207.03451) paper.
-- [`NoncontextualOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/symplectic/noncontextual_op.py) represents noncontextual Hamiltonians (defined [here](https://arxiv.org/abs/2002.05693)) that may be mapped onto a hidden-variable model and solved classically; various solvers are supplied in `NoncontextualSolver`.
+- [`PauliwordOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/operators/base.py) for representing general Pauli operators.
+- [`QuantumState`](https://github.com/UCL-CCS/symmer/tree/main/symmer/operators/base.py) for representing quantum statevectors.
+- [`IndependentOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/operators/independent_op.py) represents algebraically independent sets of Pauli operators for stabilizer manipulation/projections.
+- [`AnticommutingOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/operators/anticommuting_op.py) represents sets of anticommuting Pauli operators for the purposes of Unitary Partitioning and Linear Combination of Unitaries as in [this](https://arxiv.org/abs/2207.03451) paper.
+- [`NoncontextualOp`](https://github.com/UCL-CCS/symmer/tree/main/symmer/operators/noncontextual_op.py) represents noncontextual Hamiltonians (defined [here](https://arxiv.org/abs/2002.05693)) that may be mapped onto a hidden-variable model and solved classically; various solvers are supplied in `NoncontextualSolver`.
 
 `.projection` contains stabilizer subspace projection classes (in resolution order):
 - [`S3_projection`](https://github.com/UCL-CCS/symmer/tree/main/symmer/projection/base.py) for rotating a StabilizerOp onto some basis of single-qubit Pauli operators via Clifford operations and projecting into the corresponding stabilizer subspace.
