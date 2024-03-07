@@ -65,15 +65,10 @@ class ContextualSubspace(S3Projection):
             self.noncontextual_operator = NoncontextualOp.from_hamiltonian(
                 operator, strategy=noncontextual_strategy
             )
-            # solve noncon problem
-            self._noncontextual_update()
-            noncontextual_strategy = 'solved'
         else:
             self.noncontextual_operator = noncontextual_operator
-        
-        ## case for StabilizeFirst when need to solve noncon problem
-        if not noncontextual_strategy == 'solved':
-            self._noncontextual_update()
+        self.unitary_partitioning_method = unitary_partitioning_method
+        self._noncontextual_update()
 
     def manual_stabilizers(self, S: Union[List[str], IndependentOp]) -> None:
         """ 
@@ -150,10 +145,13 @@ class ContextualSubspace(S3Projection):
             self.contextual_operator = self.operator - self.noncontextual_operator
             if self.contextual_operator.n_terms == 0:
                 raise ValueError('The Hamiltonian is noncontextual, the contextual subspace is empty.')
-            self.noncontextual_operator.solve(
-                strategy=self.noncontextual_solver, 
-                ref_state=self.ref_state
-            )
+            if self.nc_strategy != "solved":
+                self.noncontextual_operator.solve(
+                    strategy=self.noncontextual_solver, 
+                    ref_state=self.ref_state
+                )
+            else:
+                self.noncontextual_operator.update_clique_representative_operator()
             self.n_cliques = self.noncontextual_operator.n_cliques
         
     def _aux_operator_preserving_stabilizer_search(self,
