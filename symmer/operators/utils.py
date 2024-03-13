@@ -475,8 +475,12 @@ def check_independent(operators):
     Returns:
         Returns True, if input operators contains algebraically dependent terms.
     """
-    check_independent = _rref_binary(operators.symp_matrix)
-    return ~np.any(np.all(~check_independent, axis=1))
+    if operators.n_terms>2*operators.n_qubits:
+        # cannot have indp. set of Pauli operators of more than 2N terms
+        return False
+    else:
+        ind_check = _rref_binary(operators.symp_matrix)
+        return ~np.any(np.all(~ind_check, axis=1))
 
 def check_jordan_independent(operators):
     """ 
@@ -501,80 +505,17 @@ def check_jordan_independent(operators):
     # Z2     =  [IIZI, ZIIZ, IXII]
 
     """
-    # mask_symmetries = np.all(operators.adjacency_matrix, axis=1)
-    # Symmetries = operators[mask_symmetries]
-    # Anticommuting = operators[~mask_symmetries]
-    # return (
-    #     check_independent(Symmetries) & 
-    #     np.all(Anticommuting.adjacency_matrix == np.eye(Anticommuting.n_terms))
-    # )
-
-    # if operators.n_terms<= 2*operators.n_qubits+1:
-    #     # check if input is fully anticommuting
-    #     adj_mat = operators.adjacency_matrix
-    #     adj_mat[np.diag_indices_from(adj_mat)] = False
-    #     if np.all(~adj_mat):
-    #         return True
-
-    # Z2_gen_mask = np.sum(operators.commutes_termwise(operators), axis=1) == operators.n_terms
-    # Z2_terms = operators[Z2_gen_mask]
-    #
-    # # find terms not generated these Z2 symmerties
-    # _, z2_mask = operators.generator_reconstruction(Z2_terms, override_independence_check=True)
-    #
-    # ac_terms = operators[~z2_mask]
-    # if ac_terms.n_terms > 0:
-    #     decomposed = ac_terms.clique_cover(edge_relation='C')
-    #     clique_rep_list = [C.sort()[0] for C in decomposed.values()]
-    #     ac_op = sum(clique_rep_list).cleanup()
-    #     # if ac_op.n_terms>0:
-    #     #     assert (np.sum(ac_op.adjacency_matrix.astype(int)
-    #     #                    - np.eye(ac_op.adjacency_matrix.shape[0])) == 0), f'ac_op is not anticommuting: {ac_op}'
-    #     # del ac_op
-    #     if ac_op.n_terms > 0:
-    #         # check all operators anticommute
-    #         adj_mat = ac_op.adjacency_matrix
-    #         adj_mat[np.diag_indices_from(adj_mat)] = False
-    #         if not np.all(~adj_mat):
-    #             return False
-    #
-    #     Z2_from_cliques = sum((decomposed[n] - C_rep) * C_rep for n, C_rep in enumerate(clique_rep_list) if
-    #                           decomposed[n].n_terms > 1)
-    #     if Z2_from_cliques:
-    #         Z2_terms += Z2_from_cliques
-    #
-    #     if not np.all(Z2_terms.commutes_termwise(ac_op)):
-    #         return False
-    #
-    # return check_independent(Z2_terms)
-
-    # get fully commuting terms
-    z2_mask = np.sum(operators.commutes_termwise(operators), axis=1) == operators.n_terms
-    Z2_symm = operators[z2_mask]
-
-    _, missing_mask = operators.generator_reconstruction(Z2_symm, override_independence_check=True)
-    remaining = operators[~missing_mask]
-
-    if remaining.n_terms > 0:
-        # for remaining to be jordan independent remaining must be disjoint union of cliques
-        # we can test for this below
-
-        adj_matrix_view = np.ascontiguousarray(remaining.adjacency_matrix).view(
-            np.dtype((np.void, remaining.adjacency_matrix.dtype.itemsize * remaining.adjacency_matrix.shape[1]))
-        )
-        re_order_indices = np.argsort(adj_matrix_view.ravel())
-        # sort the adj matrix and vector of coefficients accordingly
-        sorted_terms = remaining.adjacency_matrix[re_order_indices]
-        # unique terms are those with non-zero entries in the adjacent row difference array
-        diff_adjacent = np.diff(sorted_terms, axis=0)
-        mask_unique_terms = np.append(True, np.any(diff_adjacent, axis=1))
-        clique_mask = sorted_terms[mask_unique_terms]
-
-        # check for overlap (array of ones == no overlap)
-        return np.all(np.sum(clique_mask, axis=0) == 1)
-    else:
-        # operators is made up of pairwise commuting ops and thus must be jordan independent
-        return True
+    if operators.n_terms> 3*operators.n_qubits:
+        # cannot have a jordan indp. set larger than 3N
+        ## (e.g. only SINGLE X,Y,Z on every qubit position)
+        ## {XI, ZI, YI, IX, IY, IZ}
+        return False
+    
+    # do row reduction where Y terms treated seperately
+    Y_block = np.logical_and(operators.Z_block, operators.X_block)
+    XZY_block = np.hstack((np.logical_xor(operators.X_block, Y_block), np.hstack((np.logical_xor(operators.Z_block, Y_block), Y_block))))
+    ind_check = _rref_binary(XZY_block)
+    return ~np.any(np.all(~ind_check, axis=1))
 
 def check_adjmat_noncontextual(adjmat) -> bool:
     """

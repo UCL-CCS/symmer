@@ -249,6 +249,7 @@ class NoncontextualOp(PauliwordOp):
             _, noncontextual_terms_mask = H.generator_reconstruction(generators, override_independence_check=True)
 
         return cls.from_PauliwordOp(H[noncontextual_terms_mask])
+    
     @classmethod
     def random(cls,
             n_qubits: int,
@@ -296,16 +297,19 @@ class NoncontextualOp(PauliwordOp):
             elif n_commuting_terms == 0:
                 XZ_block = np.zeros(2 * remaining_qubits, dtype=bool).reshape([1, -1])
             else:
-                # randomly chooise Z bitstrings in symp matrix:
-                indices = np.unique(np.random.random_integers(0,
-                                                              high=2 ** remaining_qubits - 1,
-                                                              size=10 * n_commuting_terms))
-                while len(indices) < n_commuting_terms:
-                    indices = np.unique(np.append(indices,
-                                                  np.unique(np.random.random_integers(0,
-                                                                                      high=2 ** remaining_qubits - 1,
-                                                                                      size=10 * n_commuting_terms)))
-                                        )
+                indices = np.random.choice(np.arange(0, 2 ** remaining_qubits),
+                                    size=n_commuting_terms, 
+                                    replace=False)
+                # # randomly chooise Z bitstrings in symp matrix:
+                # indices = np.unique(np.random.random_integers(0,
+                #                                               high=2 ** remaining_qubits - 1,
+                #                                               size=10 * n_commuting_terms))
+                # while len(indices) < n_commuting_terms:
+                #     indices = np.unique(np.append(indices,
+                #                                   np.unique(np.random.random_integers(0,
+                #                                                                       high=2 ** remaining_qubits - 1,
+                #                                                                       size=10 * n_commuting_terms)))
+                #                         )
 
                 indices = indices[:n_commuting_terms]
                 XZ_block = (((indices[:, None] & (1 << np.arange(2 * remaining_qubits))[
@@ -415,7 +419,19 @@ class NoncontextualOp(PauliwordOp):
         """ 
         Find an independent generating set for the noncontextual operator.
         """
-        Z2_symmerties = IndependentOp.symmetry_generators(self, commuting_override=True)
+
+        # get Z2 symmetries (may anticommute among themselves)
+        Z2_general = IndependentOp.symmetry_generators(self, commuting_override=True)
+        _, Z2_mask = self.generator_reconstruction(Z2_general)
+        Z2_symmerties = self[Z2_mask].generators
+
+        # then build remaining operator (should be disjoint union of AC cliques now!)
+        _, successful_mask = self.generator_reconstruction(Z2_symmerties)
+        remaining = self[~successful_mask]
+
+        # then build remaining operator (should be disjoint union of AC cliques now as passed NC check!)
+        _, successful_mask = self.generator_reconstruction(Z2_symmerties)
+        remaining = self[~successful_mask]
 
         if not np.all(Z2_symmerties.commutes_termwise(Z2_symmerties)):
             # need to account for Z2_symmerties not commuting with themselves
