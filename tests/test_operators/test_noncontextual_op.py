@@ -93,6 +93,23 @@ def test_init_noncontextual_input():
     assert noncon_op.is_noncontextual
 
 
+def test_noncon_input():
+    """
+    test selected from previous example that caused problems
+    """
+    Hnc = NoncontextualOp.from_dictionary({'ZIIIIYYX': (2.64309332429773+0j),
+                                        'IIZIIXZX': (2.5949235978674987+0j),
+                                        'IXXXZXZI': (2.5749946412718714+0j),
+                                        'IIIXIIII': (-2.5214074462783826+0j),
+                                        'IZZIZZZX': (-2.382755288758979+0j),
+                                        'IYIIZIII': (1.7721584723056665+0j),
+                                        'IIZIIIXY': (1.5102809895032403+0j),
+                                        'XZIIIIXI': (-0.48551735837969334+0j),
+                                        'XZXIIIZI': (-0.36470316277021947+0j)})
+    
+    assert Hnc.is_noncontextual
+
+
 # def test_diag_noncontextual_op():
 #     """ Return the diagonal terms of the PauliwordOp - this is the simplest noncontextual operator
 #     """
