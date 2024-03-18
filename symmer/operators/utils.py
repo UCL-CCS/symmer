@@ -6,8 +6,77 @@ from qiskit.quantum_info import SparsePauliOp
 from qiskit._accelerate.sparse_pauli_op import unordered_unique
 import numba as nb
 
-@nb.njit(fastmath=True, parallel=True, cache=True)
 def matmul_GF2(A: np.array, B: np.array) -> np.array:
+    """
+    Matrix multiplication mod2, i.e. (A@B)%2. 
+    
+    Note this calls one of two numba functions. First one uses numpy dot functionality, the second
+    does a manual multiplication over GF2 (that is safe for very large matrices)
+
+    Args:
+        A (np.array): boolean numpy array
+        B (np.array): boolean numpy array
+    Returns:
+        matrix multiplication mod 2
+
+    """
+    if max(*A.shape, *B.shape)<2147483648: # 2**31
+        return numba_dot_matmal_GF2(A,B)
+    else:
+        return numba_binary_matmal_GF2(A,B)
+
+@nb.njit(fastmath=True, parallel=True, cache=True)
+def numba_binary_matmal_GF2(A: np.array, B: np.array) -> np.array:
+    """
+    custom GF(2) multiplication using numba. i.e. C = (A@B) mod 2.
+    
+    Note function uses fact that multiplication over GF2 doesn't require sums for each matrix element in C
+    instead it uses and AND operation (same as elementwise multiplicaiton of row,col pairs) 
+    followed by XOR operation (same as taking sum of row,col multiplied pairs)
+    
+    Args:
+        A (np.array): numpy boolean array
+        B (np.array): numpy boolean array
+    Returns:
+        C (np.array): numpy boolean array of (A@B) mod 2
+    """
+    C = np.empty((A.shape[0], B.shape[1]), dtype=np.bool_)
+    for i in nb.prange(C.shape[0]):
+        for j in range(C.shape[1]):
+
+            ## logical version 1 (slower) 
+            # C[i, j] = bool(np.sum(np.logical_and(A[i, :], B[:, j]))%2)
+
+            # # logical version 2 (slower) 
+            # parity = False
+            # for bit in np.logical_and(A[i, :], B[:, j]):
+            #     parity^=bit
+            # C[i, j] = parity
+
+            ## faster loop
+            acc = False
+            for k in range(B.shape[0]):
+                acc ^= A[i, k] & B[k, j]
+            C[i, j] = acc
+    return C
+
+@nb.njit('(bool_[:,::1],bool_[:,::1])', fastmath=True, cache=True)
+def numba_dot_matmal_GF2(A, B):
+    """
+    Matrix multiplication mod2, i.e. (A@B)%2. Note this function expects boolean input!
+
+    Args:
+        A (np.array): boolean numpy array
+        B (np.array): boolean numpy array
+    Returns:
+        matrix multiplication mod 2
+
+    """
+    return np.asarray(np.dot(np.asarray(A, dtype = np.float64),
+                             np.asarray(B, dtype = np.float64)
+                             )%2, 
+                      dtype = np.bool_) 
+
     """
     custom GF(2) multiplication using numba. i.e. C = (A@B) mod 2.
     

@@ -1472,7 +1472,7 @@ class PauliwordOp:
             x_int = binary_array_to_int(self.X_block).reshape(-1, 1)
             z_int = binary_array_to_int(self.Z_block).reshape(-1, 1)
 
-            Y_number = np.sum(np.bitwise_and(self.X_block, self.Z_block).astype(int), axis=1)
+            Y_number = np.sum(np.bitwise_and(self.X_block, self.Z_block), axis=1)
             global_phase = (-1j) ** Y_number
 
             dimension = 2 ** self.n_qubits
