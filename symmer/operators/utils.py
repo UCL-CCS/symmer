@@ -60,7 +60,7 @@ def numba_binary_matmal_GF2(A: np.array, B: np.array) -> np.array:
             C[i, j] = acc
     return C
 
-@nb.njit('(bool_[:,::1],bool_[:,::1])', fastmath=True, cache=True)
+@nb.njit(fastmath=True, cache=True)
 def numba_dot_matmal_GF2(A, B):
     """
     Matrix multiplication mod2, i.e. (A@B)%2. Note this function expects boolean input!
