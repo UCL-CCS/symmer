@@ -59,7 +59,7 @@ def numba_binary_matmal_GF2(A: np.array, B: np.array) -> np.array:
                 acc ^= A[i, k] & B[k, j]
             C[i, j] = acc
     return C
-
+g
 @nb.njit('(bool_[:,::1],bool_[:,::1])', fastmath=True, cache=True)
 def numba_dot_matmal_GF2(A, B):
     """
