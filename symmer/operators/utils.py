@@ -510,12 +510,23 @@ def check_jordan_independent(operators):
         ## (e.g. only SINGLE X,Y,Z on every qubit position)
         ## {XI, ZI, YI, IX, IY, IZ}
         return False
+
+    # check if globally commuting subset of operators is independent
+    comm_mask = np.sum(operators.commutes_termwise(operators), axis=1) == operators.n_terms
+    comm_part = operators[comm_mask]
+    if not check_independent(comm_part):
+        # commuting subset is not independent
+        ## {YY, XX, ZZ} is example where this would fail! and is why we check here
+        ## as would pass test below
+        return False
     
+    ## Final check over WHOLE operator to see if jordan indp. (not need to include commuting part! See unit test)
     # do row reduction where Y terms treated seperately
     Y_block = np.logical_and(operators.Z_block, operators.X_block)
     XZY_block = np.hstack((np.logical_xor(operators.X_block, Y_block), np.hstack((np.logical_xor(operators.Z_block, Y_block), Y_block))))
     ind_check = _rref_binary(XZY_block)
     return ~np.any(np.all(~ind_check, axis=1))
+
 
 def check_adjmat_noncontextual(adjmat) -> bool:
     """
