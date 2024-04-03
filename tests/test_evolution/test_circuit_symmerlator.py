@@ -21,7 +21,7 @@ def test_random_cliffords():
         assert np.isclose(
             (sv.conj().T @ observable_matrix @ sv)[0,0],
             CS.evaluate(observable)
-        )
+        ), f'{(sv.conj().T @ observable_matrix @ sv)[0,0]} vs {CS.evaluate(observable)}'
 
 #### INDIVIDUAL GATE TESTS BELOW ####
 

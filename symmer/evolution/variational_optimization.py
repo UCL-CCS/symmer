@@ -1,5 +1,5 @@
 from cached_property import cached_property
-from qiskit.opflow import CircuitStateFn
+from qiskit.quantum_info import Statevector
 from qiskit import QuantumCircuit
 from symmer import process, QuantumState, PauliwordOp
 from symmer.operators.utils import (
@@ -83,7 +83,7 @@ class VQE_Driver:
         if self.expectation_eval == 'observable_rotation':
             return list(zip(evolution_obj, -2*x))
         else:
-            state = CircuitStateFn(evolution_obj.bind_parameters(x))
+            state = Statevector(evolution_obj.bind_parameters(x))
             if self.expectation_eval == 'dense_array':
                 return state.to_matrix().reshape([-1,1])
             elif self.expectation_eval == 'sparse_array':
@@ -344,7 +344,7 @@ class ADAPT_VQE(VQE_Driver):
                 gradient = list(map(self._derivative_from_commutators, range(self.excitation_pool.n_terms)))
         
         elif self.derivative_eval == 'param_shift':
-            # not parallelizable due the CircuitStateFn already using multiprocessing! 
+            # not parallelizable due the Statevector already using multiprocessing! 
             gradient = list(map(self._derivative_from_param_shift, range(self.excitation_pool.n_terms)))
         
         else:

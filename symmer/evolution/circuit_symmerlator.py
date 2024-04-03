@@ -2,6 +2,8 @@ from typing import List
 from symmer import PauliwordOp, QuantumState
 from qiskit import QuantumCircuit
 import numpy as np
+from qiskit import qasm3
+import re
 
 class CircuitSymmerlator:
     """
@@ -171,12 +173,15 @@ class CircuitSymmerlator:
         qasm_version = instructions.pop(0)
         inclusions   = instructions.pop(0)
         registers    = instructions.pop(0)
-        n_qubits     = int(registers.split(' ')[1][2:-1])
+        # n_qubits     = int(registers.split(' ')[1][2:-1])
+        n_qubits =   int(re.findall(r'\d+', registers)[0])
 
         self = cls(n_qubits)
         pi = np.pi # for evaluating strings like '3*pi/2'
         for step in instructions:
-            gate, qubits  = step.split(' ')
+            gate_qubits  = step.split(' ')
+            gate = gate_qubits[0]
+            qubits = ''.join(gate_qubits[1:])
             qubits = [int(q[2:-1]) for q in qubits.split(',')]
             extract_angle = gate.split('(')
             if len(extract_angle) == 1:
@@ -195,4 +200,4 @@ class CircuitSymmerlator:
     def from_qiskit(cls, circuit: QuantumCircuit) -> "CircuitSymmerlator":
         """ Initialize the simulator from a Qiskit QuantumCircuit
         """
-        return cls.from_qasm(circuit.reverse_bits().qasm(), angle_factor=-1)
+        return cls.from_qasm(qasm3.dumps(circuit.reverse_bits()), angle_factor=-1)
