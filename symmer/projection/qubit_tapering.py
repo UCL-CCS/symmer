@@ -104,3 +104,8 @@ class QubitTapering(S3Projection):
             self.tapered_ref_state = self.project_state(ref_state)
 
         return tapered_operator
+    
+    def project_state(self, state_to_project: QuantumState) -> QuantumState:
+        """
+        """
+        return self._project_state(state_to_project)

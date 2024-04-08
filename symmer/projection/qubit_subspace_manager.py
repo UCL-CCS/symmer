@@ -200,10 +200,9 @@ class QubitSubspaceManager:
         if self._n_qubits < self.hamiltonian.n_qubits:
 
             if self.run_qubit_tapering:
-                state = self.QT.project_state(state)
-            
+                state = self.QT.project_state(state_to_project=state)
             if self.run_contextual_subspace:
-                state = self.CS.project_state_onto_subspace(state_to_project=state)
+                state = self.CS.project_state(state_to_project=state)
 
         return state
 

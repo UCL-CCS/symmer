@@ -331,7 +331,7 @@ class ContextualSubspace(S3Projection):
         else:
             return cs_operator
 
-    def project_state_onto_subspace(self, 
+    def project_state(self, 
             state_to_project: QuantumState = None
         ) -> QuantumState:
         """ 
@@ -359,6 +359,6 @@ class ContextualSubspace(S3Projection):
             else:
                 rotation_generator = sum([R*angle*.5*1j for R,angle in self.noncontextual_operator.unitary_partitioning_rotations])
                 rotation = trotter(rotation_generator)
-            return self.project_state(rotation * state_to_project)
+            return self._project_state(rotation * state_to_project)
         else:
-            return self.project_state(state_to_project)
+            return self._project_state(state_to_project)
