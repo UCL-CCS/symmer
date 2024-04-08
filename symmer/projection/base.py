@@ -123,7 +123,7 @@ class S3Projection:
         # ...and finally perform the stabilizer subspace projection
         return self._perform_projection(operator=op_rotated)
     
-    def project_state(self, state: QuantumState) -> QuantumState:
+    def _project_state(self, state: QuantumState) -> QuantumState:
         """ 
         Project a state into the stabilizer subspace.
 

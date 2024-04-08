@@ -142,18 +142,18 @@ def test_unitary_partitioning_method(up_method):
     assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0005
 
 @pytest.mark.parametrize("up_method", ['LCU', 'seq_rot'])
-def test_project_state_onto_subspace(up_method):
+def test_project_state(up_method):
     CS = ContextualSubspace(
         H_taper, noncontextual_strategy='SingleSweep_magnitude',
         unitary_partitioning_method=up_method
     )
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     CS.project_onto_subspace()
-    projected_state = CS.project_state_onto_subspace(QT.tapered_ref_state)
+    projected_state = CS.project_state(QT.tapered_ref_state)
     assert projected_state == QuantumState([[0,0,0]], [-1])
 
-def test_project_state_onto_subspace_before_operator():
+def test_project_state_before_operator():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='StabilizeFirst')
     CS.update_stabilizers(3, aux_operator=CC_taper, strategy='aux_preserving')
     with pytest.raises(AssertionError):
-        CS.project_state_onto_subspace(QT.tapered_ref_state)
+        CS.project_state(QT.tapered_ref_state)
