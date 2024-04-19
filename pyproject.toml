@@ -9,7 +9,7 @@ license = "MIT"
 python = "^3.8"
 openfermion = "^1.6.1"
 cached-property = "^1.5.2"
-qiskit = "^0.46.1"
+qiskit = "0.46"
 pydocstyle = "^6.1.1"
 isort = "^5.10.1"
 black = "^24.3.0"
@@ -25,6 +25,7 @@ myst-nb = "^0.17.2"
 sphinx-copybutton = "^0.5.2"
 py3dmol = "^2.0.4"
 scipy = "1.9.3"
+urllib3 = "1.26.6"
 
 [tool.poetry.dev-dependencies]
 
