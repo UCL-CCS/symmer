@@ -698,8 +698,7 @@ class NoncontextualSolver:
             nu_list[:,~self.fixed_ev_mask] = np.array(list(itertools.product([-1,1],repeat=np.sum(~self.fixed_ev_mask))))
         
         # # optimize over all discrete value assignments of nu in parallel
-        tracker = get_noncon_energy(nu_list, self.NC_op)
-        full_search_results = zip(tracker, nu_list)
+        full_search_results = get_noncon_energy(nu_list, self.NC_op)
         energy, fixed_nu = min(full_search_results, key=lambda x:x[0])
 
         return energy, fixed_nu
@@ -736,4 +735,4 @@ def get_noncon_energy(nu: np.array, noncon_H:NoncontextualOp) -> float:
     """
     The classical objective function that encodes the noncontextual energies.
     """
-    return noncon_H.get_energy(nu)
+    return noncon_H.get_energy(nu), nu
