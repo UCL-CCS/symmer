@@ -1,5 +1,6 @@
 import numpy as np
 import warnings
+from functools import reduce
 from typing import Dict, List, Tuple, Union
 from symmer import process
 from symmer.operators.utils import _rref_binary, _cref_binary, check_independent
@@ -307,7 +308,12 @@ class IndependentOp(PauliwordOp):
         """
         self.generate_stabilizer_rotations()
         if self.stabilizer_rotations != []:
-            return self.perform_rotations(self.stabilizer_rotations)
+            return IndependentOp.from_PauliwordOp(
+                reduce(
+                    lambda x,y:x.append(y), 
+                    [s.perform_rotations(self.stabilizer_rotations) for s in self]
+                )
+            ) # ensures stabilizer ordering is correct
         else:
             return self
           
