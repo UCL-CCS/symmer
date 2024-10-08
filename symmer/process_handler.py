@@ -12,7 +12,7 @@ else:
 
 class ProcessHandler:
 
-    if sys.platform.lower() in ['linux', 'darwin', 'linux2', 'darwin']:
+    if sys.platform.lower() in ['linux', 'darwin', 'linux2']:
         method  = 'mp'
     else:
         method  = 'ray'
