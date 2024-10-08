@@ -5,14 +5,18 @@ import quimb
 from ray import remote, put, get
 from multiprocessing import Process, Queue, set_start_method
 
-if sys.platform.lower() in ['linux', 'darwin']:
+if sys.platform.lower() in ['linux', 'darwin', 'linux2']:
     set_start_method('fork', force = True)
 else:
     set_start_method('spawn', force = True)
 
 class ProcessHandler:
 
-    method  = 'ray'
+    if sys.platform.lower() in ['linux', 'darwin', 'linux2', 'darwin']:
+        method  = 'mp'
+    else:
+        method  = 'ray'
+    
     verbose = False
 
     def __init__(self):
