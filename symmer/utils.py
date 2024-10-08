@@ -224,7 +224,6 @@ def gram_schmidt_from_quantum_state(state:Union[np.array, list, QuantumState]) -
 
     return M
 
-
 def get_sparse_matrix_large_pauliwordop(P_op: PauliwordOp) -> csr_matrix:
     """
     In order to build the sparse matrix (e.g. above 18 qubits), this function goes through each pauli term

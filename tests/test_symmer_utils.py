@@ -1,10 +1,9 @@
 from symmer.operators import PauliwordOp, QuantumState
-from symmer.utils import (exact_gs_energy, random_anitcomm_2n_1_PauliwordOp,Draw_molecule,
+from symmer.utils import (exact_gs_energy, random_anitcomm_2n_1_PauliwordOp,
                           tensor_list, gram_schmidt_from_quantum_state, product_list,
                           get_sparse_matrix_large_pauliwordop, matrix_allclose)
 import numpy as np
 from openfermion import QubitOperator
-import py3Dmol
 
 H2_sto3g = {'qubit_encoding': 'jordan_wigner',
  'unit': 'angstrom',
@@ -445,16 +444,6 @@ def test_gram_schmidt_from_quantum_state_numpy_array():
     U_gram = gram_schmidt_from_quantum_state(psi_norm)
     assert np.allclose(U_gram[:, 0], psi_norm), 'first column of U_gram not correct'
     assert np.allclose(U_gram @ U_gram.conj().T, np.eye(2 ** nq)), 'U_gram not unitary'
-
-
-def test_Draw_molecule():
-
-    xyz = H2_sto3g['geometry']
-    viewer_sphere = Draw_molecule(xyz, width=400, height=400, style='sphere')
-    assert isinstance(viewer_sphere, py3Dmol.view)
-
-    viewer_stick = Draw_molecule(xyz, width=400, height=400, style='stick')
-    assert isinstance(viewer_stick, py3Dmol.view)
 
 def test_get_sparse_matrix_large_pauliwordop():
     for nq in range(2,6):
