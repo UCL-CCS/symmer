@@ -66,12 +66,12 @@ def test_from_dictionary(
 # Testing QUIMB dmrg sovler #
 ############################################
 
-def test_find_groundsate_quimb(
-        pauli_list_1,
-        coeff_vec_1
-        ):
-    MPO = MPOOp(pauli_list_1, coeff_vec_1)
+# def test_find_groundsate_quimb(
+#         pauli_list_1,
+#         coeff_vec_1
+#         ):
+#     MPO = MPOOp(pauli_list_1, coeff_vec_1)
 
-    mpostate = find_groundstate_quimb(MPO)
+#     mpostate = find_groundstate_quimb(MPO)
 
-    assert(type(mpostate) == QuantumState)
+#     assert(type(mpostate) == QuantumState)

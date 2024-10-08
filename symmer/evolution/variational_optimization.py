@@ -1,5 +1,6 @@
 from cached_property import cached_property
 from qiskit.quantum_info import Statevector
+# from qiskit.opflow import CircuitStateFn # old qiskit function replaced by Statevector
 from qiskit import QuantumCircuit
 from symmer import process, QuantumState, PauliwordOp
 from symmer.operators.utils import (
@@ -83,7 +84,7 @@ class VQE_Driver:
         if self.expectation_eval == 'observable_rotation':
             return list(zip(evolution_obj, -2*x))
         else:
-            state = Statevector(evolution_obj.bind_parameters(x))
+            state = Statevector(evolution_obj.bind_parameters(x)).data
             if self.expectation_eval == 'dense_array':
                 return state.to_matrix().reshape([-1,1])
             elif self.expectation_eval == 'sparse_array':
