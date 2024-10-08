@@ -2559,20 +2559,6 @@ files = [
 tests = ["pytest"]
 
 [[package]]
-name = "py3dmol"
-version = "2.4.0"
-description = "An IPython interface for embedding 3Dmol.js views in Jupyter notebooks"
-optional = false
-python-versions = "*"
-files = [
-    {file = "py3Dmol-2.4.0-py2.py3-none-any.whl", hash = "sha256:e7d27ffdf9326850e4c6dac55ec047ce023ffaf87d8032278982a4d3d78d3973"},
-    {file = "py3Dmol-2.4.0.tar.gz", hash = "sha256:5cbeb125771abdedf051845bbb8df30306338a92a1852c9934c3ec85ba482a78"},
-]
-
-[package.extras]
-ipython = ["IPython"]
-
-[[package]]
 name = "pycodestyle"
 version = "2.8.0"
 description = "Python style guide checker"
@@ -3790,4 +3776,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.8"
-content-hash = "17a853a1287459499c42a8559227f2b5d1ef4ddedd10f531f02ffce9baa9ebb5"
+content-hash = "0ebae7433e51c9b3d5a63553a4d6ab65144b44e911cd041d345d4b49e563cdc3"
