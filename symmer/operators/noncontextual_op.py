@@ -414,7 +414,7 @@ class NoncontextualOp(PauliwordOp):
         weights = [G[u][v]['weight'] for u,v in edges]
         nx.draw(G, pos, edge_color=colors, width=weights, 
                 node_color=node_colour, node_size=node_size, ax=axis)
-
+ 
     def noncontextual_generators(self) -> None:
         """ 
         Find an independent generating set for the noncontextual operator.
