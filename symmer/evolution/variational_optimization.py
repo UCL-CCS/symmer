@@ -245,7 +245,7 @@ class ADAPT_VQE(VQE_Driver):
     # that aims to reduce circuit-depth in the ADAPT routine by adding multiple excitation terms
     # per cycle that are supported on distinct qubit positions.
     TETRIS = False
-    topology_aware = True
+    topology_aware = False
     topology_bias = 1
     topology = None
     subgraph_match_depth = 3
