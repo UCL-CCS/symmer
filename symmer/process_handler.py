@@ -16,7 +16,7 @@ class ProcessHandler:
         method  = 'mp'
     else:
         method  = 'ray'
-    
+
     verbose = False
 
     def __init__(self):

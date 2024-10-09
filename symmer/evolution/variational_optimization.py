@@ -9,6 +9,7 @@ from symmer.operators.utils import (
 from symmer.evolution import PauliwordOp_to_QuantumCircuit, get_CNOT_connectivity_graph, topology_match_score
 from networkx.algorithms.cycles import cycle_basis
 from scipy.optimize import minimize
+from scipy.sparse import csc_array
 from copy import deepcopy
 import numpy as np
 from typing import *
@@ -84,13 +85,13 @@ class VQE_Driver:
         if self.expectation_eval == 'observable_rotation':
             return list(zip(evolution_obj, -2*x))
         else:
-            state = Statevector(evolution_obj.bind_parameters(x)).data
+            state = Statevector(evolution_obj.assign_parameters(x)).data.reshape([-1,1])
             if self.expectation_eval == 'dense_array':
-                return state.to_matrix().reshape([-1,1])
+                return state
             elif self.expectation_eval == 'sparse_array':
-                return state.to_spmatrix().reshape([-1,1])
+                return csc_array(state)
             elif self.expectation_eval.find('symbolic') != -1:
-                return QuantumState.from_array(state.to_matrix().reshape([-1,1]))
+                return QuantumState.from_array(state)
         
     def _f(self, 
            observable: PauliwordOp, 
