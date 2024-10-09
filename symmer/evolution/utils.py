@@ -34,7 +34,8 @@ def get_CNOT_connectivity_graph(evolution_obj:Union[PauliwordOp,QuantumCircuit],
     return G
 
 def _subgraph_isomorphism_distance(G, target, depth=0):
-
+    """
+    """
     if depth == 0:
         if GraphMatcher(target, G).subgraph_is_isomorphic():
             return 0
@@ -56,17 +57,28 @@ def _subgraph_isomorphism_distance(G, target, depth=0):
         return None
 
 def subgraph_isomorphism_distance(G, target, max_depth=3):
+    """
+    """
     depth = 0
     for depth in range(max_depth):
         dist = _subgraph_isomorphism_distance(G, target, depth)
         if dist is not None:
-            return depth * dist
+            return dist
         else:
             depth += 1
     return None
 
 def topology_match_score(ansatz_operator, topology, max_depth=3):
-    entangling_graph = get_CNOT_connectivity_graph(ansatz_operator)
-    subgraph_cost = subgraph_isomorphism_distance(entangling_graph, topology, max_depth=max_depth)
-    n_entangling_gates = np.count_nonzero(ansatz_operator.X_block | ansatz_operator.Z_block)
-    return 1-subgraph_cost/n_entangling_gates
+    """
+    """
+    n_entangling_gates = 2*(np.count_nonzero(ansatz_operator.X_block | ansatz_operator.Z_block)-ansatz_operator.n_terms)
+    if n_entangling_gates == 0:
+        return 1
+    else:
+        entangling_graph = get_CNOT_connectivity_graph(ansatz_operator)
+        subgraph_cost = subgraph_isomorphism_distance(entangling_graph, topology, max_depth=max_depth)
+        if subgraph_cost is None:
+            return 0
+        else:
+            return 1-subgraph_cost/n_entangling_gates
+
