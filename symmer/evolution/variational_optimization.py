@@ -27,7 +27,7 @@ class VQE_Driver:
         expectation_eval (str): expectation value method. Its default value is 'symbolic_direct'.
         verbose (bool): If True, prints out useful information during computation. By default it is set to 'True'.
     """
-    expectation_eval = 'symbolic_direct'
+    expectation_eval = 'sparse_array'
     # prints out useful information during computation:
     verbose = True
        
