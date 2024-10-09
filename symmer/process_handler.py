@@ -12,7 +12,7 @@ else:
 
 class ProcessHandler:
 
-    method  = 'ray'
+    method  = 'mp'
     verbose = False
 
     def __init__(self):
