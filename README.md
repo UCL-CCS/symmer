@@ -57,7 +57,7 @@ All this allows us to approach significantly larger systems than was previously 
 
 ## How to cite
 
-When you use in a publication or other work, please cite as:
+When you use in a publication or other work, please cite the following:
 
 > Tim Weaving, Alexis Ralli, Peter J. Love, Sauro Succi, and Peter V. Coveney. *Contextual Subspace Variational Quantum Eigensolver Calculation of the Dissociation Curve of Molecular Nitrogen on a Superconducting Quantum Computer.* [arXiv preprint arXiv:2312.04392](https://arxiv.org/abs/2312.04392) (2023).
 
