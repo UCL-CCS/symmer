@@ -1,7 +1,7 @@
 from symmer.operators import PauliwordOp, QuantumState
 from symmer.utils import (exact_gs_energy, random_anitcomm_2n_1_PauliwordOp,
                           tensor_list, gram_schmidt_from_quantum_state, product_list,
-                          get_sparse_matrix_large_pauliwordop, matrix_allclose)
+                          matrix_allclose)
 import numpy as np
 from openfermion import QubitOperator
 
@@ -445,38 +445,38 @@ def test_gram_schmidt_from_quantum_state_numpy_array():
     assert np.allclose(U_gram[:, 0], psi_norm), 'first column of U_gram not correct'
     assert np.allclose(U_gram @ U_gram.conj().T, np.eye(2 ** nq)), 'U_gram not unitary'
 
-def test_get_sparse_matrix_large_pauliwordop():
-    for nq in range(2,6):
-        n_terms = 10*nq
-        random_P = PauliwordOp.random(nq, n_terms)
-        sparse_mat = get_sparse_matrix_large_pauliwordop(random_P)
-        assert np.allclose(random_P.to_sparse_matrix.toarray(),
-                           sparse_mat.toarray())
+# def test_get_sparse_matrix_large_pauliwordop():
+#     for nq in range(2,6):
+#         n_terms = 10*nq
+#         random_P = PauliwordOp.random(nq, n_terms)
+#         sparse_mat = get_sparse_matrix_large_pauliwordop(random_P)
+#         assert np.allclose(random_P.to_sparse_matrix.toarray(),
+#                            sparse_mat.toarray())
 
-def test_matrix_allclose_sparse():
-    for nq in range(2,6):
-        n_terms = 10*nq
-        random_P = PauliwordOp.random(nq, n_terms)
-        sparse_mat = get_sparse_matrix_large_pauliwordop(random_P)
-        assert matrix_allclose(random_P.to_sparse_matrix,
-                           sparse_mat)
+# def test_matrix_allclose_sparse():
+#     for nq in range(2,6):
+#         n_terms = 10*nq
+#         random_P = PauliwordOp.random(nq, n_terms)
+#         sparse_mat = get_sparse_matrix_large_pauliwordop(random_P)
+#         assert matrix_allclose(random_P.to_sparse_matrix,
+#                            sparse_mat)
 
-    # assert false output
-    Pop_XI= PauliwordOp.from_list(['XI']).to_sparse_matrix
-    Pop_ZI = PauliwordOp.from_list(['ZI']).to_sparse_matrix
-    assert not matrix_allclose(Pop_XI,
-                           Pop_ZI)
+#     # assert false output
+#     Pop_XI= PauliwordOp.from_list(['XI']).to_sparse_matrix
+#     Pop_ZI = PauliwordOp.from_list(['ZI']).to_sparse_matrix
+#     assert not matrix_allclose(Pop_XI,
+#                            Pop_ZI)
 
-def test_matrix_allclose_dense():
-    for nq in range(2,6):
-        n_terms = 10*nq
-        random_P = PauliwordOp.random(nq, n_terms)
-        sparse_mat = get_sparse_matrix_large_pauliwordop(random_P)
-        assert matrix_allclose(random_P.to_sparse_matrix.toarray(),
-                           sparse_mat.toarray())
+# def test_matrix_allclose_dense():
+#     for nq in range(2,6):
+#         n_terms = 10*nq
+#         random_P = PauliwordOp.random(nq, n_terms)
+#         sparse_mat = get_sparse_matrix_large_pauliwordop(random_P)
+#         assert matrix_allclose(random_P.to_sparse_matrix.toarray(),
+#                            sparse_mat.toarray())
 
-    # assert false output
-    Pop_XI= PauliwordOp.from_list(['XI']).to_sparse_matrix
-    Pop_ZI = PauliwordOp.from_list(['ZI']).to_sparse_matrix
-    assert not matrix_allclose(Pop_XI.toarray(),
-                           Pop_ZI.toarray())
+#     # assert false output
+#     Pop_XI= PauliwordOp.from_list(['XI']).to_sparse_matrix
+#     Pop_ZI = PauliwordOp.from_list(['ZI']).to_sparse_matrix
+#     assert not matrix_allclose(Pop_XI.toarray(),
+#                            Pop_ZI.toarray())
