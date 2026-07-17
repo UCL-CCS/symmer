@@ -50,10 +50,9 @@ __all__ = [
     "mpo_from_pauli_strings",
     "mpo_tensors_to_dense",
     "find_groundstate_quimb",
+    "mps_to_arrays",
+    "top_amplitude_bitstrings",
 ]
-
-from quimb.tensor.tn1d.core import MatrixProductOperator, MatrixProductState
-from quimb.tensor.tn1d.dmrg import DMRG2
 
 # Single-qubit Paulis, indexed I=0, X=1, Y=2, Z=3.
 # Row index = physical "out" leg (sigma), column index = physical "in" leg (l).
@@ -282,6 +281,8 @@ def tensors_to_quimb_mpo(tensors: List[np.ndarray]):
     Returns:
         ``quimb.tensor.MatrixProductOperator`` with index order ``'dulr'``.
     """
+    from quimb.tensor import MatrixProductOperator
+
     n = len(tensors)
     if n == 1:
         # Single site operator: drop both trivial bonds -> shape 'du'.
@@ -414,6 +415,8 @@ def find_groundstate_quimb(
         A dict with keys ``'energy'`` (float), ``'mps'`` (the quimb ground-state
         MPS) and, if requested, ``'state'`` (a ``QuantumState``).
     """
+    from quimb.tensor import DMRG2, MatrixProductState
+
     if isinstance(mpo, list):
         mpo = tensors_to_quimb_mpo(mpo)
 
@@ -443,3 +446,208 @@ def find_groundstate_quimb(
         result["state"] = QuantumState.from_array(dense).cleanup(zero_threshold=1e-5)
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Extracting the largest-amplitude bitstrings from an MPS
+# ---------------------------------------------------------------------------
+def mps_to_arrays(mps) -> List[np.ndarray]:
+    """Extract a quimb MPS as a list of ``(D_left, 2, D_right)`` numpy arrays.
+
+    The arrays are ordered ``(left_bond, physical, right_bond)`` with the
+    physical dimension indexed as ``0 -> |0>``, ``1 -> |1>``. Boundary sites get
+    singleton bonds so the first array is ``(1, 2, D)`` and the last ``(D, 2, 1)``.
+
+    Args:
+        mps: A quimb ``MatrixProductState``.
+
+    Returns:
+        List of site tensors as numpy arrays.
+    """
+    n = mps.L
+    arrays: List[np.ndarray] = []
+    for i in range(n):
+        t = mps[i]
+        pind = mps.site_ind(i)
+        bond_inds = [ix for ix in t.inds if ix != pind]
+        left = right = None
+        if i > 0:
+            prev = set(mps[i - 1].inds)
+            left = next(ix for ix in bond_inds if ix in prev)
+        if i < n - 1:
+            nxt = set(mps[i + 1].inds)
+            right = next(ix for ix in bond_inds if ix in nxt)
+        order = [ix for ix in (left, pind, right) if ix is not None]
+        arr = np.asarray(t.transpose(*order).data)
+        d = arr.shape[order.index(pind)]
+        if left is None and right is None:
+            arr = arr.reshape(1, d, 1)
+        elif left is None:
+            arr = arr.reshape(1, d, -1)
+        elif right is None:
+            arr = arr.reshape(-1, d, 1)
+        arrays.append(np.ascontiguousarray(arr))
+    return arrays
+
+
+def _right_canonicalize(arrays: List[np.ndarray]) -> List[np.ndarray]:
+    """Put a list of ``(Dl, d, Dr)`` MPS tensors into right-canonical form.
+
+    After this, every site ``i >= 1`` is a right isometry
+    (``sum_{p,r} A[l,p,r] conj(A[l',p,r]) = delta_{l,l'}``) and the norm of the
+    state is carried by site 0. Uses an RQ sweep from right to left.
+    """
+    A = [a.astype(np.complex128, copy=True) for a in arrays]
+    n = len(A)
+    for i in range(n - 1, 0, -1):
+        Dl, d, Dr = A[i].shape
+        M = A[i].reshape(Dl, d * Dr)
+        # RQ via QR of M^H:  M = R @ Q, with Q having orthonormal rows.
+        Q1, R1 = np.linalg.qr(M.conj().T, mode="reduced")
+        Q = Q1.conj().T
+        R = R1.conj().T
+        A[i] = Q.reshape(Q.shape[0], d, Dr)
+        A[i - 1] = np.einsum("lpr,rs->lps", A[i - 1], R, optimize=True)
+    return A
+
+
+def _search_beam(A: List[np.ndarray], k: int, beam_width: int):
+    """Beam search over an MPS for the largest-amplitude bitstrings.
+
+    Fast and always terminating: keeps the ``beam_width`` highest-probability
+    prefixes at each site. Exact when ``beam_width`` is large enough (in
+    particular for peaked states); otherwise an excellent approximation.
+    """
+    n = len(A)
+    beam = [((), np.ones((1, 1), dtype=A[0].dtype))]  # (prefix, row-vector v)
+    for d in range(n):
+        A_site = A[d]
+        cand = []
+        for prefix, v in beam:
+            for bit in (0, 1):
+                v2 = v @ A_site[:, bit, :]
+                nb = float(np.linalg.norm(v2))
+                if nb > 0:
+                    cand.append((nb, prefix + (bit,), v2))
+        cand.sort(key=lambda x: x[0], reverse=True)
+        beam = [(p, v) for _, p, v in cand[:beam_width]]
+    finals = [(prefix, complex(v.reshape(()))) for prefix, v in beam]
+    finals.sort(key=lambda x: abs(x[1]), reverse=True)
+    return finals[:k]
+
+
+def _search_exact(A: List[np.ndarray], k: int, max_nodes: int):
+    """Exact best-first branch-and-bound for the top-``k`` amplitudes.
+
+    Guaranteed correct (the bound ``sqrt(P(prefix))`` is admissible), but the
+    frontier can grow exponentially for near-uniform / highly entangled states.
+    """
+    import heapq
+    import warnings
+
+    n = len(A)
+    counter = 0
+    heap: list = []  # (-bound, tiebreak, prefix, v)
+    for bit in (0, 1):
+        v = A[0][:, bit, :]
+        b = float(np.linalg.norm(v))
+        if b > 0:
+            heapq.heappush(heap, (-b, counter, (bit,), v))
+            counter += 1
+
+    results = []
+    nodes = 0
+    while heap and len(results) < k:
+        _, _, prefix, v = heapq.heappop(heap)
+        if len(prefix) == n:
+            results.append((prefix, complex(v.reshape(()))))
+            continue
+        nodes += 1
+        if nodes > max_nodes:
+            warnings.warn(
+                f"top_amplitude_bitstrings(method='exact') hit "
+                f"max_nodes={max_nodes} after finding {len(results)} of {k} "
+                f"bitstrings. The state is likely too entangled/flat for exact "
+                f"search; use method='beam' (default) instead.",
+                RuntimeWarning,
+            )
+            break
+        A_next = A[len(prefix)]
+        for bit in (0, 1):
+            v2 = v @ A_next[:, bit, :]
+            b = float(np.linalg.norm(v2))
+            if b > 0:
+                heapq.heappush(heap, (-b, counter, prefix + (bit,), v2))
+                counter += 1
+    return results
+
+
+def top_amplitude_bitstrings(
+    mps,
+    k: int = 20,
+    method: str = "beam",
+    beam_width: Optional[int] = None,
+    max_nodes: int = 2_000_000,
+    normalize: bool = True,
+    return_probabilities: bool = True,
+):
+    """Return the ``k`` largest-amplitude computational-basis bitstrings of an MPS.
+
+    The full ``2**n`` state is never formed. Two strategies are available:
+
+    * ``method='beam'`` (default): beam search keeping the ``beam_width``
+      most-probable prefixes at each site. Always fast (``O(n * beam_width *
+      D**2)``) and terminating. Exact for peaked states (e.g. chemistry ground
+      states dominated by a few determinants) once ``beam_width`` is large
+      enough; otherwise a high-quality approximation. Increase ``beam_width``
+      for more accuracy.
+    * ``method='exact'``: best-first branch-and-bound using the admissible bound
+      ``sqrt(P(prefix))``, guaranteed to return the true top-``k``. Efficient
+      only for peaked/low-entanglement states - for near-uniform states the
+      frontier explodes and the search is capped by ``max_nodes`` (with a
+      warning).
+
+    Args:
+        mps: A quimb ``MatrixProductState`` (e.g.
+            ``find_groundstate_quimb(...)['mps']``) or a list of ``(Dl, 2, Dr)``
+            numpy arrays.
+        k: Number of bitstrings to return.
+        method: ``'beam'`` or ``'exact'``.
+        beam_width: Beam size (``method='beam'`` only). Defaults to
+            ``max(4 * k, 64)``.
+        max_nodes: Node cap for ``method='exact'``.
+        normalize: If True, normalise the state so probabilities sum to 1.
+        return_probabilities: Include the probability ``|amplitude|**2`` in the
+            output tuples.
+
+    Returns:
+        List of ``(bitstring, amplitude[, probability])`` tuples sorted by
+        descending amplitude magnitude. ``bitstring[i]`` is the value of qubit
+        ``i`` (same site/qubit ordering as the Pauli strings used to build the
+        MPO).
+    """
+    arrays = mps if isinstance(mps, list) else mps_to_arrays(mps)
+    A = _right_canonicalize(arrays)
+
+    if normalize:
+        nrm = np.linalg.norm(A[0])
+        if nrm > 0:
+            A[0] = A[0] / nrm
+
+    if method == "beam":
+        if beam_width is None:
+            beam_width = max(4 * k, 64)
+        results = _search_beam(A, k, beam_width)
+    elif method == "exact":
+        results = _search_exact(A, k, max_nodes)
+    else:
+        raise ValueError(f"Unknown method {method!r}; use 'beam' or 'exact'.")
+
+    out = []
+    for prefix, amp in results:
+        bitstring = "".join(str(b) for b in prefix)
+        if return_probabilities:
+            out.append((bitstring, amp, abs(amp) ** 2))
+        else:
+            out.append((bitstring, amp))
+    return out
