@@ -618,7 +618,7 @@ class PauliwordOp:
             PauliwordOp: A new PauliwordOp object after cleanup.
         """
         if self.n_qubits == 0:
-            return PauliwordOp([], [np.sum(self.coeff_vec)])
+            return PauliwordOp(np.zeros(0, dtype=bool), [np.sum(self.coeff_vec)])
         elif self.n_terms == 0:
             return PauliwordOp(np.zeros((1, self.symp_matrix.shape[1]), dtype=bool), [0])
         else:
