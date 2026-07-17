@@ -1,21 +1,19 @@
 [tool.poetry]
 name = "symmer"
-version = "0.0.10"
+version = "0.0.11"
 description = ""
 authors = ["AlexisRalli <rallilex@hotmail.co.uk>", "TimWeaving <weaving.timothy@gmail.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
-python = ">=3.10, <4"
-numpy = ">=2.1,<3"
-scipy = ">=1.15.0,<2"
-numba = "^0.61.0"
+python = ">=3.10"
 qiskit = "^2.0.0"
-cirq-core = ">=1.5.0,<2"
-openfermion = ">=1.6.1,<2"
-ncon = "^2.0.0"
 opt-einsum = "^3.3.0"
 quimb = "^1.7.3"
+openfermion = "^1.8.0"
+numba = "^0.66.0"
+setuptools = "^83.0.0"
+ncon = "^2.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pydocstyle = "^6.1.1"

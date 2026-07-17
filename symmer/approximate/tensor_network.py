@@ -4,9 +4,8 @@ from typing import Union, List, Dict
 from symmer.operators import PauliwordOp, QuantumState
 from copy import copy
 from functools import cached_property
-from quimb.tensor.tensor_1d import MatrixProductOperator, MatrixProductState
-from quimb.tensor.tensor_dmrg import DMRG2
-
+from quimb.tensor.tn1d.core import MatrixProductOperator, MatrixProductState
+from quimb.tensor.tn1d.dmrg import DMRG2
 
 class MPOOp:
     """
