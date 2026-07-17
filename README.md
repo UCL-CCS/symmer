@@ -59,6 +59,8 @@ All this allows us to approach significantly larger systems than was previously 
 ## How to cite
 When you use Symmer in a publication or other work, please cite the following:
 
+> Ralli, A., Weaving, T., & Love, P. J. *Noncontextual Pauli Hamiltonians.* [J. Phys. A: Math. Theor. 58 335301](https://doi.org/10.1088/1751-8121/adf677) (2025).
+
 > Tim Weaving, Alexis Ralli, Peter J. Love, Sauro Succi, and Peter V. Coveney. *Contextual subspace variational quantum eigensolver calculation of the dissociation curve of molecular nitrogen on a superconducting quantum computer.* [npj Quantum Information, 11(1), 25.](https://www.nature.com/articles/s41534-024-00952-4) (2025).
 
 > Alexis Ralli, Tim Weaving, Andrew Tranter, William M. Kirby, Peter J. Love, and Peter V. Coveney. *Unitary partitioning and the contextual subspace variational quantum eigensolver.* [Phys. Rev. Research 5, 013095](https://doi.org/10.1103/PhysRevResearch.5.013095) (2023).
