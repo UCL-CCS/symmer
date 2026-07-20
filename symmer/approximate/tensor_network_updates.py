@@ -50,6 +50,7 @@ __all__ = [
     "mpo_from_pauli_strings",
     "mpo_tensors_to_dense",
     "find_groundstate_quimb",
+    "computational_basis_mps",
     "mps_to_arrays",
     "top_amplitude_bitstrings",
 ]
@@ -145,23 +146,36 @@ def build_mpo_tensors(
     max_bond: Optional[int] = None,
     cutoff: float = 1e-12,
     dtype: np.dtype = np.complex128,
+    method: str = "svd",
     verbose: bool = False,
 ) -> List[np.ndarray]:
     """Build a compressed MPO for ``sum_k coeffs[k] * prod_i Pauli(codes[k, i])``.
 
     The MPO is produced by a single left-to-right sweep that truncates each
-    bond via the reduced density matrix, so the bond dimension never exceeds
-    ``max_bond`` and no ``O(K**2)`` intermediate is ever formed.
+    bond via an SVD, so the bond dimension never exceeds ``max_bond`` and no
+    ``O(K**2)`` intermediate is ever formed. With ``max_bond=None`` and a small
+    ``cutoff`` the MPO is *exact* (up to ``cutoff``).
 
     Args:
         codes: ``int8`` array ``(n_terms, n_qubits)`` of Pauli codes.
         coeffs: complex array ``(n_terms,)`` of coefficients.
         max_bond: Maximum bond dimension (``None`` = no cap, exact up to
-            ``cutoff``).
-        cutoff: Relative singular-value threshold. Singular values below
+            ``cutoff``). NOTE: this truncates the *Hamiltonian operator*, not the
+            state. Truncating an operator is not variational - for accurate
+            energies keep the MPO essentially exact (``None`` / large ``max_bond``
+            and small ``cutoff``) and control accuracy via the DMRG *state* bond
+            dimension instead.
+        cutoff: Relative singular-value threshold; singular values below
             ``cutoff * max_singular_value`` at a bond are discarded.
-        dtype: Working dtype for the tensors and carry. ``np.complex64`` halves
-            memory/time at reduced precision; ``np.complex128`` is the default.
+        dtype: Working dtype. ``np.complex128`` (default) is recommended,
+            especially for chemistry Hamiltonians. ``np.complex64`` halves
+            memory but limits accuracy to ~1e-6.
+        method: ``'svd'`` (default) forms ``A`` (shape ``(4*D, K)``) and takes a
+            thin SVD - accurate and robust, memory ``O(D * K)``. ``'gram'``
+            truncates via the ``(4D, 4D)`` reduced density matrix without forming
+            ``A`` (lowest memory for enormous ``K``), but squares the singular
+            values so its usable precision is limited to ~``sqrt(eps)`` and its
+            effective cutoff is floored accordingly.
         verbose: If True, print the bond dimension found at each site.
 
     Returns:
@@ -176,10 +190,16 @@ def build_mpo_tensors(
         raise ValueError("Need at least one term to build an MPO.")
     if len(coeffs) != K:
         raise ValueError("coeffs and codes must have matching first dimension.")
+    if method not in ("svd", "gram"):
+        raise ValueError(f"Unknown method {method!r}; use 'svd' or 'gram'.")
 
-    real_dtype = np.float64 if dtype == np.complex128 else np.float32
     pmats = PAULI_MATS.astype(dtype)
     pvecs = PAULI_VECS.astype(dtype)
+    # Noise floor for the Gram method: eigenvalues (= sigma**2) below
+    # ~eps * sigma_max**2 are numerical zeros and must be dropped, else
+    # rank-deficient directions inflate the bond dimension.
+    eps = np.finfo(np.float64 if dtype == np.complex128 else np.float32).eps
+    gram_floor = 100.0 * eps  # relative eigenvalue floor
 
     if max_bond is None:
         max_bond = 2 ** 62  # effectively unbounded
@@ -203,52 +223,62 @@ def build_mpo_tensors(
         col = codes[:, i]
         masks = [col == p for p in range(4)]
 
-        # Reduced density matrix G = A A^H of shape (4*Dl, 4*Dl), assembled
-        # without ever forming the full A (shape (4*Dl, K)):
-        #   G = sum_p kron( outer(vec_p, conj(vec_p)),  C_p C_p^H )
-        G = np.zeros((4 * Dl, 4 * Dl), dtype=dtype)
-        for p in range(4):
-            mask = masks[p]
-            if not mask.any():
-                continue
-            Cp = C[:, mask]                       # (Dl, K_p)
-            gram_p = Cp @ Cp.conj().T             # (Dl, Dl)
-            outer_p = np.outer(pvecs[p], pvecs[p].conj())  # (4, 4)
-            G += np.kron(outer_p, gram_p)
+        if method == "svd":
+            # Form A (shape (4*Dl, K)):  A[(sl, a), k] = vec_p(sl) * C[a, k]
+            # for k of Pauli-type p, then take a thin SVD.  A = U S V^H.
+            A = np.zeros((4 * Dl, K), dtype=dtype)
+            for p in range(4):
+                mask = masks[p]
+                if mask.any():
+                    A[:, mask] = np.kron(pvecs[p].reshape(4, 1), C[:, mask])
+            U, S, Vh = np.linalg.svd(A, full_matrices=False)
+            smax = S[0] if S.size else 0.0
+            if smax <= 0.0:
+                keep = 1
+            else:
+                keep = int(np.count_nonzero(S > cutoff * smax))
+                keep = max(1, min(keep, max_bond, S.size))
+            L = U[:, :keep]                                   # (4*Dl, Dr)
+            Dr = keep
+            C = S[:keep, None] * Vh[:keep, :]                 # (Dr, K) = L^H A
+        else:  # method == "gram"
+            # Reduced density matrix G = A A^H (4*Dl, 4*Dl), without forming A.
+            G = np.zeros((4 * Dl, 4 * Dl), dtype=dtype)
+            for p in range(4):
+                mask = masks[p]
+                if not mask.any():
+                    continue
+                Cp = C[:, mask]
+                gram_p = Cp @ Cp.conj().T
+                outer_p = np.outer(pvecs[p], pvecs[p].conj())
+                G += np.kron(outer_p, gram_p)
+            G = 0.5 * (G + G.conj().T)
+            evals, evecs = np.linalg.eigh(G)
+            evals = np.clip(evals[::-1], 0.0, None)
+            evecs = evecs[:, ::-1]
+            emax = evals[0]
+            if emax <= 0.0:
+                keep = 1
+            else:
+                thresh = max((cutoff ** 2), gram_floor) * emax
+                keep = int(np.count_nonzero(evals > thresh))
+                keep = max(1, min(keep, max_bond, evals.size))
+            L = evecs[:, :keep]
+            Dr = keep
+            W = L.reshape(2, 2, Dl, Dr)
+            Wc = W.conj()
+            C_new = np.zeros((Dr, K), dtype=dtype)
+            for p in range(4):
+                mask = masks[p]
+                if not mask.any():
+                    continue
+                T_p = np.einsum("slad,sl->da", Wc, pmats[p], optimize=True)
+                C_new[:, mask] = T_p @ C[:, mask]
+            C = C_new
 
-        G = 0.5 * (G + G.conj().T)                # enforce Hermiticity
-        evals, evecs = np.linalg.eigh(G)          # ascending, real evals
-        evals = evals[::-1]
-        evecs = evecs[:, ::-1]
-        evals = np.clip(evals, 0.0, None)
-
-        smax = np.sqrt(evals[0]) if evals[0] > 0 else 0.0
-        if smax == 0.0:
-            keep = 1
-        else:
-            thresh = (cutoff * smax) ** 2
-            keep = int(np.count_nonzero(evals > thresh))
-            keep = max(1, min(keep, max_bond, evals.size))
-
-        L = evecs[:, :keep]                       # (4*Dl, Dr) isometry
-        Dr = keep
-        W = L.reshape(2, 2, Dl, Dr)
-        tensors.append(W)
-
+        tensors.append(L.reshape(2, 2, Dl, Dr))
         if verbose:
             print(f"  site {i:>4d}: bond {Dl} -> {Dr}")
-
-        # Update the carry: C_new = L^H A, computed per-Pauli group.
-        Wc = W.conj()
-        C_new = np.zeros((Dr, K), dtype=dtype)
-        for p in range(4):
-            mask = masks[p]
-            if not mask.any():
-                continue
-            # T_p[a', a] = sum_{s,l} conj(W[s,l,a,a']) * pmat[s,l]
-            T_p = np.einsum("slad,sl->da", Wc, pmats[p], optimize=True)  # (Dr, Dl)
-            C_new[:, mask] = T_p @ C[:, mask]
-        C = C_new
         Dl = Dr
 
     # Final site: W[s, l, a] = sum_k C[a, k] * Pauli(codes[k, -1])[s, l]
@@ -258,7 +288,7 @@ def build_mpo_tensors(
         mask = col == p
         if not mask.any():
             continue
-        rowsum = C[:, mask].sum(axis=1)           # (Dl,)
+        rowsum = C[:, mask].sum(axis=1)
         W_last[:, :, :, 0] += np.multiply.outer(pmats[p], rowsum)
     tensors.append(W_last)
 
@@ -304,6 +334,7 @@ def mpo_from_pauliwordop(
     max_bond: Optional[int] = None,
     cutoff: float = 1e-12,
     dtype: np.dtype = np.complex128,
+    method: str = "svd",
     verbose: bool = False,
     return_tensors: bool = False,
 ):
@@ -311,9 +342,13 @@ def mpo_from_pauliwordop(
 
     Args:
         operator: The operator to represent.
-        max_bond: Maximum bond dimension (``None`` = uncapped).
+        max_bond: Maximum bond dimension (``None`` = uncapped/exact). This
+            truncates the *operator*; for accurate energies leave it ``None``
+            (see :func:`build_mpo_tensors`).
         cutoff: Relative singular-value truncation threshold.
-        dtype: Working dtype (``np.complex64`` or ``np.complex128``).
+        dtype: Working dtype (``np.complex128`` recommended).
+        method: ``'svd'`` (default, accurate) or ``'gram'`` (low memory for
+            enormous term counts).
         verbose: Print per-site bond dimensions.
         return_tensors: If True, also return the raw tensor list.
 
@@ -323,7 +358,8 @@ def mpo_from_pauliwordop(
     """
     codes, coeffs = pauliwordop_to_codes(operator)
     tensors = build_mpo_tensors(
-        codes, coeffs, max_bond=max_bond, cutoff=cutoff, dtype=dtype, verbose=verbose
+        codes, coeffs, max_bond=max_bond, cutoff=cutoff, dtype=dtype,
+        method=method, verbose=verbose
     )
     mpo = tensors_to_quimb_mpo(tensors)
     if return_tensors:
@@ -337,6 +373,7 @@ def mpo_from_pauli_strings(
     max_bond: Optional[int] = None,
     cutoff: float = 1e-12,
     dtype: np.dtype = np.complex128,
+    method: str = "svd",
     verbose: bool = False,
     return_tensors: bool = False,
 ):
@@ -346,7 +383,8 @@ def mpo_from_pauli_strings(
     """
     codes, coeffs = pauli_strings_to_codes(pstrings, coeffs)
     tensors = build_mpo_tensors(
-        codes, coeffs, max_bond=max_bond, cutoff=cutoff, dtype=dtype, verbose=verbose
+        codes, coeffs, max_bond=max_bond, cutoff=cutoff, dtype=dtype,
+        method=method, verbose=verbose
     )
     mpo = tensors_to_quimb_mpo(tensors)
     if return_tensors:
@@ -381,6 +419,30 @@ def mpo_tensors_to_dense(tensors: List[np.ndarray]) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # DMRG ground-state solver
 # ---------------------------------------------------------------------------
+def computational_basis_mps(bitstring: Union[str, Sequence[int]], dtype=np.complex128):
+    """Build a bond-dimension-1 MPS for a single computational basis state.
+
+    No dense ``2**n`` vector is ever formed - the result is an exact product-state
+    MPS. Qubit ``i`` corresponds to site ``i`` (same ordering as the Pauli
+    strings / :func:`top_amplitude_bitstrings`).
+
+    Args:
+        bitstring: e.g. ``"0011"`` or ``[0, 0, 1, 1]``. ``bitstring[i]`` is the
+            value of qubit ``i``.
+        dtype: MPS data dtype.
+
+    Returns:
+        A quimb ``MatrixProductState`` representing ``|bitstring>``.
+    """
+    from quimb.tensor import MPS_computational_state
+
+    if not isinstance(bitstring, str):
+        bitstring = "".join(str(int(b)) for b in bitstring)
+    if any(c not in "01" for c in bitstring):
+        raise ValueError(f"bitstring must contain only 0/1, got {bitstring!r}.")
+    return MPS_computational_state(bitstring, dtype=np.dtype(dtype).name)
+
+
 def find_groundstate_quimb(
     mpo,
     bond_dims: Union[int, Sequence[int]] = (10, 20, 50, 100, 100, 200),
@@ -404,7 +466,10 @@ def find_groundstate_quimb(
         tol: Convergence tolerance on the energy.
         max_sweeps: Maximum number of DMRG sweeps.
         verbosity: quimb DMRG print level.
-        p0: Optional initial state (dense array or quimb MPS).
+        p0: Optional initial state. May be a quimb MPS, a dense array, or - to
+            start from a single computational basis state without ever forming a
+            dense vector - a bitstring such as ``"0011"`` or a sequence of bits
+            ``[0, 0, 1, 1]`` (``p0[i]`` is the value of qubit ``i``).
         as_quantum_state: If True, densify the result to a
             :class:`symmer.operators.QuantumState`. Only allowed for small
             systems (see ``max_qubits_for_dense``) since it materialises a
@@ -423,9 +488,19 @@ def find_groundstate_quimb(
     n_qubits = mpo.L
 
     if p0 is not None and not isinstance(p0, MatrixProductState):
-        p0 = np.asarray(p0)
-        dims = [2] * int(np.log2(p0.shape[0]))
-        p0 = MatrixProductState.from_dense(p0, dims)
+        is_bitstring = isinstance(p0, str) or (
+            isinstance(p0, (list, tuple, np.ndarray))
+            and np.asarray(p0).ndim == 1
+            and len(p0) == n_qubits
+            and set(np.unique(np.asarray(p0)).tolist()) <= {0, 1}
+        )
+        if is_bitstring:
+            # single computational basis state -> bond-1 product MPS (no dense)
+            p0 = computational_basis_mps(p0, dtype=mpo.dtype)
+        else:
+            p0 = np.asarray(p0)
+            dims = [2] * int(np.log2(p0.shape[0]))
+            p0 = MatrixProductState.from_dense(p0, dims)
 
     dmrg = DMRG2(mpo, bond_dims=bond_dims, cutoffs=cutoffs, p0=p0)
     dmrg.solve(tol=tol, max_sweeps=max_sweeps, verbosity=verbosity)
