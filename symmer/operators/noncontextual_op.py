@@ -29,17 +29,27 @@ class NoncontextualOp(PauliwordOp):
 
     def __init__(self,
             symp_matrix,
-            coeff_vec
+            coeff_vec,
+            generating_set: PauliwordOp = None
         ):
         """
         Args:
             symp_matrix (np.array): Symplectic matrix.
             coeff_vec (np.array): Coefficient Vector.
+            generating_set (PauliwordOp): Noncontextual generating set over which the terms 
+                were selected, if known. By default, it is set to None, in which case a 
+                generating set is derived from the terms instead.
         """
         super().__init__(symp_matrix, coeff_vec)
         assert(self.is_noncontextual), 'Specified operator is contextual.'
-        # extract the symmetry generating set G and clique operator C(r)
-        self.noncontextual_generators()
+        if generating_set is None:
+            # extract the symmetry generating set G and clique operator C(r)
+            self.noncontextual_generators()
+        else:
+            # a generating set derived from the terms only spans those Z2 symmetries that
+            # appear among them, which need not include everything the terms were selected
+            # over - so a known generating set is adopted in preference to deriving one
+            self.adopt_generating_set(generating_set)
         # Reconstruct the noncontextual Hamiltonian into its G and C(r) components
         self.noncontextual_reconstruction()
         
@@ -247,8 +257,16 @@ class NoncontextualOp(PauliwordOp):
             _, noncontextual_terms_mask = H.jordan_generator_reconstruction(generators)
         else:
             _, noncontextual_terms_mask = H.generator_reconstruction(generators, override_independence_check=True)
+        H_noncontextual = H[noncontextual_terms_mask]
+        # the generating set describes the selected terms under the Jordan product only if it
+        # was used to select them, or if it commutes universally so that the two agree; when
+        # anticommuting elements are multiplied together it does not, so is not carried over
+        retain_generators = use_jordan_product or np.all(generators.commutes_termwise(generators))
 
-        return cls.from_PauliwordOp(H[noncontextual_terms_mask])
+        return cls(
+            H_noncontextual.symp_matrix, H_noncontextual.coeff_vec,
+            generating_set=generators if retain_generators else None
+        )
     
     @classmethod
     def random(cls,
@@ -368,9 +386,18 @@ class NoncontextualOp(PauliwordOp):
         """
         symmetries = IndependentOp.symmetry_generators(stabilizers, commuting_override=True)
         noncon = NoncontextualOp.from_hamiltonian(symmetries, strategy='DFS_magnitude')
-        generators = noncon.symmetry_generators
+        # The sweep above discards terms of symmetries, so the generators it yields need not
+        # span the stabilizers - in which case they cannot be assigned an eigenvalue from the
+        # noncontextual ground state. Every term of symmetries commutes with every stabilizer
+        # by construction, so the stabilizers may be folded back into the symmetry generators
+        # while preserving both mutual commutativity and compatibility with the cliques.
+        generators = IndependentOp.from_PauliwordOp(
+            stabilizers.append(noncon.symmetry_generators).generators
+        )
         if noncon.clique_operator.n_terms>0:
-            generators+=noncon.clique_operator
+            # appended rather than summed since a noncontextual generating set is only
+            # independent under the Jordan product, not algebraically
+            generators = generators.append(noncon.clique_operator)
             use_jordan_product=True
 
         return cls._from_generators_noncontextual_op(H=H, generators=generators, use_jordan_product=use_jordan_product)
@@ -415,6 +442,39 @@ class NoncontextualOp(PauliwordOp):
         nx.draw(G, pos, edge_color=colors, width=weights, 
                 node_color=node_colour, node_size=node_size, ax=axis)
  
+    def adopt_generating_set(self, generating_set: PauliwordOp) -> None:
+        """ 
+        Adopt a known noncontextual generating set, splitting it into the universally 
+        commuting symmetries G and the anticommuting clique representatives C(r).
+
+        Args:
+            generating_set (PauliwordOp): Noncontextual generating set over which the terms 
+                of this operator were selected.
+        """
+        mask_symmetry = np.all(generating_set.commutes_termwise(generating_set), axis=1)
+        self.symmetry_generators = IndependentOp(
+            generating_set.symp_matrix[mask_symmetry],
+            np.ones(np.count_nonzero(mask_symmetry), dtype=int)
+        )
+        self.n_cliques = int(np.count_nonzero(~mask_symmetry))
+        if self.n_cliques == 0:
+            self.clique_operator = PauliwordOp.empty(self.n_qubits).cleanup()
+            self.decomposed = dict()
+            mask_symmetry_terms = np.ones(self.n_terms, dtype=bool)
+        else:
+            self.clique_operator = AntiCommutingOp(
+                generating_set.symp_matrix[~mask_symmetry], np.ones(self.n_cliques)
+            )
+            # each remaining term is the product of a symmetry with a single clique
+            # representative, hence it commutes with that representative alone
+            clique_commutation = self.commutes_termwise(self.clique_operator)
+            mask_symmetry_terms = np.all(clique_commutation, axis=1)
+            self.decomposed = {
+                ind: self[np.logical_and(mask, ~mask_symmetry_terms)]
+                for ind, mask in enumerate(clique_commutation.T)
+            }
+        self.decomposed['symmetry'] = self[mask_symmetry_terms]
+
     def noncontextual_generators(self) -> None:
         """ 
         Find an independent generating set for the noncontextual operator.

@@ -225,6 +225,26 @@ def test_from_hamiltonian_generators():
     assert H_noncon_generators2.n_terms >= H_noncon_generators1.n_terms
 
 
+def test_from_hamiltonian_generators_retained():
+    """
+    check the supplied generating set is retained, rather than re-derived from the extracted
+    terms - the latter only spans those Z2 symmetries appearing among the terms themselves
+    """
+    generators = PauliwordOp.from_dictionary({'IZ': (1+0j),
+                                              'ZI': (1+0j),
+                                              'XI': (1+0j)})
+    H = PauliwordOp.from_dictionary(H_con_dict)
+
+    H_noncon = NoncontextualOp.from_hamiltonian(H,
+            strategy='generators',
+            generators=generators,
+            use_jordan_product=True)
+
+    assert H_noncon.is_noncontextual
+    retained = H_noncon.symmetry_generators + H_noncon.clique_operator
+    assert set(retained.to_dictionary) == set(generators.to_dictionary)
+
+
 def test_noncon_no_symmetry_generators():
     Pwords = PauliwordOp.from_list(['X', 'Y', 'Z'])
     E_ground = -1.7320508075688772

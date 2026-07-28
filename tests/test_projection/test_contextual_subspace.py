@@ -109,6 +109,20 @@ def test_StabilizeFirst_strategy_correct_usage():
     assert H_cs.n_qubits == 3
     assert abs(exact_gs_energy(H_cs.to_sparse_matrix)[0] - fci_energy) < 0.0005
 
+@pytest.mark.parametrize("stabilizers", [['IZYYX', 'YZYXY'], ['XYXYX', 'XIZXI', 'ZYZZZ']])
+def test_StabilizeFirst_stabilizers_outside_swept_generators(stabilizers):
+    """ The noncontextual sweep over the symmetry basis discards terms, so the generators
+    it yields can fail to span the stabilizers one wishes to enforce - these then cannot be
+    assigned an eigenvalue from the noncontextual ground state configuration.
+    """
+    S = IndependentOp.from_list(stabilizers)
+    CS = ContextualSubspace(H_taper, noncontextual_strategy='StabilizeFirst')
+    CS.manual_stabilizers(S)
+    _, reconstructed = S.generator_reconstruction(CS.noncontextual_operator.symmetry_generators)
+    assert np.all(reconstructed)
+    H_cs = CS.project_onto_subspace()
+    assert H_cs.n_qubits == H_taper.n_qubits - S.n_terms
+
 def test_project_auxiliary_operator():
     CS = ContextualSubspace(H_taper, noncontextual_strategy='SingleSweep_magnitude')
     G = IndependentOp.from_list(['ZIZZZ', 'IZZZZ'])
