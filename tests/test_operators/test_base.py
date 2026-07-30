@@ -285,6 +285,7 @@ def test_from_matrix_full_basis_dense():
                            mat)
 
 
+@pytest.mark.filterwarnings("ignore:.*lossy projection:UserWarning")
 def test_from_matrix_defined_basis_dense():
 
 
@@ -344,6 +345,7 @@ def test_from_matrix_full_basis_sparse():
                            mat.toarray())
 
 
+@pytest.mark.filterwarnings("ignore:.*lossy projection:UserWarning")
 def test_from_matrix_defined_basis_sparse():
 
     op_basis = PauliwordOp.from_dictionary({
@@ -387,7 +389,7 @@ def test_from_matrix_incomplete_op_basis():
                     [0. - 1.j, 3. + 0.j, -2. + 0.j, 0. + 0.j],
                     [-1. + 0.j, 0. - 1.j, 0. + 0.j, 2. + 0.j]])
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(UserWarning, match='lossy projection'):
         PauliwordOp.from_matrix(mat, operator_basis=op_basis)
 
 
@@ -405,7 +407,7 @@ def test_from_matrix_incomplete_op_basis_sparse():
                format='csr',
                dtype=complex)
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(UserWarning, match='lossy projection'):
         PauliwordOp.from_matrix(mat, operator_basis=op_basis)
 
 
@@ -716,6 +718,7 @@ def test_to_sparse_matrix_2(
     P = PauliwordOp.from_dictionary(P_dict)
     assert np.all(P.to_sparse_matrix.toarray() == P_array)
 
+@pytest.mark.filterwarnings("ignore:.*lossy projection:UserWarning")
 def test_to_sparse_matrix_large_operator():
     """ Tests multiplication and the Qiskit conversion
     """

@@ -9,6 +9,11 @@ from symmer.operators import PauliwordOp, IndependentOp, NoncontextualOp
 from symmer.evolution import trotter
 from symmer.utils import exact_gs_energy
 
+# UP often reindexes when the preferred s-term has a zero coefficient
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:s indexed term has zero coeff:UserWarning"
+)
+
 test_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ham_data_dir = os.path.join(test_dir, 'hamiltonian_data')
 
@@ -141,8 +146,9 @@ def test_StabilizeFirst_no_aux_operator_provided():
     CS.update_stabilizers(3, aux_operator=None, strategy='aux_preserving')
 
 def test_operator_already_noncontextual():
-    with pytest.raises(ValueError):
-        CS = ContextualSubspace(NoncontextualOp.from_hamiltonian(H_taper))
+    with pytest.warns(UserWarning, match='already noncontextual'):
+        with pytest.raises(ValueError):
+            CS = ContextualSubspace(NoncontextualOp.from_hamiltonian(H_taper))
 
 @pytest.mark.parametrize("up_method", ['LCU', 'seq_rot'])
 def test_unitary_partitioning_method(up_method):

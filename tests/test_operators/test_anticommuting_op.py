@@ -186,15 +186,19 @@ def test_recursive_seq_rotations():
 def test_ac_set_with_zero_ceoffs():
     AcOp_real = AntiCommutingOp.from_list(['YY', 'XI', 'ZI', 'YX'], [0, 0, 1, 0.2])
 
-    Ps_seq_rot, rotations_seq_rot, gamma_l, AC_normed = AcOp_real.unitary_partitioning(s_index=1,
-                                                                        up_method='seq_rot')
+    with pytest.warns(UserWarning, match='zero coeff'):
+        Ps_seq_rot, rotations_seq_rot, gamma_l, AC_normed = AcOp_real.unitary_partitioning(
+            s_index=1, up_method='seq_rot'
+        )
     seq_rot_output = AC_normed.perform_rotations(rotations_seq_rot)
     assert seq_rot_output.n_terms==1
     assert np.isclose(seq_rot_output.coeff_vec[0], 1)
     assert Ps_seq_rot == seq_rot_output
 
-    Ps_LCU, rotations_LCU, gamma_l, AC_normed = AcOp_real.unitary_partitioning(s_index=1,
-                                                                        up_method='LCU')
+    with pytest.warns(UserWarning, match='zero coeff'):
+        Ps_LCU, rotations_LCU, gamma_l, AC_normed = AcOp_real.unitary_partitioning(
+            s_index=1, up_method='LCU'
+        )
 
     LCU_output = AC_normed.perform_rotations(rotations_LCU).cleanup()
     assert LCU_output.n_terms==1
