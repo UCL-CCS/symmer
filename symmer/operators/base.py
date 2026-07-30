@@ -853,11 +853,8 @@ class PauliwordOp:
             return psi.dagger * self * psi
         else:
             if self.n_terms > 1:
-                @process.parallelize
-                def f(P, psi):
-                    return single_term_expval(P, psi)
-
-                expvals = np.array(f(self, psi))
+                # Use module-level single_term_expval (picklable under Windows spawn)
+                expvals = np.array(process.parallelize(single_term_expval)(self, psi))
             else:
                 expvals = np.array(single_term_expval(self, psi))
 

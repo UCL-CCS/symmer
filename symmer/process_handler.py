@@ -5,6 +5,16 @@ from warnings import warn
 from multiprocessing import Process, Queue, set_start_method
 
 
+def _mp_queue_worker(func, chunk, shared, order, queue):
+    """
+    Module-level worker for Process targets.
+
+    Must live at module scope so Windows ``spawn`` can pickle it.
+    """
+    data_out = [func(item, shared) for item in chunk]
+    queue.put((order, data_out))
+
+
 class ProcessHandler:
 
     if sys.platform.lower() in ['linux', 'darwin', 'linux2']:
@@ -59,7 +69,7 @@ class ProcessHandler:
             }
         )
         def _func(iter, shared):
-            return func(iter, shared)
+            return [func(i, shared) for i in iter]
         # place into shared memory:
         shared_obj = put(shared)
         # split iterable into smaller chunks and parallelize remote instances:
@@ -78,16 +88,15 @@ class ProcessHandler:
         self.ensure_start_method()
         if self.verbose:
             print(f'*** executing in multiprocessing mode ***')
-        # wrapper function for putting results into queue
-        def _func(iter, shared, _order=None, _queue=None):
-            data_out = func(iter, shared)
-            _queue.put((_order, data_out))
 
         chunks = list(self.prepare_chunks(iter))
         procs = [] # for storing processes
         queue = Queue(self.n_chunks) # storage of data from processes
         for index,chunk in enumerate(chunks): # index to ensure procs returned in correct order
-            proc = Process(target=_func, args=(chunk, shared, index, queue))
+            proc = Process(
+                target=_mp_queue_worker,
+                args=(func, chunk, shared, index, queue),
+            )
             procs.append(proc)
             proc.start()
         # retrieve data from the queue
@@ -107,20 +116,21 @@ class ProcessHandler:
         """
         if self.verbose:
             print(f'*** executing in single-threaded mode ***')
-        return func(iter, shared)
+        return [func(i, shared) for i in iter]
     
     def parallelize(self, func):
+        """
+        Decorator/wrapper: ``func`` must be picklable (module-level) for ``method='mp'``
+        under Windows spawn.
+        """
 
         def wrapper(iter, shared):
-
-            _func = lambda iter,shared: [func(i, shared) for i in iter]
-
             if self.method   == 'mp':
-                return self._process_mp(_func, iter, shared)
+                return self._process_mp(func, iter, shared)
             elif self.method == 'ray':
-                return self._process_ray(_func, iter, shared)
+                return self._process_ray(func, iter, shared)
             elif self.method == 'single_thread':
-                return self._process_single(_func, iter, shared)
+                return self._process_single(func, iter, shared)
             else:
                 raise ValueError(f'Invalid processing method {self.method}, must be ray, mp or single_thread.')
             
@@ -131,14 +141,14 @@ process = ProcessHandler()
 if __name__ == '__main__':
             
     @process.parallelize
-    def multiply_list(iter, shared):
-        return [i*shared for i in iter]
+    def multiply_item(item, shared):
+        return item * shared
     
     l = list(range(100))
 
     process.method = 'single_thread'
-    print(multiply_list(l,2))
+    print(multiply_item(l, 2))
     process.method = 'mp'
-    print(multiply_list(l,2))
+    print(multiply_item(l, 2))
     process.method = 'ray'
-    print(multiply_list(l,2))
+    print(multiply_item(l, 2))
