@@ -73,6 +73,42 @@ class PauliwordOp:
         self.X_block = self.symp_matrix[:, :self.n_qubits]
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
 
+    def _invalidate_cache(self) -> None:
+        """Clear cached_property values after in-place mutation of operator data."""
+        cls = type(self)
+        for key in list(self.__dict__.keys()):
+            attr = getattr(cls, key, None)
+            if isinstance(attr, cached_property):
+                del self.__dict__[key]
+
+    def _replace_data(
+            self,
+            symp_matrix: np.ndarray,
+            coeff_vec: np.ndarray,
+        ) -> "PauliwordOp":
+        """
+        Replace symplectic data and coefficients in-place, keeping views/caches consistent.
+
+        Returns:
+            self, for fluent use from in-place operators such as ``__imul__``.
+        """
+        symp_matrix = np.asarray(symp_matrix)
+        if symp_matrix.dtype != bool:
+            symp_matrix = symp_matrix.astype(bool)
+        if len(symp_matrix.shape) == 1:
+            symp_matrix = symp_matrix.reshape([1, len(symp_matrix)])
+        assert symp_matrix.shape[-1] % 2 == 0, 'symplectic matrix must have even number of columns'
+        assert len(symp_matrix.shape) == 2, 'symplectic matrix must be 2 dimensional only'
+        self.symp_matrix = symp_matrix
+        self.n_qubits = self.symp_matrix.shape[1] // 2
+        self.coeff_vec = np.asarray(coeff_vec, dtype=complex)
+        self.n_terms = self.symp_matrix.shape[0]
+        assert self.n_terms == len(self.coeff_vec), 'coeff list and Pauliwords not same length'
+        self.X_block = self.symp_matrix[:, :self.n_qubits]
+        self.Z_block = self.symp_matrix[:, self.n_qubits:]
+        self._invalidate_cache()
+        return self
+
     def set_processing_method(self, method):
         """ Set the method to use when running parallelizable processes. 
         Valid options are: mp, ray, single_thread.
@@ -270,7 +306,10 @@ class PauliwordOp:
         op_basis.coeff_vec = np.array(coeffs) * ((op_basis.Y_count % 2 * -2) + 1)
 
         if operator_basis is not None:
-            warnings.warn('Basis supplied MAY not be sufficiently expressive, output operator projected onto basis supplied.')
+            warnings.warn(
+                'Basis supplied MAY not be sufficiently expressive: the result is a '
+                'lossy projection onto the supplied basis (not necessarily a full reconstruction).'
+            )
 
         return op_basis[op_basis.coeff_vec.nonzero()[0]]
 
@@ -503,11 +542,16 @@ class PauliwordOp:
         assert len(new_indices) == len(new_set), 'Duplicated index'
         assert len(setdiff) == 0, f'Assignment conflict: indices {setdiff} cannot be mapped.'
         
-        # map corresponding columns in the symplectic matrix to their new positions
+        # Explicit permutation into fresh arrays avoids corruption under overlapping advanced indexing
+        old_indices = list(old_indices)
+        new_indices = list(new_indices)
         new_X_block = self.X_block.copy()
         new_Z_block = self.Z_block.copy()
-        new_X_block[:,old_indices] = new_X_block[:,new_indices]
-        new_Z_block[:,old_indices] = new_Z_block[:,new_indices]
+        source_X = self.X_block.copy()
+        source_Z = self.Z_block.copy()
+        for old, new in zip(old_indices, new_indices):
+            new_X_block[:, old] = source_X[:, new]
+            new_Z_block[:, old] = source_Z[:, new]
         
         return PauliwordOp(np.hstack([new_X_block, new_Z_block]), self.coeff_vec)
 
@@ -649,26 +693,20 @@ class PauliwordOp:
         elif check_1.n_terms != check_2.n_terms:
             return False
         else:
+            # atol slightly looser than cleanup (1e-15) to allow FP accumulation in long products
             return (not np.sum(np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and
-                         np.allclose(check_1.coeff_vec, check_2.coeff_vec))
-            # if eq_flag is True:
-            #     assert hash(check_1) == hash(check_2), 'equal objects have different hash values'
-            # return eq_flag
+                         np.allclose(check_1.coeff_vec, check_2.coeff_vec, atol=1e-12, rtol=1e-12))
 
     def __hash__(self) -> int:
         """ 
-        Build unique hash from dictionary of PauliwordOp.
+        Build unique hash from a cleaned copy of the PauliwordOp.
 
         Returns:
             int: The hash value of the PauliwordOp object.
         """
-
-        self.cleanup()  # self.cleanup(zero_threshold=1e-15)
-
-        # tuples are immutable
-        tuple_of_tuples = tuple(self.to_dictionary.items())
-        hash_val = hash(tuple_of_tuples)
-        return hash_val
+        clean = self.cleanup()
+        tuple_of_tuples = tuple(clean.to_dictionary.items())
+        return hash(tuple_of_tuples)
 
     def append(self, 
             PwordOp: "PauliwordOp"
@@ -853,15 +891,16 @@ class PauliwordOp:
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
         """ 
-        In-place multiplication behaviour.
+        In-place multiplication behaviour. Mutates ``self`` to the product ``self * PwordOp``.
 
         Args:
             PwordOp (PauliwordOp): The `PauliwordOp` object to right-multiply with.
 
         Returns:
-            PauliwordOp: The result of the in-place multiplication.
+            PauliwordOp: self after in-place multiplication.
         """
-        return self.__mul__(PwordOp)
+        product = self.__mul__(PwordOp)
+        return self._replace_data(product.symp_matrix, product.coeff_vec)
 
     def __pow__(self, 
             exponent:int
@@ -1040,7 +1079,7 @@ class PauliwordOp:
             bool: True if all terms commute, False otherwise.
         """
         commutator = self.commutator(PwordOp).cleanup()
-        return (commutator.n_terms == 0 or np.all(commutator.coeff_vec[0] == 0))
+        return commutator.n_terms == 0 or np.allclose(commutator.coeff_vec, 0)
         
     @cached_property
     def adjacency_matrix(self) -> np.array:
@@ -1361,7 +1400,7 @@ class PauliwordOp:
             Pword_conj (PauliwordOp): The Hermitian conjugated operator.
         """
         Pword_conj = PauliwordOp(
-            symp_matrix = self.symp_matrix, 
+            symp_matrix = self.symp_matrix.copy(),
             coeff_vec   = self.coeff_vec.conjugate()
         )
         return Pword_conj

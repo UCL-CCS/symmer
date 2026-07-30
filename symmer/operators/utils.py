@@ -164,10 +164,9 @@ def string_to_symplectic(pauli_str, n_qubits):
 
 def count1_in_int_bitstring(i):
     """
-    Count number of "1" bits in integer i to be thought of in binary representation
+    Count number of "1" bits in integer i to be thought of in binary representation.
 
-    https://stackoverflow.com/questions/109023/how-to-count-the-number-of-set-bits-in-a-32-bit-integer#109025
-    https://web.archive.org/web/20151229003112/http://blogs.msdn.com/b/jeuge/archive/2005/06/08/hakmem-bit-count.aspx
+    Uses Python's arbitrary-precision ``int.bit_count`` (safe for n > 32).
 
     Args:
         i (int):  Integer
@@ -175,9 +174,7 @@ def count1_in_int_bitstring(i):
     Returns:
         Number of "1" bits in the bitstring of integer 'i'.
     """
-    i = i - ((i >> 1) & 0x55555555)  # add pairs of bits
-    i = (i & 0x33333333) + ((i >> 2) & 0x33333333)  # quads
-    return (((i + (i >> 4) & 0xF0F0F0F) * 0x1010101) & 0xffffffff) >> 24
+    return int(i).bit_count()
 
 def symplectic_to_sparse_matrix(symp_vec, coeff) -> sp.sparse.csr_matrix:
     """
@@ -627,14 +624,8 @@ def binary_array_to_int(bin_arr):
 
     if bin_arr.shape[1] < 64:
         b2i = 2 ** np.arange(bin_arr.shape[1] - 1, -1, -1)
-    else:
-        b2i = 2 ** np.arange(bin_arr.shape[1] - 1, -1, -1, dtype=float)
-        # b2i = 2 ** np.arange(bin_arr.shape[1] - 1, -1, -1, dtype=object)
+        return np.einsum('j, ij->i', b2i, bin_arr)
 
-    int_arr = np.einsum('j, ij->i', b2i, bin_arr)
-    # int_arr = (b2i*bin_arr).sum(axis=1)
-
-    ## slower as does matrix product rather than multiplication along rows followed by a sum!
-    # int_arr = bin_arr @ b2i
-
-    return int_arr
+    # float mantissa loses precision for 2**n with n >= 53; use Python ints
+    b2i = 2 ** np.arange(bin_arr.shape[1] - 1, -1, -1, dtype=object)
+    return (b2i * bin_arr).sum(axis=1)

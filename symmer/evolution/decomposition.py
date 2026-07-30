@@ -62,13 +62,19 @@ def qasm_to_PauliwordOp(qasm: str, reverse=False, combine=True) -> PauliwordOp:
                 flip=-1
                 control, target = num_qubits-1-control, num_qubits-1-target
             # generate relevant gate and append to list
-            if name in ['x', 'y', 'z', 'h', 's', 'sdg']:
+            if name in ['x', 'y', 'z', 'h', 's']:
                 G = gate_map[name](num_qubits, target)
             elif name in ['cz', 'cx']:
                 G = gate_map[name](num_qubits, control, target)
             elif name in ['rx', 'ry', 'rz', 'u1']:
                 G = gate_map[name](num_qubits, target, angle=flip*angle)
             else:
+                # Previously some paths could drop unknown lines without notice;
+                # always surface unrecognized gates explicitly.
+                warnings.warn(
+                    f"Unrecognized QASM gate '{name}' — cannot decompose.",
+                    UserWarning,
+                )
                 raise ValueError(f'Gate decomposition {name} not defined')
             gateset.append(G)
 
