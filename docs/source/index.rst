@@ -75,10 +75,7 @@ provide a beginners guide and demonstrate some more advanced features or complet
 
 .. toctree::
   :maxdepth: 2
+  :titlesonly:
 
-  ./notebooks/1_Basic_Usage/1.1_PauliwordOp_Usage.ipynb
-  ./notebooks/1_Basic_Usage/1.2_QuantumState_Usage.ipynb
-  ./notebooks/1_Basic_Usage/1.4_QubitSubspaceManager_Usage.ipynb
-  ./notebooks/2_Applications/2.1_Tapering_the_Heisenberg_Hamiltonian.ipynb
-  ./notebooks/2_Applications/2.2_QubitTapering_Usage.ipynb
-  ./notebooks/2_Applications/2.3_CS_VQE_for_Electronic_Structure.ipynb
+  notebooks/1_Basic_Usage/index
+  notebooks/2_Applications/index
