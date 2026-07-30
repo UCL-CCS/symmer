@@ -1,14 +1,9 @@
 import os
 import sys
 import numpy as np
-import quimb
 from warnings import warn
 from multiprocessing import Process, Queue, set_start_method
 
-if sys.platform.lower() in ['linux', 'darwin', 'linux2']:
-    set_start_method('fork', force = True)
-else:
-    set_start_method('spawn', force = True)
 
 class ProcessHandler:
 
@@ -19,9 +14,21 @@ class ProcessHandler:
         method = 'single_thread'
 
     verbose = False
+    _start_method_configured = False
 
     def __init__(self):
         self.n_logical_cores = os.cpu_count()
+
+    @classmethod
+    def ensure_start_method(cls):
+        """Configure multiprocessing start method on first use (not at import time)."""
+        if cls._start_method_configured:
+            return
+        if sys.platform.lower() in ['linux', 'darwin', 'linux2']:
+            set_start_method('fork', force=True)
+        else:
+            set_start_method('spawn', force=True)
+        cls._start_method_configured = True
 
     def prepare_chunks(self, iter):
         """ split a list into smaller sized chunks
@@ -68,6 +75,7 @@ class ProcessHandler:
     def _process_mp(self, func, iter, shared):
         """ Helper function for multiprocessing
         """
+        self.ensure_start_method()
         if self.verbose:
             print(f'*** executing in multiprocessing mode ***')
         # wrapper function for putting results into queue
@@ -134,4 +142,3 @@ if __name__ == '__main__':
     print(multiply_list(l,2))
     process.method = 'ray'
     print(multiply_list(l,2))
-

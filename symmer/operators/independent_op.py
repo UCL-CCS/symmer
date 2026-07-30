@@ -359,12 +359,13 @@ class IndependentOp(PauliwordOp):
 
     def __iter__(self):
         """ 
-        Makes a PauliwordOp instance iterable.
+        Makes a IndependentOp instance iterable.
 
-        Returns:
-            Iterator of PauliwordOp instance.
+        Yields:
+            IndependentOp: Each single-term stabilizer.
         """
-        return iter([self[i] for i in range(self.n_terms)])
+        for i in range(self.n_terms):
+            yield self[i]
 
 @process.parallelize
 def assign_value(S: PauliwordOp, shared) -> int:

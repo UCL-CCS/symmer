@@ -149,22 +149,19 @@ class S3Projection:
             Projection of input QuantumState into the stabilizer subspace.
         """
         transformation_list = []
+        rotated = self.stabilizers.rotate_onto_single_qubit_paulis()
         # Hadamards where rotated onto Pauli X operators
         transformation_list += [
             Had(self.stabilizers.n_qubits, i) for i in np.where(
-                np.sum(
-                    self.stabilizers.rotate_onto_single_qubit_paulis().X_block & 
-                    ~self.stabilizers.rotate_onto_single_qubit_paulis().Z_block,
-                    axis=0
-            )
-                )[0]
+                np.sum(rotated.X_block & ~rotated.Z_block, axis=0)
+            )[0]
         ]
         # Projections onto the stabilizer subspace
-        transformation_list += list(map(lambda x:(x**2 + x)*.5,self.stabilizers.rotate_onto_single_qubit_paulis()))
+        transformation_list += list(map(lambda x: (x**2 + x) * .5, rotated))
         # Rotations mapping stabilizers onto single-qubit Pauli operators
-        transformation_list += list(map(lambda s:trotter(s[0]*(np.pi/4*1j)), self.stabilizers.stabilizer_rotations))
+        transformation_list += list(map(lambda s: trotter(s[0] * (np.pi / 4 * 1j)), self.stabilizers.stabilizer_rotations))
         # Product over the transformation list yields final transformation operator
-        transformation = reduce(lambda x,y:x*y, transformation_list)
+        transformation = reduce(lambda x, y: x * y, transformation_list)
         # apply transformation to the reference state
         transformed_state = transformation * state
         # drop stabilized qubit positions and sum over potential duplicates

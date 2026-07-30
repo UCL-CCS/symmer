@@ -792,7 +792,8 @@ class PauliwordOp:
 
     def _multiply_by_operator(self, 
             PwordOp: Union["PauliwordOp", "QuantumState", complex],
-            zero_threshold: float = 1e-15
+            zero_threshold: float = 1e-15,
+            chunk_size: Optional[int] = None,
         ) -> "PauliwordOp":
         """ 
         Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
@@ -804,11 +805,26 @@ class PauliwordOp:
         Args:
             PwordOp (Union["PauliwordOp", "QuantumState", complex]): The operator or ket to multiply by.
             zero_threshold (float): The threshold below which coefficients are considered negligible.
+            chunk_size (int, optional): If set, multiply in blocks of this many terms from
+                ``PwordOp`` and accumulate cleaned partial products. Use when
+                ``n_terms * PwordOp.n_terms`` is large to reduce peak memory; default
+                ``None`` preserves the single-shot product.
 
         Returns:
             PauliwordOp: The resulting PauliwordOp after multiplication.
         """
         assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
+        if chunk_size is not None and PwordOp.n_terms > chunk_size:
+            acc = None
+            for start in range(0, PwordOp.n_terms, chunk_size):
+                partial = self._multiply_by_operator(
+                    PwordOp[start:start + chunk_size],
+                    zero_threshold=zero_threshold,
+                    chunk_size=None,
+                )
+                acc = partial if acc is None else (acc + partial)
+            return acc.cleanup(zero_threshold=zero_threshold) if acc is not None else PauliwordOp.empty(self.n_qubits)
+
         Q_symp_matrix = PwordOp.symp_matrix.reshape([PwordOp.n_terms, 1, 2*PwordOp.n_qubits])
         termwise_phaseless_prod = self.symp_matrix ^ Q_symp_matrix
         Y_count_in  = self.Y_count + PwordOp.Y_count.reshape(-1,1)
@@ -960,10 +976,11 @@ class PauliwordOp:
         """ 
         Makes a PauliwordOp instance iterable.
 
-        Returns:
-            Iterator: An iterator that generates each term of the PauliwordOp.
+        Yields:
+            PauliwordOp: Each single-term operator, without materialising a full list.
         """
-        return iter([self[i] for i in range(self.n_terms)])
+        for i in range(self.n_terms):
+            yield self[i]
 
     def commutes_termwise(self, 
             PwordOp: "PauliwordOp"
@@ -1199,6 +1216,8 @@ class PauliwordOp:
         to be specified as rotation in this setting is ill-defined.
 
         If no angles are given then rotations are assumed to be pi/2 (Clifford).
+        Clifford steps defer cleanup (no duplicates created); non-Clifford steps and the
+        final result are cleaned.
 
         Args:
             rotations (List[Tuple[PauliwordOp, float]]): A list of tuples, where each tuple contains a Pauliword
@@ -1212,8 +1231,15 @@ class PauliwordOp:
             return op_copy.cleanup()
         else:
             for pauli_rotation, angle in rotations:
-                op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle).cleanup()
-            return op_copy
+                op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle)
+                # Clifford (angle is None, or congruent to k*pi/2) cannot produce duplicates
+                is_clifford = angle is None
+                if angle is not None:
+                    multiple = angle * 2 / np.pi
+                    is_clifford = abs(round(multiple) - multiple) <= 1e-18
+                if not is_clifford:
+                    op_copy = op_copy.cleanup()
+            return op_copy.cleanup()
 
     def tensor(self, right_op: "PauliwordOp") -> "PauliwordOp":
         """ 
@@ -1273,7 +1299,7 @@ class PauliwordOp:
         graph = nx.from_numpy_array(adjmat)
 
         if label_nodes:
-            node_list = np.apply_along_axis(symplectic_to_string, 1, self.symp_matrix).tolist()
+            node_list = [symplectic_to_string(row) for row in self.symp_matrix]
             mapping = dict(zip(range(len(node_list)), node_list))
             graph = nx.relabel_nodes(graph, mapping)
 
@@ -1426,7 +1452,7 @@ class PauliwordOp:
         Returns:
             PauliSumOp: The PauliSumOp representation of the PauliwordOp.
         """
-        Pstr_list = np.apply_along_axis(symplectic_to_string, 1, self.symp_matrix).tolist()
+        Pstr_list = [symplectic_to_string(row) for row in self.symp_matrix]
 
         return SparsePauliOp(Pstr_list, coeffs=self.coeff_vec.tolist())
 
@@ -1864,10 +1890,11 @@ class QuantumState:
         """ 
         Makes a QuantumState instance iterable.
 
-        Returns:
-            iter: An iterator that generates elements by iterating over the QuantumState object.
+        Yields:
+            QuantumState: Each basis component, without materialising a full list.
         """
-        return iter([self[i] for i in range(self.n_terms)])
+        for i in range(self.n_terms):
+            yield self[i]
 
     def cleanup(self, zero_threshold=1e-15) -> "QuantumState":
         """ 
