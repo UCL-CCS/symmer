@@ -33,11 +33,15 @@ class IndependentOp(PauliwordOp):
         super().__init__(symp_matrix, coeff_vec)
         self._check_stab()
         self.coeff_vec = self.coeff_vec.real.astype(int)
+        self._invalidate_cache()
         self._check_independent()
         if target_sqp in ['X', 'Z', 'Y']:
             self.target_sqp = target_sqp
         else:
-            raise ValueError('Target single-qubit Pauli not recognised - must be X or Z')
+            raise ValueError(
+                "Target single-qubit Pauli not recognised - must be 'X', 'Y', or 'Z'. "
+                "Note: stabilizer subspace projection only supports 'X' or 'Z' targets."
+            )
         # set up these attributes to later track rotations mapping stabilizers to single-qubit Pauli operators
         self.stabilizer_rotations = None
         self.used_indices = None
@@ -292,7 +296,8 @@ class IndependentOp(PauliwordOp):
         assert ref_state._is_normalized(), 'Reference state is not normalized.'
         
         ### update the stabilizers assignments in parallel
-        self.coeff_vec = np.array(assign_value(self, ref_state))
+        self.coeff_vec = np.array(assign_value(self, (ref_state, threshold)))
+        self._invalidate_cache()
         # raise a warning if any stabilizers are assigned a zero value
         if np.any(self.coeff_vec==0):
             S_zero = self[self.coeff_vec==0]; S_zero.coeff_vec[:]=1
@@ -354,26 +359,31 @@ class IndependentOp(PauliwordOp):
 
     def __iter__(self):
         """ 
-        Makes a PauliwordOp instance iterable.
+        Makes a IndependentOp instance iterable.
 
-        Returns:
-            Iterator of PauliwordOp instance.
+        Yields:
+            IndependentOp: Each single-term stabilizer.
         """
-        return iter([self[i] for i in range(self.n_terms)])
+        for i in range(self.n_terms):
+            yield self[i]
 
 @process.parallelize
-def assign_value(S: PauliwordOp, ref_state: QuantumState) -> int:
+def assign_value(S: PauliwordOp, shared) -> int:
     """
     Measure expectation value of stabilizer on input reference state.
-    Args: 
+
+    Args:
         S (PauliwordOp): Stabilizer.
-        ref_state (QuantumState): Reference State.
-        threshold (float): Threshold Value of expectation value.
+        shared: Either a ``QuantumState`` reference, or a
+            ``(ref_state, threshold)`` tuple. Threshold defaults to 0.5.
 
     Returns:
         Expectation Value (int) of stabilizer on input reference state.
     """
-    threshold = 0.5
+    if isinstance(shared, tuple):
+        ref_state, threshold = shared
+    else:
+        ref_state, threshold = shared, 0.5
     expval = single_term_expval(S, ref_state)
     # if this expval exceeds some predefined threshold then assign the corresponding 
     # ±1 eigenvalue. Otherwise, return 0 as insufficient evidence to fix the value.

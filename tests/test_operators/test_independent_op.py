@@ -49,7 +49,8 @@ def test_from_dictionary():
 
 def test_no_symmetry_generators():
     op = PauliwordOp.from_list(['X', 'Y','Z'])
-    ind_op = IndependentOp.symmetry_generators(op)
+    with pytest.warns(UserWarning, match='no Z2 symmetries'):
+        ind_op = IndependentOp.symmetry_generators(op)
     assert ind_op.n_terms == 0
 
 
@@ -67,7 +68,7 @@ def test_commuting_overide_symmetry_generators():
 
 def test_clique_cover_large_anticommuting_generating_set():
     op = PauliwordOp.from_list(['Z'*20])
-    with pytest.warns():
+    with pytest.warns(UserWarning, match='Greedy method'):
         IndependentOp.symmetry_generators(op)
 
 def test_dependent_input():
@@ -76,7 +77,8 @@ def test_dependent_input():
 
 def test_rotations_onto_sqp_Z():
     op = PauliwordOp.from_list(['Z'*20])
-    G = IndependentOp.symmetry_generators(op)
+    with pytest.warns(UserWarning, match='Greedy method'):
+        G = IndependentOp.symmetry_generators(op)
     G.target_sqp = 'Z'
     rotated = G.rotate_onto_single_qubit_paulis()
     assert (
@@ -86,7 +88,8 @@ def test_rotations_onto_sqp_Z():
 
 def test_rotations_onto_sqp_X():
     op = PauliwordOp.from_list(['Z'*20])
-    G = IndependentOp.symmetry_generators(op)
+    with pytest.warns(UserWarning, match='Greedy method'):
+        G = IndependentOp.symmetry_generators(op)
     G.target_sqp = 'X'
     rotated = G.rotate_onto_single_qubit_paulis()
     assert (

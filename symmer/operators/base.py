@@ -73,6 +73,42 @@ class PauliwordOp:
         self.X_block = self.symp_matrix[:, :self.n_qubits]
         self.Z_block = self.symp_matrix[:, self.n_qubits:]
 
+    def _invalidate_cache(self) -> None:
+        """Clear cached_property values after in-place mutation of operator data."""
+        cls = type(self)
+        for key in list(self.__dict__.keys()):
+            attr = getattr(cls, key, None)
+            if isinstance(attr, cached_property):
+                del self.__dict__[key]
+
+    def _replace_data(
+            self,
+            symp_matrix: np.ndarray,
+            coeff_vec: np.ndarray,
+        ) -> "PauliwordOp":
+        """
+        Replace symplectic data and coefficients in-place, keeping views/caches consistent.
+
+        Returns:
+            self, for fluent use from in-place operators such as ``__imul__``.
+        """
+        symp_matrix = np.asarray(symp_matrix)
+        if symp_matrix.dtype != bool:
+            symp_matrix = symp_matrix.astype(bool)
+        if len(symp_matrix.shape) == 1:
+            symp_matrix = symp_matrix.reshape([1, len(symp_matrix)])
+        assert symp_matrix.shape[-1] % 2 == 0, 'symplectic matrix must have even number of columns'
+        assert len(symp_matrix.shape) == 2, 'symplectic matrix must be 2 dimensional only'
+        self.symp_matrix = symp_matrix
+        self.n_qubits = self.symp_matrix.shape[1] // 2
+        self.coeff_vec = np.asarray(coeff_vec, dtype=complex)
+        self.n_terms = self.symp_matrix.shape[0]
+        assert self.n_terms == len(self.coeff_vec), 'coeff list and Pauliwords not same length'
+        self.X_block = self.symp_matrix[:, :self.n_qubits]
+        self.Z_block = self.symp_matrix[:, self.n_qubits:]
+        self._invalidate_cache()
+        return self
+
     def set_processing_method(self, method):
         """ Set the method to use when running parallelizable processes. 
         Valid options are: mp, ray, single_thread.
@@ -270,7 +306,10 @@ class PauliwordOp:
         op_basis.coeff_vec = np.array(coeffs) * ((op_basis.Y_count % 2 * -2) + 1)
 
         if operator_basis is not None:
-            warnings.warn('Basis supplied MAY not be sufficiently expressive, output operator projected onto basis supplied.')
+            warnings.warn(
+                'Basis supplied MAY not be sufficiently expressive: the result is a '
+                'lossy projection onto the supplied basis (not necessarily a full reconstruction).'
+            )
 
         return op_basis[op_basis.coeff_vec.nonzero()[0]]
 
@@ -503,11 +542,16 @@ class PauliwordOp:
         assert len(new_indices) == len(new_set), 'Duplicated index'
         assert len(setdiff) == 0, f'Assignment conflict: indices {setdiff} cannot be mapped.'
         
-        # map corresponding columns in the symplectic matrix to their new positions
+        # Explicit permutation into fresh arrays avoids corruption under overlapping advanced indexing
+        old_indices = list(old_indices)
+        new_indices = list(new_indices)
         new_X_block = self.X_block.copy()
         new_Z_block = self.Z_block.copy()
-        new_X_block[:,old_indices] = new_X_block[:,new_indices]
-        new_Z_block[:,old_indices] = new_Z_block[:,new_indices]
+        source_X = self.X_block.copy()
+        source_Z = self.Z_block.copy()
+        for old, new in zip(old_indices, new_indices):
+            new_X_block[:, old] = source_X[:, new]
+            new_Z_block[:, old] = source_Z[:, new]
         
         return PauliwordOp(np.hstack([new_X_block, new_Z_block]), self.coeff_vec)
 
@@ -649,26 +693,20 @@ class PauliwordOp:
         elif check_1.n_terms != check_2.n_terms:
             return False
         else:
+            # atol slightly looser than cleanup (1e-15) to allow FP accumulation in long products
             return (not np.sum(np.logical_xor(check_1.symp_matrix, check_2.symp_matrix)) and
-                         np.allclose(check_1.coeff_vec, check_2.coeff_vec))
-            # if eq_flag is True:
-            #     assert hash(check_1) == hash(check_2), 'equal objects have different hash values'
-            # return eq_flag
+                         np.allclose(check_1.coeff_vec, check_2.coeff_vec, atol=1e-12, rtol=1e-12))
 
     def __hash__(self) -> int:
         """ 
-        Build unique hash from dictionary of PauliwordOp.
+        Build unique hash from a cleaned copy of the PauliwordOp.
 
         Returns:
             int: The hash value of the PauliwordOp object.
         """
-
-        self.cleanup()  # self.cleanup(zero_threshold=1e-15)
-
-        # tuples are immutable
-        tuple_of_tuples = tuple(self.to_dictionary.items())
-        hash_val = hash(tuple_of_tuples)
-        return hash_val
+        clean = self.cleanup()
+        tuple_of_tuples = tuple(clean.to_dictionary.items())
+        return hash(tuple_of_tuples)
 
     def append(self, 
             PwordOp: "PauliwordOp"
@@ -754,7 +792,8 @@ class PauliwordOp:
 
     def _multiply_by_operator(self, 
             PwordOp: Union["PauliwordOp", "QuantumState", complex],
-            zero_threshold: float = 1e-15
+            zero_threshold: float = 1e-15,
+            chunk_size: Optional[int] = None,
         ) -> "PauliwordOp":
         """ 
         Right-multiplication of this PauliwordOp by another PauliwordOp or QuantumState ket.
@@ -766,11 +805,26 @@ class PauliwordOp:
         Args:
             PwordOp (Union["PauliwordOp", "QuantumState", complex]): The operator or ket to multiply by.
             zero_threshold (float): The threshold below which coefficients are considered negligible.
+            chunk_size (int, optional): If set, multiply in blocks of this many terms from
+                ``PwordOp`` and accumulate cleaned partial products. Use when
+                ``n_terms * PwordOp.n_terms`` is large to reduce peak memory; default
+                ``None`` preserves the single-shot product.
 
         Returns:
             PauliwordOp: The resulting PauliwordOp after multiplication.
         """
         assert (self.n_qubits == PwordOp.n_qubits), 'PauliwordOps defined for different number of qubits'
+        if chunk_size is not None and PwordOp.n_terms > chunk_size:
+            acc = None
+            for start in range(0, PwordOp.n_terms, chunk_size):
+                partial = self._multiply_by_operator(
+                    PwordOp[start:start + chunk_size],
+                    zero_threshold=zero_threshold,
+                    chunk_size=None,
+                )
+                acc = partial if acc is None else (acc + partial)
+            return acc.cleanup(zero_threshold=zero_threshold) if acc is not None else PauliwordOp.empty(self.n_qubits)
+
         Q_symp_matrix = PwordOp.symp_matrix.reshape([PwordOp.n_terms, 1, 2*PwordOp.n_qubits])
         termwise_phaseless_prod = self.symp_matrix ^ Q_symp_matrix
         Y_count_in  = self.Y_count + PwordOp.Y_count.reshape(-1,1)
@@ -799,11 +853,8 @@ class PauliwordOp:
             return psi.dagger * self * psi
         else:
             if self.n_terms > 1:
-                @process.parallelize
-                def f(P, psi):
-                    return single_term_expval(P, psi)
-
-                expvals = np.array(f(self, psi))
+                # Use module-level single_term_expval (picklable under Windows spawn)
+                expvals = np.array(process.parallelize(single_term_expval)(self, psi))
             else:
                 expvals = np.array(single_term_expval(self, psi))
 
@@ -853,15 +904,16 @@ class PauliwordOp:
             PwordOp: "PauliwordOp"
         ) -> "PauliwordOp":
         """ 
-        In-place multiplication behaviour.
+        In-place multiplication behaviour. Mutates ``self`` to the product ``self * PwordOp``.
 
         Args:
             PwordOp (PauliwordOp): The `PauliwordOp` object to right-multiply with.
 
         Returns:
-            PauliwordOp: The result of the in-place multiplication.
+            PauliwordOp: self after in-place multiplication.
         """
-        return self.__mul__(PwordOp)
+        product = self.__mul__(PwordOp)
+        return self._replace_data(product.symp_matrix, product.coeff_vec)
 
     def __pow__(self, 
             exponent:int
@@ -921,10 +973,11 @@ class PauliwordOp:
         """ 
         Makes a PauliwordOp instance iterable.
 
-        Returns:
-            Iterator: An iterator that generates each term of the PauliwordOp.
+        Yields:
+            PauliwordOp: Each single-term operator, without materialising a full list.
         """
-        return iter([self[i] for i in range(self.n_terms)])
+        for i in range(self.n_terms):
+            yield self[i]
 
     def commutes_termwise(self, 
             PwordOp: "PauliwordOp"
@@ -1040,7 +1093,7 @@ class PauliwordOp:
             bool: True if all terms commute, False otherwise.
         """
         commutator = self.commutator(PwordOp).cleanup()
-        return (commutator.n_terms == 0 or np.all(commutator.coeff_vec[0] == 0))
+        return commutator.n_terms == 0 or np.allclose(commutator.coeff_vec, 0)
         
     @cached_property
     def adjacency_matrix(self) -> np.array:
@@ -1160,6 +1213,8 @@ class PauliwordOp:
         to be specified as rotation in this setting is ill-defined.
 
         If no angles are given then rotations are assumed to be pi/2 (Clifford).
+        Clifford steps defer cleanup (no duplicates created); non-Clifford steps and the
+        final result are cleaned.
 
         Args:
             rotations (List[Tuple[PauliwordOp, float]]): A list of tuples, where each tuple contains a Pauliword
@@ -1173,8 +1228,15 @@ class PauliwordOp:
             return op_copy.cleanup()
         else:
             for pauli_rotation, angle in rotations:
-                op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle).cleanup()
-            return op_copy
+                op_copy = op_copy._rotate_by_single_Pword(pauli_rotation, angle)
+                # Clifford (angle is None, or congruent to k*pi/2) cannot produce duplicates
+                is_clifford = angle is None
+                if angle is not None:
+                    multiple = angle * 2 / np.pi
+                    is_clifford = abs(round(multiple) - multiple) <= 1e-18
+                if not is_clifford:
+                    op_copy = op_copy.cleanup()
+            return op_copy.cleanup()
 
     def tensor(self, right_op: "PauliwordOp") -> "PauliwordOp":
         """ 
@@ -1234,7 +1296,7 @@ class PauliwordOp:
         graph = nx.from_numpy_array(adjmat)
 
         if label_nodes:
-            node_list = np.apply_along_axis(symplectic_to_string, 1, self.symp_matrix).tolist()
+            node_list = [symplectic_to_string(row) for row in self.symp_matrix]
             mapping = dict(zip(range(len(node_list)), node_list))
             graph = nx.relabel_nodes(graph, mapping)
 
@@ -1361,7 +1423,7 @@ class PauliwordOp:
             Pword_conj (PauliwordOp): The Hermitian conjugated operator.
         """
         Pword_conj = PauliwordOp(
-            symp_matrix = self.symp_matrix, 
+            symp_matrix = self.symp_matrix.copy(),
             coeff_vec   = self.coeff_vec.conjugate()
         )
         return Pword_conj
@@ -1387,7 +1449,7 @@ class PauliwordOp:
         Returns:
             PauliSumOp: The PauliSumOp representation of the PauliwordOp.
         """
-        Pstr_list = np.apply_along_axis(symplectic_to_string, 1, self.symp_matrix).tolist()
+        Pstr_list = [symplectic_to_string(row) for row in self.symp_matrix]
 
         return SparsePauliOp(Pstr_list, coeffs=self.coeff_vec.tolist())
 
@@ -1825,10 +1887,11 @@ class QuantumState:
         """ 
         Makes a QuantumState instance iterable.
 
-        Returns:
-            iter: An iterator that generates elements by iterating over the QuantumState object.
+        Yields:
+            QuantumState: Each basis component, without materialising a full list.
         """
-        return iter([self[i] for i in range(self.n_terms)])
+        for i in range(self.n_terms):
+            yield self[i]
 
     def cleanup(self, zero_threshold=1e-15) -> "QuantumState":
         """ 

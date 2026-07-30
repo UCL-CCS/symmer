@@ -78,7 +78,7 @@ class NoncontextualOp(PauliwordOp):
             stabilizers: IndependentOp = None, 
             DFS_runtime: int = 10,
             use_jordan_product = False,
-            override_noncontextuality_check: bool = True
+            override_noncontextuality_check: bool = False
         ) -> "NoncontextualOp":
         """ 
         Given a PauliwordOp, extract from it a noncontextual sub-Hamiltonian by the specified strategy.
@@ -90,7 +90,8 @@ class NoncontextualOp(PauliwordOp):
             stabilizers (IndependentOp, optional): IndependentOp representing the stabilizers for the 'stabilizers' strategy.
             DFS_runtime (int, optional): The maximum runtime in seconds for the DFS-based strategies. Default is 10.
             use_jordan_product (bool, optional): Specifies whether to use the Jordan product for the 'generators' strategy. Default is False.
-            override_noncontextuality_check (bool, optional): Specifies whether to override the noncontextuality check for the input Hamiltonian. Default is True.
+            override_noncontextuality_check (bool, optional): If False (default), already-noncontextual
+                Hamiltonians short-circuit without re-extraction. Set True to force strategy application.
 
         Returns:
             NoncontextualOp: A NoncontextualOp instance constructed from the given operator using the specified strategy.

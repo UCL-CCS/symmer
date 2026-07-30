@@ -168,6 +168,7 @@ def test_from_hamiltonian_SingleSweep_magnitude():
     assert H_noncon_dfs.is_noncontextual
 
 
+@pytest.mark.filterwarnings("ignore:.*no Z2 symmetries:UserWarning")
 def test_from_hamiltonian_SingleSweep_random():
     """
     check noncontextual op via depth first search
@@ -249,7 +250,7 @@ def test_noncon_no_symmetry_generators():
     Pwords = PauliwordOp.from_list(['X', 'Y', 'Z'])
     E_ground = -1.7320508075688772
 
-    with pytest.warns():
+    with pytest.warns(UserWarning, match='no Z2 symmetries'):
         # capture warning of no Z2 symmetries
         H_noncon = NoncontextualOp.from_PauliwordOp(Pwords)
     assert H_noncon.n_terms == Pwords.n_terms
@@ -289,6 +290,7 @@ def test_solve_brute_force_discrete_no_ref():
     assert np.isclose(H_noncon.energy, noncon_problem['E'])
 
 
+@pytest.mark.filterwarnings("ignore:s indexed term has zero coeff:UserWarning")
 def test_solve_binary_relaxation_no_ref():
     H_noncon = NoncontextualOp.from_dictionary(noncon_problem['H_dict'])
     
@@ -314,7 +316,7 @@ def test_solve_brute_force_discrete_partial_ref():
     
     partial_reference_state = noncon_problem['partial_reference_state']
 
-    with pytest.warns():
+    with pytest.warns(UserWarning, match='zero values|bad reference'):
         # capture warning when Z stabilizers measured give zero expec value
         H_noncon.solve(strategy='brute_force',
                        ref_state=partial_reference_state)

@@ -17,6 +17,9 @@ H_op     = PauliwordOp.from_dictionary(H_data['hamiltonian'])
 CC_op    = PauliwordOp.from_dictionary(H_data['data']['auxiliary_operators']['UCCSD_operator'])
 HF_state = QuantumState(H_data['data']['hf_array'])
 
+@pytest.mark.filterwarnings("ignore:input H is already noncontextual:UserWarning")
+@pytest.mark.filterwarnings("ignore:the defined symmetry generators have been updated:UserWarning")
+@pytest.mark.filterwarnings("ignore:Specified at least as many qubits:UserWarning")
 def test_correct_qubit_numbers():
     QSM = QubitSubspaceManager(hamiltonian=H_op, ref_state=HF_state)
     for n_qubits in range(1, H_op.n_qubits+1):
@@ -27,6 +30,7 @@ def test_correct_qubit_numbers():
         assert CC_reduced.n_qubits == n_qubits
         assert HF_reduced.n_qubits == n_qubits
 
+@pytest.mark.filterwarnings("ignore:input H is already noncontextual:UserWarning")
 def test_correct_qubit_numbers_no_tapering():
     QSM = QubitSubspaceManager(hamiltonian=H_op, ref_state=HF_state, run_qubit_tapering=False)
     for n_qubits in range(1, H_op.n_qubits-4):
@@ -40,23 +44,26 @@ def test_correct_qubit_numbers_no_tapering():
 def test_no_contextual_subspace():
     QSM = QubitSubspaceManager(hamiltonian=H_op, ref_state=HF_state, 
         run_contextual_subspace=False, run_qubit_tapering=True)
-    with pytest.warns():
+    with pytest.warns(UserWarning, match='contextual subspace is not run'):
         H_reduced = QSM.get_reduced_hamiltonian(3)
     assert H_reduced.n_qubits == QSM._hamiltonian.n_qubits
 
 def test_no_subspace_methods():
     QSM = QubitSubspaceManager(hamiltonian=H_op, ref_state=HF_state, 
         run_contextual_subspace=False, run_qubit_tapering=False)
-    with pytest.warns():
+    with pytest.warns(UserWarning, match='Not running any subspace methods'):
         H_reduced = QSM.get_reduced_hamiltonian(3)
     assert H_reduced.n_qubits == QSM._hamiltonian.n_qubits
 
 def test_too_many_qubits():
     QSM = QubitSubspaceManager(hamiltonian=H_op, ref_state=HF_state)
-    with pytest.warns():
+    with pytest.warns(UserWarning, match='at least as many qubits'):
         H_reduced = QSM.get_reduced_hamiltonian(15)
     assert H_reduced.n_qubits == QSM.hamiltonian.n_qubits
 
+@pytest.mark.filterwarnings("ignore:input H is already noncontextual:UserWarning")
+@pytest.mark.filterwarnings("ignore:the defined symmetry generators have been updated:UserWarning")
+@pytest.mark.filterwarnings("ignore:Specified at least as many qubits:UserWarning")
 def test_subspace_errors():
     errors = [0.031, 0.015, 0.00035, 0.0002, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12, 1e-12]
     QSM = QubitSubspaceManager(hamiltonian=H_op, ref_state=HF_state)
@@ -65,6 +72,8 @@ def test_subspace_errors():
         cs_error = abs(exact_gs_energy(H_reduced.to_sparse_matrix)[0]- fci_energy)
         assert cs_error < errors[index]
 
+@pytest.mark.filterwarnings("ignore:input H is already noncontextual:UserWarning")
+@pytest.mark.filterwarnings("ignore:.*no Z2 symmetries:UserWarning")
 def test_return_noncontextual_energy():
     QSM = QubitSubspaceManager(hamiltonian=H_op, ref_state=HF_state)
     H_reduced = QSM.get_reduced_hamiltonian(0, aux_operator=CC_op)
@@ -72,5 +81,5 @@ def test_return_noncontextual_energy():
     assert H_reduced < hf_energy and H_reduced > fci_energy
 
 def test_no_input_ref_state():
-    with pytest.warns():
+    with pytest.warns(UserWarning, match='No reference state supplied'):
         QSM = QubitSubspaceManager(hamiltonian=H_op)

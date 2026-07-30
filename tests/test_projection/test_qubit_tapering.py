@@ -70,7 +70,7 @@ def test_taper_H2_hamiltonian():
 
 def test_change_number_of_stabilizers():
     QT.symmetry_generators = IndependentOp.from_list(['ZIZI', 'IZIZ'])
-    with pytest.warns():
+    with pytest.warns(UserWarning, match='symmetry generators have been updated'):
         H2_taper = QT.taper_it(ref_state=hf_state)
     assert H2_taper.n_qubits == 2
     assert np.isclose(exact_gs_energy(H2_taper.to_sparse_matrix)[0], fci_energy)

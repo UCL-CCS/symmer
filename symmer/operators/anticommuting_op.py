@@ -122,18 +122,31 @@ class AntiCommutingOp(PauliwordOp):
             β_s = op_for_rotation.coeff_vec[s_index]
             β_k = op_for_rotation.coeff_vec[k_index]
 
-            theta_sk = np.arctan(β_k / β_s)
-            if β_s.real < 0:
-                theta_sk = theta_sk + np.pi
+            if abs(β_s) < 1e-15:
+                raise ValueError(
+                    'Unitary partitioning sequence rotation failed: |β_s| is too small '
+                    '(near-zero pivot). Reorder terms or choose a different s_index.'
+                )
+
+            # arctan2 handles the β_s < 0 quadrant correctly for real AC sets
+            theta_sk = np.arctan2(β_k.real, β_s.real)
+            if abs(β_k.imag) > 1e-12 or abs(β_s.imag) > 1e-12:
+                # fall back for complex coefficients
+                theta_sk = np.arctan(β_k / β_s)
+                if β_s.real < 0:
+                    theta_sk = theta_sk + np.pi
 
             # check
-            assert (np.isclose((β_k * np.cos(theta_sk) - β_s * np.sin(theta_sk)), 0)), 'term not zeroing out'
+            assert np.isclose(
+                (β_k * np.cos(theta_sk) - β_s * np.sin(theta_sk)), 0, atol=1e-10
+            ), 'term not zeroing out'
 
             # -X_sk = -1j * Ps @ Pk
             jP_k = PauliwordOp(op_for_rotation.symp_matrix[k_index], [-1j])
             X_sk = P_s * jP_k
             if X_sk.coeff_vec[0].real < 0:
                 X_sk.coeff_vec[0] *= -1
+                X_sk._invalidate_cache()
                 theta_sk *= -1
 
             self.X_sk_rotations.append((X_sk, theta_sk))
@@ -141,6 +154,7 @@ class AntiCommutingOp(PauliwordOp):
             # update coeffs
             op_for_rotation.coeff_vec[s_index] = np.sqrt(β_s ** 2 + β_k ** 2)
             op_for_rotation.coeff_vec[k_index] = 0
+            op_for_rotation._invalidate_cache()
 
             # build op without k term and (included modified s term)
             AC_op_rotated = PauliwordOp(np.delete(op_for_rotation.symp_matrix, k_index, axis=0),

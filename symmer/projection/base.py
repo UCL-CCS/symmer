@@ -58,6 +58,21 @@ class S3Projection:
         assert(operator.n_qubits == self.stabilizers.n_qubits), 'The input operator does not have the same number of qubits as the stabilizers'
         assert(self.rotated_flag), 'The operator has not been rotated - intended for use with perform_projection method'
         self.rotated_flag = False
+
+        if getattr(self.stabilizers, 'target_sqp', None) == 'Y':
+            raise NotImplementedError(
+                "Stabilizer subspace projection does not support target_sqp='Y'; "
+                "use target_sqp='X' or 'Z'."
+            )
+        # Single-qubit Y has both X and Z bits set on the same qubit — sign assignment is ill-defined
+        y_mask = np.any(
+            self.rotated_stabilizers.X_block & self.rotated_stabilizers.Z_block, axis=1
+        )
+        if np.any(y_mask):
+            raise NotImplementedError(
+                "Stabilizer subspace projection does not support single-qubit Y "
+                "stabilizers for eigenvalue sign assignment; use X or Z targets."
+            )
         
         # remove terms that do not commute with the rotated stabilizers
         commutes_with_all_stabilizers = np.all(operator.commutes_termwise(self.rotated_stabilizers), axis=1)
@@ -65,7 +80,6 @@ class S3Projection:
         cf_anticommuting_removed = operator.coeff_vec[commutes_with_all_stabilizers]
 
         # determine sign flipping from eigenvalue assignment
-        # currently ill-defined for single-qubit Y stabilizers
         stab_symp_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1]
         eigval_assignment = op_anticommuting_removed[:,stab_symp_indices]*self.rotated_stabilizers.coeff_vec
         eigval_assignment[eigval_assignment==0]=1 # 0 entries are identity, so fix as 1 in product
@@ -108,6 +122,7 @@ class S3Projection:
             self.stabilizers.update_sector(ref_state)
         elif sector is not None:
             self.stabilizers.coeff_vec = np.array(sector, dtype=int)
+            self.stabilizers._invalidate_cache()
 
         self.rotated_stabilizers = self.stabilizers.rotate_onto_single_qubit_paulis()
         self.stab_qubit_indices  = np.where(self.rotated_stabilizers.symp_matrix)[1] % operator.n_qubits
@@ -134,22 +149,19 @@ class S3Projection:
             Projection of input QuantumState into the stabilizer subspace.
         """
         transformation_list = []
+        rotated = self.stabilizers.rotate_onto_single_qubit_paulis()
         # Hadamards where rotated onto Pauli X operators
         transformation_list += [
             Had(self.stabilizers.n_qubits, i) for i in np.where(
-                np.sum(
-                    self.stabilizers.rotate_onto_single_qubit_paulis().X_block & 
-                    ~self.stabilizers.rotate_onto_single_qubit_paulis().Z_block,
-                    axis=0
-            )
-                )[0]
+                np.sum(rotated.X_block & ~rotated.Z_block, axis=0)
+            )[0]
         ]
         # Projections onto the stabilizer subspace
-        transformation_list += list(map(lambda x:(x**2 + x)*.5,self.stabilizers.rotate_onto_single_qubit_paulis()))
+        transformation_list += list(map(lambda x: (x**2 + x) * .5, rotated))
         # Rotations mapping stabilizers onto single-qubit Pauli operators
-        transformation_list += list(map(lambda s:trotter(s[0]*(np.pi/4*1j)), self.stabilizers.stabilizer_rotations))
+        transformation_list += list(map(lambda s: trotter(s[0] * (np.pi / 4 * 1j)), self.stabilizers.stabilizer_rotations))
         # Product over the transformation list yields final transformation operator
-        transformation = reduce(lambda x,y:x*y, transformation_list)
+        transformation = reduce(lambda x, y: x * y, transformation_list)
         # apply transformation to the reference state
         transformed_state = transformation * state
         # drop stabilized qubit positions and sum over potential duplicates
