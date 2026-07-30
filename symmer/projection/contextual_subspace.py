@@ -227,9 +227,9 @@ class ContextualSubspace(S3Projection):
         Returns: 
             S (IndependentOp): Random set of Stablizers
         """
-        # TODO better approach that does not rely on this *potentially infinite* while loop!
-        found_stabilizers=False
-        while not found_stabilizers:
+        max_attempts = 1000
+        last_error = None
+        for _ in range(max_attempts):
             try:
                 S = PauliwordOp.random(
                     self.operator.n_qubits,
@@ -238,11 +238,12 @@ class ContextualSubspace(S3Projection):
                 )
                 S.coeff_vec[:] = 1
                 S = IndependentOp.from_PauliwordOp(S)
-                found_stabilizers = True
-            except:
-                pass
-        
-        return S
+                return S
+            except ValueError as err:
+                last_error = err
+        raise RuntimeError(
+            f'Failed to sample independent random stabilizers after {max_attempts} attempts'
+        ) from last_error
 
     def _prepare_stabilizers(self) -> None:
         """ 
