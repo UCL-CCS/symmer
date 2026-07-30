@@ -3,10 +3,9 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-.. image:: ./_static/symmer_logo.png
-  :width: 800px
 Welcome to Symmer's documentation!
 ==================================
+
 .. image:: https://github.com/UCL-CCS/symmer/actions/workflows/pull_request.yaml/badge.svg
   :target: https://github.com/UCL-CCS/symmer/actions/workflows/pull_request.yaml
   :alt: Continuous_Integration
@@ -29,7 +28,6 @@ library, that form a base for all operations, are:
 .. grid:: 2
 
     .. grid-item-card::  PauliwordOp
-        :img-bottom: ./_static/noncontextual-graph.png
 
         The :mod:`PauliwordOp` class contains tools for working with
         **Pauli operators**. It has a particular focus on:
@@ -66,7 +64,6 @@ The following guides give a basic introduction to the various parts:
   HPC
 
 
-
 .. _examples:
 
 
@@ -79,10 +76,9 @@ provide a beginners guide and demonstrate some more advanced features or complet
 .. toctree::
   :maxdepth: 2
 
-  ./notebooks/1_Basic_Usage/1.1 PauliwordOp Usage.ipynb
-
-.. toctree::
-  :maxdepth: 2
-
-  ./notebooks/1_Basic_Usage/1.2 QuantumState Usage.ipynb
-
+  ./notebooks/1_Basic_Usage/1.1_PauliwordOp_Usage.ipynb
+  ./notebooks/1_Basic_Usage/1.2_QuantumState_Usage.ipynb
+  ./notebooks/1_Basic_Usage/1.4_QubitSubspaceManager_Usage.ipynb
+  ./notebooks/2_Applications/2.1_Tapering_the_Heisenberg_Hamiltonian.ipynb
+  ./notebooks/2_Applications/2.2_QubitTapering_Usage.ipynb
+  ./notebooks/2_Applications/2.3_CS_VQE_for_Electronic_Structure.ipynb
